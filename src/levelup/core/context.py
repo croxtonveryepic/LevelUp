@@ -1,0 +1,150 @@
+"""PipelineContext and all data models that flow through the pipeline."""
+
+from __future__ import annotations
+
+import enum
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+from pydantic import BaseModel, Field
+
+
+# --- Enums ---
+
+
+class PipelineStatus(str, enum.Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    PAUSED = "paused"
+    WAITING_FOR_INPUT = "waiting_for_input"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    ABORTED = "aborted"
+
+
+class CheckpointDecision(str, enum.Enum):
+    APPROVE = "approve"
+    REVISE = "revise"
+    REJECT = "reject"
+
+
+class Severity(str, enum.Enum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+
+# --- Data Models ---
+
+
+class TaskInput(BaseModel):
+    """Raw task input from user or ticket system."""
+
+    title: str
+    description: str = ""
+    source: str = "manual"
+    source_id: str | None = None
+
+
+class Requirement(BaseModel):
+    """A single requirement extracted by the RequirementsAgent."""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    description: str
+    acceptance_criteria: list[str] = Field(default_factory=list)
+
+
+class Requirements(BaseModel):
+    """Structured output from the RequirementsAgent."""
+
+    summary: str
+    requirements: list[Requirement] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    out_of_scope: list[str] = Field(default_factory=list)
+    clarifications: list[str] = Field(default_factory=list)
+
+
+class PlanStep(BaseModel):
+    """A single step in the implementation plan."""
+
+    order: int
+    description: str
+    files_to_modify: list[str] = Field(default_factory=list)
+    files_to_create: list[str] = Field(default_factory=list)
+
+
+class Plan(BaseModel):
+    """Structured output from the PlanningAgent."""
+
+    approach: str
+    steps: list[PlanStep] = Field(default_factory=list)
+    affected_files: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+
+
+class FileChange(BaseModel):
+    """A file that was created or modified by an agent."""
+
+    path: str
+    content: str
+    original_content: str | None = None
+    is_new: bool = False
+
+
+class TestResult(BaseModel):
+    """Result from running a test suite."""
+
+    passed: bool
+    total: int = 0
+    failures: int = 0
+    errors: int = 0
+    output: str = ""
+    command: str = ""
+
+
+class ReviewFinding(BaseModel):
+    """A single finding from the ReviewAgent."""
+
+    severity: Severity
+    category: str
+    file: str
+    line: int | None = None
+    message: str
+    suggestion: str = ""
+
+
+# --- Pipeline Context ---
+
+
+class PipelineContext(BaseModel):
+    """Single mutable state object that flows through all agents."""
+
+    # Run metadata
+    run_id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # Input
+    task: TaskInput
+
+    # Project info (from detection)
+    project_path: Path = Field(default_factory=Path.cwd)
+    language: str | None = None
+    framework: str | None = None
+    test_runner: str | None = None
+    test_command: str | None = None
+
+    # Agent outputs (populated sequentially)
+    requirements: Requirements | None = None
+    plan: Plan | None = None
+    test_files: list[FileChange] = Field(default_factory=list)
+    code_files: list[FileChange] = Field(default_factory=list)
+    test_results: list[TestResult] = Field(default_factory=list)
+    review_findings: list[ReviewFinding] = Field(default_factory=list)
+
+    # Pipeline state
+    status: PipelineStatus = PipelineStatus.PENDING
+    current_step: str | None = None
+    code_iteration: int = 0
+    error_message: str | None = None

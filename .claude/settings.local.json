@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(pip:*)",
+      "WebSearch",
+      "Bash(python -m venv:*)",
+      "Bash(.venvScriptsactivate)",
+      "Bash(uv venv:*)",
+      "Bash(where:*)",
+      "Bash(python -m uv venv:*)",
+      "Bash(python -m uv pip install:*)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/ -v --tb=short)",
+      "Bash(.venv\\\\Scripts\\\\python.exe -m pytest:*)",
+      "Bash(C:\\\\Users\\\\jccvae\\\\LevelUp\\\\.venv\\\\Scripts\\\\python.exe -m pytest:*)",
+      "Bash(.venv/Scripts/python.exe -m pytest:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(ls -la \"C:\\\\Users\\\\jccvae\\\\.claude\"\" 2>&1 || echo \"Directory listing failed \")"
+    ]
+  }
+}

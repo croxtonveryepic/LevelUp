@@ -12,11 +12,7 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_TEMPLATE = """You are a senior software architect. Your job is to explore the codebase and design an implementation plan.
 
-Project context:
-- Language: {language}
-- Framework: {framework}
-- Test runner: {test_runner}
-- Test command: {test_command}
+Start by reading `levelup/project_context.md` for project background (language, framework, test runner, test command, and any prior codebase insights).
 
 Requirements:
 {requirements}
@@ -27,7 +23,9 @@ You have access to tools to read files and search the codebase. Use them extensi
 3. Related files that will need to be modified
 4. Where new code should be placed
 
-After thorough exploration, produce your final output as a JSON object with this exact structure:
+After thorough exploration, update the "Codebase Insights" section of `levelup/project_context.md` with architectural patterns, code conventions, and key dependencies you discovered using the Write tool.
+
+Then produce your final output as a JSON object with this exact structure:
 {{
   "approach": "High-level description of the implementation approach",
   "steps": [
@@ -59,15 +57,11 @@ class PlanningAgent(BaseAgent):
                     req_text += f"  - AC: {c}\n"
 
         return SYSTEM_PROMPT_TEMPLATE.format(
-            language=ctx.language or "unknown",
-            framework=ctx.framework or "none",
-            test_runner=ctx.test_runner or "unknown",
-            test_command=ctx.test_command or "unknown",
             requirements=req_text or "No structured requirements available.",
         )
 
     def get_allowed_tools(self) -> list[str]:
-        return ["Read", "Glob", "Grep"]
+        return ["Read", "Write", "Glob", "Grep"]
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
         system = self.get_system_prompt(ctx)

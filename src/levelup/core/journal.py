@@ -133,16 +133,7 @@ class RunJournal:
 
 
 def _format_detect(ctx: PipelineContext) -> list[str]:
-    lines = []
-    if ctx.language:
-        lines.append(f"- **Language:** {ctx.language}")
-    if ctx.framework:
-        lines.append(f"- **Framework:** {ctx.framework}")
-    if ctx.test_runner:
-        lines.append(f"- **Test runner:** {ctx.test_runner}")
-    if ctx.test_command:
-        lines.append(f"- **Test command:** {ctx.test_command}")
-    return lines or ["No detection results."]
+    return ["See `levelup/project_context.md` for project details."]
 
 
 def _format_requirements(ctx: PipelineContext) -> list[str]:

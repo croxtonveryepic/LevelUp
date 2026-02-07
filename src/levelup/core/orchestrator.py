@@ -34,6 +34,7 @@ from levelup.core.context import (
     TaskInput,
 )
 from levelup.core.journal import RunJournal
+from levelup.core.project_context import write_project_context
 from levelup.core.pipeline import DEFAULT_PIPELINE, StepType
 from levelup.detection.detector import ProjectDetector
 from levelup.tools.base import ToolRegistry
@@ -163,6 +164,13 @@ class Orchestrator:
 
                 if step.step_type == StepType.DETECTION:
                     self._run_detection(ctx)
+                    write_project_context(
+                        project_path,
+                        language=ctx.language,
+                        framework=ctx.framework,
+                        test_runner=ctx.test_runner,
+                        test_command=ctx.test_command,
+                    )
                     # Re-create backend/agents if SDK backend (needs updated test command)
                     if self._settings.llm.backend == "anthropic_sdk":
                         backend = self._create_backend(project_path, ctx)

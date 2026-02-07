@@ -6,7 +6,13 @@ import sqlite3
 
 import pytest
 
-from levelup.state.db import get_connection, init_db
+from levelup.state.db import (
+    CURRENT_SCHEMA_VERSION,
+    _get_schema_version,
+    _run_migrations,
+    get_connection,
+    init_db,
+)
 
 
 class TestStateDB:
@@ -92,3 +98,77 @@ class TestStateDB:
 
         assert "idx_runs_status" in index_names
         assert "idx_cp_pending" in index_names
+
+
+class TestSchemaVersioning:
+    def test_fresh_db_gets_current_version(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        init_db(db_path)
+        conn = get_connection(db_path)
+        version = _get_schema_version(conn)
+        conn.close()
+        assert version == CURRENT_SCHEMA_VERSION
+
+    def test_schema_version_table_exists(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        init_db(db_path)
+        conn = sqlite3.connect(str(db_path))
+        tables = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+        table_names = [t[0] for t in tables]
+        conn.close()
+        assert "schema_version" in table_names
+
+    def test_pre_migration_db_gets_upgraded(self, tmp_path):
+        """A DB with full schema but no schema_version table should be migrated."""
+        db_path = tmp_path / "test.db"
+        # Create a DB with the full schema but no schema_version table
+        # (simulating a pre-migration database)
+        conn = get_connection(db_path)
+        from levelup.state.db import SCHEMA_SQL
+
+        conn.executescript(SCHEMA_SQL)
+        conn.commit()
+        # Verify no schema_version yet
+        assert _get_schema_version(conn) == 0
+        conn.close()
+
+        # init_db should detect version 0 and run migrations
+        init_db(db_path)
+
+        conn = get_connection(db_path)
+        version = _get_schema_version(conn)
+        conn.close()
+        assert version == CURRENT_SCHEMA_VERSION
+
+    def test_newer_db_raises_error(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        init_db(db_path)
+
+        # Manually set version to a future value
+        conn = get_connection(db_path)
+        conn.execute("UPDATE schema_version SET version = 999 WHERE rowid = 1")
+        conn.commit()
+
+        with pytest.raises(RuntimeError, match="newer than the code supports"):
+            _run_migrations(conn)
+        conn.close()
+
+    def test_init_db_still_idempotent(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        init_db(db_path)
+        init_db(db_path)  # should not raise or duplicate
+
+        conn = get_connection(db_path)
+        version = _get_schema_version(conn)
+        conn.close()
+        assert version == CURRENT_SCHEMA_VERSION
+
+    def test_version_0_detected_for_no_table(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        conn = sqlite3.connect(str(db_path))
+        # Empty DB — no schema_version table
+        version = _get_schema_version(conn)
+        conn.close()
+        assert version == 0

@@ -14,11 +14,7 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_TEMPLATE = """You are a senior software developer. Your job is to implement code that makes the tests pass (TDD green phase).
 
-Project context:
-- Language: {language}
-- Framework: {framework}
-- Test runner: {test_runner}
-- Test command: {test_command}
+Start by reading `levelup/project_context.md` for project background (language, framework, test runner, test command, and any prior codebase insights).
 
 Requirements:
 {requirements}
@@ -77,9 +73,6 @@ class CodeAgent(BaseAgent):
             test_text += f"\n--- {tf.path} ---\n{tf.content}\n"
 
         return SYSTEM_PROMPT_TEMPLATE.format(
-            language=ctx.language or "unknown",
-            framework=ctx.framework or "none",
-            test_runner=ctx.test_runner or "unknown",
             test_command=ctx.test_command or "unknown",
             requirements=req_text or "No structured requirements.",
             plan=plan_text or "No implementation plan.",

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
+
+from levelup import __version__
 
 if TYPE_CHECKING:
     from levelup.core.context import (
@@ -22,11 +25,28 @@ if TYPE_CHECKING:
 console = Console()
 
 
+def get_version_string() -> str:
+    """Return a version string like 'levelup 0.1.0 (commit abc1234, clean)'."""
+    base = f"levelup {__version__}"
+    try:
+        import git
+
+        project_root = Path(__file__).resolve().parents[3]
+        repo = git.Repo(project_root)
+        sha7 = repo.head.commit.hexsha[:7]
+        state = "dirty" if repo.is_dirty() else "clean"
+        return f"{base} (commit {sha7}, {state})"
+    except Exception:
+        return base
+
+
 def print_banner() -> None:
     """Print the LevelUp banner."""
+    version_line = f"[dim]{get_version_string()}[/dim]"
     console.print(
         Panel(
-            "[bold cyan]LevelUp[/bold cyan] - AI-Powered TDD Development Tool",
+            "[bold cyan]LevelUp[/bold cyan] - AI-Powered TDD Development Tool\n"
+            + version_line,
             border_style="cyan",
         )
     )

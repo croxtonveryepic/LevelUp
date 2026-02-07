@@ -18,6 +18,8 @@ uv pip install -e ".[dev]" --python .venv/bin/python            # macOS/Linux
 uv pip install -e ".[gui]" --python .venv/Scripts/python.exe
 ```
 
+A `uv.lock` lockfile is included for reproducible installs. Run `uv sync` to install from the lockfile.
+
 ### Authentication
 
 **Default (claude_code backend):** If you have [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated, no further setup is needed — LevelUp delegates to `claude -p` which handles auth internally.
@@ -156,6 +158,23 @@ Displays the active configuration after merging all sources.
 ```bash
 levelup config
 levelup config --path /path/to/project
+```
+
+### `levelup version` — Show installed version
+
+Displays the installed version, git commit hash, and working tree status.
+
+```bash
+levelup version
+# levelup 0.1.0 (commit abc1234, clean)
+```
+
+### `levelup self-update` — Update LevelUp
+
+Pulls the latest code from git and reinstalls dependencies. Requires that LevelUp was installed from a git clone.
+
+```bash
+levelup self-update
 ```
 
 ## Configuration

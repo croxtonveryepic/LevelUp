@@ -12,9 +12,7 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_TEMPLATE = """You are a senior code reviewer. Your job is to review code changes for quality, security, and best practices.
 
-Project context:
-- Language: {language}
-- Framework: {framework}
+Start by reading `levelup/project_context.md` for project background (language, framework, test runner, test command, and any prior codebase insights).
 
 Files changed (tests):
 {test_files}
@@ -75,8 +73,6 @@ class ReviewAgent(BaseAgent):
             )
 
         return SYSTEM_PROMPT_TEMPLATE.format(
-            language=ctx.language or "unknown",
-            framework=ctx.framework or "none",
             test_files=test_text or "No test files.",
             code_files=code_text or "No code files.",
             test_results=test_results_text or "No test results.",

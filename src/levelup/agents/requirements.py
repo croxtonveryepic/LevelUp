@@ -12,10 +12,7 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_TEMPLATE = """You are a senior software requirements analyst. Your job is to take a raw task description and produce clear, structured requirements.
 
-Project context:
-- Language: {language}
-- Framework: {framework}
-- Test runner: {test_runner}
+Start by reading `levelup/project_context.md` for project background (language, framework, test runner, etc.).
 
 The user has provided this task:
 Title: {title}
@@ -23,7 +20,9 @@ Description: {description}
 
 You have access to tools to read files and search the codebase. Use them to understand the existing code before finalizing requirements.
 
-After exploring the codebase, produce your final output as a JSON object with this exact structure:
+After exploring the codebase, update the "Codebase Insights" section of `levelup/project_context.md` with general project discoveries (directory structure, key modules, conventions) using the Write tool.
+
+Then produce your final output as a JSON object with this exact structure:
 {{
   "summary": "Brief summary of what needs to be done",
   "requirements": [
@@ -46,15 +45,12 @@ class RequirementsAgent(BaseAgent):
 
     def get_system_prompt(self, ctx: PipelineContext) -> str:
         return SYSTEM_PROMPT_TEMPLATE.format(
-            language=ctx.language or "unknown",
-            framework=ctx.framework or "none",
-            test_runner=ctx.test_runner or "unknown",
             title=ctx.task.title,
             description=ctx.task.description,
         )
 
     def get_allowed_tools(self) -> list[str]:
-        return ["Read", "Glob", "Grep"]
+        return ["Read", "Write", "Glob", "Grep"]
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
         system = self.get_system_prompt(ctx)

@@ -430,9 +430,7 @@ class TestRequirementsAgent:
         agent = RequirementsAgent(backend=mock_backend, project_path=project_path)
         prompt = agent.get_system_prompt(basic_ctx)
         assert isinstance(prompt, str)
-        assert "python" in prompt
-        assert "fastapi" in prompt
-        assert "pytest" in prompt
+        assert "project_context.md" in prompt
         assert basic_ctx.task.title in prompt
         assert basic_ctx.task.description in prompt
 
@@ -440,6 +438,7 @@ class TestRequirementsAgent:
         agent = RequirementsAgent(backend=mock_backend, project_path=project_path)
         tools = agent.get_allowed_tools()
         assert "Read" in tools
+        assert "Write" in tools
         assert "Glob" in tools
         assert "Grep" in tools
 
@@ -489,8 +488,7 @@ class TestPlanningAgent:
         agent = PlanningAgent(backend=mock_backend, project_path=project_path)
         prompt = agent.get_system_prompt(rich_ctx)
         assert isinstance(prompt, str)
-        assert "python" in prompt
-        assert "fastapi" in prompt
+        assert "project_context.md" in prompt
         assert "Implement login" in prompt  # from requirements summary
 
     def test_get_system_prompt_no_requirements(self, mock_backend, project_path, basic_ctx):
@@ -500,7 +498,7 @@ class TestPlanningAgent:
 
     def test_get_allowed_tools(self, mock_backend, project_path):
         agent = PlanningAgent(backend=mock_backend, project_path=project_path)
-        assert agent.get_allowed_tools() == ["Read", "Glob", "Grep"]
+        assert agent.get_allowed_tools() == ["Read", "Write", "Glob", "Grep"]
 
     def test_run_parses_plan(self, mock_backend, project_path, rich_ctx):
         response_json = json.dumps({
@@ -547,7 +545,7 @@ class TestTestWriterAgent:
         agent = TestWriterAgent(backend=mock_backend, project_path=project_path)
         prompt = agent.get_system_prompt(rich_ctx)
         assert isinstance(prompt, str)
-        assert "python" in prompt
+        assert "project_context.md" in prompt
         assert "TDD" in prompt
         assert "Implement login" in prompt  # requirements summary
         assert "Add endpoint" in prompt or "login route" in prompt.lower() or "JWT" in prompt
@@ -610,7 +608,7 @@ class TestCodeAgent:
         agent = CodeAgent(backend=mock_backend, project_path=project_path)
         prompt = agent.get_system_prompt(rich_ctx)
         assert isinstance(prompt, str)
-        assert "python" in prompt
+        assert "project_context.md" in prompt
         assert "TDD green phase" in prompt
         assert "tests/test_login.py" in prompt  # test file path
         assert "Implement login" in prompt  # requirements summary
@@ -676,7 +674,7 @@ class TestReviewAgent:
         agent = ReviewAgent(backend=mock_backend, project_path=project_path)
         prompt = agent.get_system_prompt(rich_ctx)
         assert isinstance(prompt, str)
-        assert "python" in prompt
+        assert "project_context.md" in prompt
         assert "tests/test_login.py" in prompt
         assert "routes/login.py" in prompt
         assert "PASSED" in prompt  # from test results

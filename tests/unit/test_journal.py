@@ -148,9 +148,7 @@ class TestRunJournal:
 
         content = journal.path.read_text(encoding="utf-8")
         assert "## Step: detect" in content
-        assert "python" in content
-        assert "fastapi" in content
-        assert "pytest" in content
+        assert "See `levelup/project_context.md` for project details." in content
 
     def test_log_step_requirements(self, tmp_path: Path):
         ctx = _make_ctx(tmp_path)

@@ -1,8 +1,10 @@
-"""Typer CLI commands: run, detect, config, gui, status."""
+"""Typer CLI commands: run, detect, config, gui, status, version, self-update."""
 
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -10,6 +12,7 @@ import typer
 
 from levelup.cli.display import (
     console,
+    get_version_string,
     print_banner,
     print_error,
     print_project_info,
@@ -243,6 +246,56 @@ def status(
             f"\n[bold]{active} active[/bold], "
             f"[yellow]{awaiting} awaiting input[/yellow]"
         )
+
+
+@app.command()
+def version() -> None:
+    """Show the installed LevelUp version."""
+    console.print(get_version_string())
+
+
+def _get_project_root() -> Path:
+    """Return the LevelUp project root (repo root)."""
+    return Path(__file__).resolve().parents[3]
+
+
+@app.command("self-update")
+def self_update() -> None:
+    """Pull the latest code and reinstall LevelUp."""
+    from rich.status import Status
+
+    console.print(f"Current: {get_version_string()}")
+
+    project_root = _get_project_root()
+    if not (project_root / ".git").exists():
+        print_error("Not a git repository — cannot self-update.")
+        raise typer.Exit(1)
+
+    with Status("Pulling latest changes...", console=console):
+        result = subprocess.run(
+            ["git", "pull"],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+        )
+    if result.returncode != 0:
+        print_error(f"git pull failed:\n{result.stderr.strip()}")
+        raise typer.Exit(1)
+    console.print(result.stdout.strip())
+
+    with Status("Reinstalling dependencies...", console=console):
+        result = subprocess.run(
+            [sys.executable, "-m", "uv", "pip", "install", "-e", ".[dev]",
+             "--python", sys.executable],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+        )
+    if result.returncode != 0:
+        print_error(f"pip install failed:\n{result.stderr.strip()}")
+        raise typer.Exit(1)
+
+    console.print(f"[bold green]Updated:[/bold green] {get_version_string()}")
 
 
 if __name__ == "__main__":

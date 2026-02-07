@@ -106,6 +106,13 @@ class TestFullPipeline:
             "all_tests_passing": True,
         })
 
+        security_json = json.dumps({
+            "findings": [],
+            "patches_applied": 0,
+            "requires_coding_rework": False,
+            "feedback_for_coder": "",
+        })
+
         review_json = json.dumps({
             "findings": [],
             "overall_assessment": "Code looks good",
@@ -117,6 +124,7 @@ class TestFullPipeline:
             _make_mock_response(plan_json),
             _make_mock_response(test_writer_json),
             _make_mock_response(coder_json),
+            _make_mock_response(security_json),
             _make_mock_response(review_json),
         ]
         mock_client.messages.create.side_effect = responses
@@ -150,6 +158,10 @@ class TestFullPipeline:
             _make_mock_response(json.dumps({"test_files": []})),
             _make_mock_response(json.dumps({
                 "files_written": [], "iterations": 0, "all_tests_passing": True,
+            })),
+            _make_mock_response(json.dumps({
+                "findings": [], "patches_applied": 0,
+                "requires_coding_rework": False, "feedback_for_coder": "",
             })),
             _make_mock_response(json.dumps({"findings": [], "overall_assessment": "ok"})),
         ]

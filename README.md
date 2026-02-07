@@ -91,11 +91,23 @@ levelup run "Add feature" --backend anthropic_sdk
 5. **Test** — agent writes tests (TDD red phase)
 6. **Checkpoint** — you review the tests
 7. **Code** — agent implements code, runs tests, iterates until they pass (TDD green phase)
-8. **Review** — agent checks for quality, security, and best practices
-9. **Checkpoint** — you review the final changes
-10. **Done** — summary shown with cost/token breakdown
+8. **Security** — agent detects vulnerabilities, auto-patches minor issues, flags major issues
+9. **Checkpoint** — you review security findings (if major issues remain after auto-retry)
+10. **Review** — agent checks for code quality and best practices
+11. **Checkpoint** — you review the final changes
+12. **Done** — summary shown with cost/token breakdown
 
 When `create_git_branch: true` (default), LevelUp auto-commits after each step, giving you atomic rollback points. See `levelup rollback` below.
+
+**Security step details:**
+
+The security agent runs between coding and review to catch vulnerabilities before final approval:
+
+- **Auto-patching:** Minor issues (INFO/WARNING severity) like missing input validation, weak defaults, or missing type hints are automatically fixed using Write/Edit tools
+- **Automatic loop-back:** Major issues (ERROR/CRITICAL severity) like SQL injection, XSS, hardcoded secrets, or weak crypto trigger an automatic re-run of the coding agent with security feedback
+- **One retry limit:** If issues remain after one automatic retry, the pipeline continues to the checkpoint for manual review
+- **OWASP Top 10 coverage:** Checks for injection attacks, authentication flaws, crypto weaknesses, input validation gaps, and insecure configurations
+- **CWE references:** Findings include Common Weakness Enumeration IDs for tracking and remediation
 
 At each checkpoint you can:
 - **(a)pprove** — continue to the next step

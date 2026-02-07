@@ -35,6 +35,7 @@ class TestPipelineDefinitions:
         assert "planning" in names
         assert "test_writing" in names
         assert "coding" in names
+        assert "security" in names
         assert "review" in names
 
     def test_pipeline_step_types(self):
@@ -50,6 +51,7 @@ class TestPipelineDefinitions:
         checkpoint_steps = [s.name for s in DEFAULT_PIPELINE if s.checkpoint_after]
         assert "requirements" in checkpoint_steps
         assert "test_writing" in checkpoint_steps
+        assert "security" in checkpoint_steps
         assert "review" in checkpoint_steps
         assert "planning" not in checkpoint_steps
         assert "coding" not in checkpoint_steps
@@ -104,7 +106,7 @@ class TestOrchestrator:
 
         assert ctx.status == PipelineStatus.COMPLETED
         assert mock_detect.called
-        assert mock_agent.call_count == 5  # 5 agent steps
+        assert mock_agent.call_count == 6  # 6 agent steps (requirements, planning, test_writer, coder, security, reviewer)
 
     @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
     @patch("levelup.core.orchestrator.Orchestrator._run_detection")
@@ -124,7 +126,7 @@ class TestOrchestrator:
         ctx = orch.run(task)
 
         assert ctx.status == PipelineStatus.COMPLETED
-        assert mock_checkpoint.call_count == 3  # 3 checkpoints
+        assert mock_checkpoint.call_count == 4  # 4 checkpoints (requirements, test_writing, security, review)
 
     @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
     @patch("levelup.core.orchestrator.Orchestrator._run_detection")

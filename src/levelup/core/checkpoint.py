@@ -47,6 +47,15 @@ def build_checkpoint_display_data(step_name: str, ctx: PipelineContext) -> dict:
         else:
             data["message"] = "No test files written."
 
+    elif step_name == "security":
+        data["security_findings"] = [f.model_dump() for f in ctx.security_findings]
+        data["patches_applied"] = ctx.security_patches_applied
+        data["requires_rework"] = ctx.requires_coding_rework
+        if ctx.security_feedback:
+            data["feedback"] = ctx.security_feedback
+        if not ctx.security_findings:
+            data["message"] = "No security vulnerabilities detected."
+
     elif step_name == "review":
         if ctx.code_files:
             data["code_files"] = [
@@ -76,6 +85,23 @@ def _display_checkpoint_content(step_name: str, ctx: PipelineContext) -> None:
             print_file_changes(ctx.test_files, title="Test Files")
         else:
             console.print("[dim]No test files written.[/dim]")
+
+    elif step_name == "security":
+        from levelup.cli.display import print_security_findings
+
+        if ctx.security_findings:
+            print_security_findings(ctx.security_findings)
+            if ctx.security_patches_applied > 0:
+                console.print(
+                    f"[green]✓ Auto-patched {ctx.security_patches_applied} minor issues[/green]"
+                )
+            major_issues = len([f for f in ctx.security_findings if f.requires_manual_fix])
+            if major_issues > 0:
+                console.print(
+                    f"[yellow]⚠ Found {major_issues} major issues requiring manual review[/yellow]"
+                )
+        else:
+            console.print("[green]✓ No security vulnerabilities found[/green]")
 
     elif step_name == "review":
         if ctx.code_files:

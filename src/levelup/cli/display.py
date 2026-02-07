@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         PipelineContext,
         Requirements,
         ReviewFinding,
+        SecurityFinding,
         TestResult,
     )
     from levelup.detection.detector import ProjectInfo
@@ -128,6 +129,64 @@ def print_test_results(results: list[TestResult]) -> None:
         )
 
 
+def print_security_findings(findings: list) -> None:
+    """Display security findings in a formatted table."""
+    from levelup.core.context import SecurityFinding
+
+    if not findings:
+        console.print("[green]✓ No security issues found[/green]")
+        return
+
+    table = Table(title="Security Findings", border_style="red")
+    table.add_column("Severity", style="bold", width=10)
+    table.add_column("Type", width=20)
+    table.add_column("Location", width=30)
+    table.add_column("Description", width=40)
+    table.add_column("Status", width=15)
+
+    severity_colors = {
+        "info": "blue",
+        "warning": "yellow",
+        "error": "red",
+        "critical": "bold red",
+    }
+
+    for f in findings:
+        color = severity_colors.get(f.severity.value, "white")
+        location = f.file
+        if f.line:
+            location += f":{f.line}"
+
+        status = ""
+        if f.patch_applied:
+            status = "[green]✓ Patched[/green]"
+        elif f.requires_manual_fix:
+            status = "[red]⚠ Manual Fix Needed[/red]"
+        else:
+            status = "[yellow]Review Needed[/yellow]"
+
+        vuln_type = f.vulnerability_type
+        if f.cwe_id:
+            vuln_type += f" ({f.cwe_id})"
+
+        table.add_row(
+            f"[{color}]{f.severity.value.upper()}[/{color}]",
+            vuln_type,
+            location,
+            f.description[:80] + ("..." if len(f.description) > 80 else ""),
+            status,
+        )
+
+    console.print(table)
+
+    # Show recommendations for manual fix items
+    manual_fixes = [f for f in findings if f.requires_manual_fix]
+    if manual_fixes:
+        console.print("\n[bold yellow]Recommendations:[/bold yellow]")
+        for f in manual_fixes:
+            console.print(f"• {f.file}:{f.line or '?'} - {f.recommendation}")
+
+
 def print_review_findings(findings: list[ReviewFinding]) -> None:
     """Display review findings."""
     if not findings:
@@ -179,6 +238,20 @@ def print_pipeline_summary(ctx: PipelineContext) -> None:
             "Final tests",
             f"{'PASSED' if last.passed else 'FAILED'} ({last.total} tests)",
         )
+    # Security findings
+    if ctx.security_findings:
+        from levelup.core.context import Severity
+
+        critical = len([f for f in ctx.security_findings if f.severity == Severity.CRITICAL])
+        error = len([f for f in ctx.security_findings if f.severity == Severity.ERROR])
+        warning = len([f for f in ctx.security_findings if f.severity == Severity.WARNING])
+
+        security_summary = f"{critical} critical, {error} error, {warning} warning"
+        table.add_row("Security findings", security_summary)
+
+        if ctx.security_patches_applied > 0:
+            table.add_row("Security patches applied", str(ctx.security_patches_applied))
+
     table.add_row("Review findings", str(len(ctx.review_findings)))
 
     # Cost/token summary

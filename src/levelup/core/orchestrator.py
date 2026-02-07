@@ -17,6 +17,7 @@ from levelup.agents.llm_client import LLMClient
 from levelup.agents.planning import PlanningAgent
 from levelup.agents.requirements import RequirementsAgent
 from levelup.agents.reviewer import ReviewAgent
+from levelup.agents.security import SecurityAgent
 from levelup.agents.test_writer import TestWriterAgent
 from levelup.cli.display import (
     print_error,
@@ -287,6 +288,43 @@ class Orchestrator:
 
                 ctx = self._run_agent_with_retry(step.agent_name, ctx)
 
+                # Security loop-back for major issues
+                if step.name == "security" and ctx.requires_coding_rework:
+                    if not self._headless:
+                        self._console.print(
+                            "[yellow]Security agent found major issues. "
+                            "Re-running coding agent to fix...[/yellow]"
+                        )
+
+                    # Inject security feedback into coding task
+                    original_desc = ctx.task.description
+                    ctx.task.description = (
+                        f"{original_desc}\n\n"
+                        f"[SECURITY REVIEW FEEDBACK]\n{ctx.security_feedback}"
+                    )
+
+                    # Re-run coding agent
+                    ctx = self._run_agent_with_retry("coder", ctx)
+                    self._git_step_commit(project_path, ctx, "coding", revised=True)
+
+                    # Restore original task description
+                    ctx.task.description = original_desc
+
+                    # Re-run security check on updated code
+                    ctx.requires_coding_rework = False
+                    ctx.security_feedback = ""
+                    ctx = self._run_agent_with_retry("security", ctx)
+                    self._git_step_commit(project_path, ctx, "security", revised=True)
+
+                    # If still broken after one retry, continue to checkpoint
+                    if ctx.requires_coding_rework:
+                        if not self._headless:
+                            self._console.print(
+                                "[red]Security issues remain after rework. "
+                                "Manual review needed at checkpoint.[/red]"
+                            )
+                        ctx.requires_coding_rework = False  # Prevent infinite loops
+
                 if ctx.status == PipelineStatus.FAILED:
                     break
 
@@ -356,6 +394,7 @@ class Orchestrator:
                 project_path,
                 max_iterations=self._settings.pipeline.max_code_iterations,
             ),
+            "security": SecurityAgent(backend, project_path),
             "reviewer": ReviewAgent(backend, project_path),
         }
 

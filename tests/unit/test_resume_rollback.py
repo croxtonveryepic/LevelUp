@@ -72,9 +72,9 @@ class TestOrchestratorResume:
 
         assert result.status == PipelineStatus.COMPLETED
 
-        # coding step uses agent "coder", review step uses "reviewer"
+        # coding step uses agent "coder", security uses "security", review uses "reviewer"
         called_agent_names = [call.args[0] for call in mock_agent.call_args_list]
-        assert called_agent_names == ["coder", "reviewer"]
+        assert called_agent_names == ["coder", "security", "reviewer"]
 
         # Detection should NOT have been called (coding is past detect)
         mock_detect.assert_not_called()
@@ -96,9 +96,9 @@ class TestOrchestratorResume:
 
         assert result.status == PipelineStatus.COMPLETED
 
-        # planning -> test_writing -> coding -> review
+        # planning -> test_writing -> coding -> security -> review
         called_agent_names = [call.args[0] for call in mock_agent.call_args_list]
-        assert called_agent_names == ["planning", "test_writer", "coder", "reviewer"]
+        assert called_agent_names == ["planning", "test_writer", "coder", "security", "reviewer"]
 
         # Detection should NOT be called (planning is after detect)
         mock_detect.assert_not_called()
@@ -123,7 +123,7 @@ class TestOrchestratorResume:
 
         called_agent_names = [call.args[0] for call in mock_agent.call_args_list]
         assert called_agent_names == [
-            "requirements", "planning", "test_writer", "coder", "reviewer"
+            "requirements", "planning", "test_writer", "coder", "security", "reviewer"
         ]
 
     def test_resume_raises_for_unknown_step(self, tmp_path):

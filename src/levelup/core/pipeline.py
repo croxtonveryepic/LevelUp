@@ -57,6 +57,13 @@ DEFAULT_PIPELINE: list[PipelineStep] = [
         description="Implement code until tests pass (TDD green phase)",
     ),
     PipelineStep(
+        name="security",
+        step_type=StepType.AGENT,
+        agent_name="security",
+        checkpoint_after=True,
+        description="Detect and patch security vulnerabilities",
+    ),
+    PipelineStep(
         name="review",
         step_type=StepType.AGENT,
         agent_name="reviewer",

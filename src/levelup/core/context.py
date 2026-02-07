@@ -115,6 +115,22 @@ class ReviewFinding(BaseModel):
     suggestion: str = ""
 
 
+class SecurityFinding(BaseModel):
+    """A security vulnerability detected by the SecurityAgent."""
+
+    severity: Severity  # INFO, WARNING, ERROR, CRITICAL
+    category: str  # e.g., "injection", "authentication", "crypto", "input_validation"
+    vulnerability_type: str  # e.g., "SQL Injection", "XSS", "Hardcoded Secret"
+    file: str
+    line: int | None = None
+    description: str
+    cwe_id: str | None = None  # Common Weakness Enumeration reference
+    patch_applied: bool = False
+    patch_description: str = ""
+    requires_manual_fix: bool = False
+    recommendation: str = ""
+
+
 # --- Usage Tracking ---
 
 
@@ -155,6 +171,12 @@ class PipelineContext(BaseModel):
     code_files: list[FileChange] = Field(default_factory=list)
     test_results: list[TestResult] = Field(default_factory=list)
     review_findings: list[ReviewFinding] = Field(default_factory=list)
+
+    # Security outputs
+    security_findings: list[SecurityFinding] = Field(default_factory=list)
+    security_patches_applied: int = 0
+    requires_coding_rework: bool = False
+    security_feedback: str = ""
 
     # Pipeline state
     status: PipelineStatus = PipelineStatus.PENDING

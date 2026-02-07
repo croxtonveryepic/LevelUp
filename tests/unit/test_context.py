@@ -60,7 +60,7 @@ class TestCheckpointDecision:
         assert isinstance(CheckpointDecision.APPROVE, str)
 
     def test_member_count(self):
-        assert len(CheckpointDecision) == 3
+        assert len(CheckpointDecision) == 4
 
 
 class TestSeverity:

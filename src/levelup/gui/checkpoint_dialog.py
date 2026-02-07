@@ -120,12 +120,12 @@ class CheckpointDialog(QDialog):
         layout.addWidget(self._content_view, stretch=3)
 
         # Feedback label + text input
-        feedback_label = QLabel("Feedback (required for Revise):")
+        feedback_label = QLabel("Feedback (required for Revise) / Rule text (for Instruct):")
         layout.addWidget(feedback_label)
 
         self._feedback_input = QPlainTextEdit()
         self._feedback_input.setMaximumHeight(100)
-        self._feedback_input.setPlaceholderText("Enter feedback for revision...")
+        self._feedback_input.setPlaceholderText("Enter feedback for revision or rule text for instruct...")
         layout.addWidget(self._feedback_input, stretch=1)
 
         # Buttons
@@ -141,6 +141,11 @@ class CheckpointDialog(QDialog):
         revise_btn.setObjectName("reviseBtn")
         revise_btn.clicked.connect(self._on_revise)
         btn_layout.addWidget(revise_btn)
+
+        instruct_btn = QPushButton("Instruct")
+        instruct_btn.setObjectName("instructBtn")
+        instruct_btn.clicked.connect(self._on_instruct)
+        btn_layout.addWidget(instruct_btn)
 
         reject_btn = QPushButton("Reject")
         reject_btn.setObjectName("rejectBtn")
@@ -161,6 +166,16 @@ class CheckpointDialog(QDialog):
             )
             return
         self._submit("revise", feedback)
+
+    def _on_instruct(self) -> None:
+        text = self._feedback_input.toPlainText().strip()
+        if not text:
+            QMessageBox.warning(
+                self, "Rule Text Required",
+                "Please enter the project rule text for the instruction.",
+            )
+            return
+        self._submit("instruct", text)
 
     def _on_reject(self) -> None:
         reply = QMessageBox.question(

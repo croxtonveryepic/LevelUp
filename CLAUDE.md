@@ -21,10 +21,11 @@ LevelUp is an AI-Powered TDD Development Tool (Python CLI). It orchestrates Clau
 ## Architecture
 
 - Source code lives in `src/levelup/`
-- Pipeline steps: detection → requirements → planning → test_writing → coding → review
+- Pipeline steps: detection → requirements → planning → test_writing → coding → security → review
+- **Instruct feature**: at any checkpoint, user can type `(i)nstruct` to add a project rule to the target project's CLAUDE.md; the orchestrator reviews branch changes for violations, auto-fixes them, then re-prompts the checkpoint
 - Agents use Anthropic tool-use loop (`agents/llm_client.py`)
 - All file tools are sandboxed to the project directory
-- User checkpoints after requirements, test_writing, and review steps
+- User checkpoints after requirements, test_writing, security, and review steps
 - Multi-instance: SQLite state store (`state/`) coordinates headless runs; GUI (`gui/`) monitors them
 - `--headless` mode: checkpoints poll DB instead of terminal prompts
 - State DB default: `~/.levelup/state.db`, override with `--db-path`

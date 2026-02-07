@@ -34,6 +34,7 @@ from levelup.core.context import (
     StepUsage,
     TaskInput,
 )
+from levelup.core.instructions import add_instruction, build_instruct_review_prompt
 from levelup.core.journal import RunJournal
 from levelup.core.project_context import write_project_context
 from levelup.core.pipeline import DEFAULT_PIPELINE, StepType
@@ -65,6 +66,7 @@ class Orchestrator:
         self._headless = headless
         self._console = Console(quiet=headless)
         self._agents: dict[str, BaseAgent] = {}
+        self._backend: Backend | None = None
 
     def _create_backend(self, project_path: Path, ctx: PipelineContext | None = None) -> Backend:
         """Create the appropriate backend based on settings."""
@@ -148,8 +150,8 @@ class Orchestrator:
             self._state_manager.register_run(ctx)
 
         # Create backend and register agents
-        backend = self._create_backend(project_path, ctx)
-        self._register_agents(backend, project_path)
+        self._backend = self._create_backend(project_path, ctx)
+        self._register_agents(self._backend, project_path)
 
         # Optionally create git branch
         if self._settings.pipeline.create_git_branch:
@@ -210,8 +212,8 @@ class Orchestrator:
         journal._append([f"\n## Resumed from step: {target_step}", ""])
 
         # Create backend and register agents
-        backend = self._create_backend(project_path, ctx)
-        self._register_agents(backend, project_path)
+        self._backend = self._create_backend(project_path, ctx)
+        self._register_agents(self._backend, project_path)
 
         # Checkout the run branch if it exists
         try:
@@ -278,8 +280,8 @@ class Orchestrator:
                 )
                 # Re-create backend/agents if SDK backend (needs updated test command)
                 if self._settings.llm.backend == "anthropic_sdk":
-                    backend = self._create_backend(project_path, ctx)
-                    self._register_agents(backend, project_path)
+                    self._backend = self._create_backend(project_path, ctx)
+                    self._register_agents(self._backend, project_path)
 
             elif step.step_type == StepType.AGENT:
                 if step.agent_name not in self._agents:
@@ -336,14 +338,20 @@ class Orchestrator:
                 step.checkpoint_after
                 and self._settings.pipeline.require_checkpoints
             ):
-                if self._headless and self._state_manager is not None:
-                    decision, feedback = self._wait_for_checkpoint_decision(
-                        step.name, ctx
-                    )
-                else:
-                    decision, feedback = run_checkpoint(step.name, ctx)
+                while True:
+                    if self._headless and self._state_manager is not None:
+                        decision, feedback = self._wait_for_checkpoint_decision(
+                            step.name, ctx
+                        )
+                    else:
+                        decision, feedback = run_checkpoint(step.name, ctx)
 
-                journal.log_checkpoint(step.name, decision.value, feedback)
+                    if decision == CheckpointDecision.INSTRUCT:
+                        self._run_instruct(ctx, feedback, project_path, journal)
+                        continue  # re-prompt checkpoint
+
+                    journal.log_checkpoint(step.name, decision.value, feedback)
+                    break
 
                 if decision == CheckpointDecision.APPROVE:
                     if not self._headless:
@@ -505,6 +513,81 @@ class Orchestrator:
             if not self._headless:
                 self._console.print(f"[dim]Git branch creation skipped: {e}[/dim]")
             return None
+
+    def _run_instruct(
+        self,
+        ctx: PipelineContext,
+        instruction_text: str,
+        project_path: Path,
+        journal: RunJournal,
+    ) -> None:
+        """Add a project rule to CLAUDE.md and review branch changes for violations."""
+        add_instruction(project_path, instruction_text)
+        if not self._headless:
+            self._console.print(f"[cyan]Added rule:[/cyan] {instruction_text}")
+
+        changed_files = self._get_changed_files(ctx, project_path)
+        if not changed_files:
+            if not self._headless:
+                self._console.print("[dim]No changed files to review for this rule.[/dim]")
+            journal.log_instruct(instruction_text)
+            self._git_step_commit(project_path, ctx, "instruct")
+            return
+
+        # Run a review agent against changed files
+        if self._backend is None:
+            logger.warning("No backend available for instruct review.")
+            journal.log_instruct(instruction_text)
+            return
+
+        review_prompt = build_instruct_review_prompt(instruction_text, changed_files)
+        try:
+            if self._headless:
+                agent_result = self._backend.run_agent(
+                    system_prompt=review_prompt,
+                    user_prompt=f"Review and fix violations of: {instruction_text}",
+                    allowed_tools=["Read", "Write", "Edit", "Glob", "Grep"],
+                    working_directory=str(project_path),
+                )
+            else:
+                with self._console.status("[cyan]Reviewing changes for rule compliance..."):
+                    agent_result = self._backend.run_agent(
+                        system_prompt=review_prompt,
+                        user_prompt=f"Review and fix violations of: {instruction_text}",
+                        allowed_tools=["Read", "Write", "Edit", "Glob", "Grep"],
+                        working_directory=str(project_path),
+                    )
+            self._capture_usage(ctx, "instruct_review", agent_result)
+            journal.log_instruct(instruction_text, agent_result)
+        except Exception as e:
+            logger.warning("Instruct review failed: %s", e)
+            journal.log_instruct(instruction_text)
+
+        self._git_step_commit(project_path, ctx, "instruct")
+
+    def _get_changed_files(self, ctx: PipelineContext, project_path: Path) -> list[str]:
+        """Get the list of files changed in this run."""
+        # Try git diff first
+        if ctx.pre_run_sha:
+            try:
+                import git
+
+                repo = git.Repo(project_path)
+                diff_output = repo.git.diff("--name-only", ctx.pre_run_sha, "HEAD")
+                if diff_output.strip():
+                    return [f for f in diff_output.strip().splitlines() if f.strip()]
+            except Exception as e:
+                logger.warning("Failed to get git diff for instruct review: %s", e)
+
+        # Fallback: collect from context
+        files: list[str] = []
+        for f in ctx.code_files:
+            if f.path not in files:
+                files.append(f.path)
+        for f in ctx.test_files:
+            if f.path not in files:
+                files.append(f.path)
+        return files
 
     def _git_step_commit(
         self, project_path: Path, ctx: PipelineContext, step_name: str, revised: bool = False

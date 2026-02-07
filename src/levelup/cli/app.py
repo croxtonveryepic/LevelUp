@@ -401,6 +401,56 @@ def rollback(
 
 
 @app.command()
+def instruct(
+    action: str = typer.Argument("list", help="Action: add, list, or remove"),
+    text: Optional[str] = typer.Argument(None, help="Instruction text (add) or index (remove)"),
+    path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
+) -> None:
+    """Add, list, or remove project rules in CLAUDE.md."""
+    from levelup.core.instructions import (
+        add_instruction,
+        read_instructions,
+        remove_instruction,
+    )
+
+    if action == "add":
+        if not text:
+            print_error("Please provide the rule text: levelup instruct add \"rule text\"")
+            raise typer.Exit(1)
+        add_instruction(path, text)
+        console.print(f"[green]Added rule:[/green] {text}")
+
+    elif action == "list":
+        rules = read_instructions(path)
+        if not rules:
+            console.print("[dim]No project rules found in CLAUDE.md.[/dim]")
+            return
+        console.print("[bold]Project Rules:[/bold]")
+        for i, rule in enumerate(rules, 1):
+            console.print(f"  {i}. {rule}")
+
+    elif action == "remove":
+        if not text:
+            print_error("Please provide the rule index: levelup instruct remove 1")
+            raise typer.Exit(1)
+        try:
+            index = int(text)
+        except ValueError:
+            print_error(f"Invalid index: {text}")
+            raise typer.Exit(1)
+        try:
+            removed = remove_instruction(path, index)
+            console.print(f"[green]Removed rule #{index}:[/green] {removed}")
+        except IndexError as e:
+            print_error(str(e))
+            raise typer.Exit(1)
+
+    else:
+        print_error(f"Unknown action: {action}. Use add, list, or remove.")
+        raise typer.Exit(1)
+
+
+@app.command()
 def version() -> None:
     """Show the installed LevelUp version."""
     console.print(get_version_string())

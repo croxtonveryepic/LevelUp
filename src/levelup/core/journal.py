@@ -121,6 +121,24 @@ class RunJournal:
         except OSError:
             logger.warning("Failed to write journal checkpoint: %s", self._path)
 
+    def log_instruct(self, instruction: str, agent_result: object | None = None) -> None:
+        """Append an instruct entry (instruction text + optional review cost)."""
+        try:
+            lines = [
+                "### Instruct",
+                "",
+                f"- **Rule added:** {instruction}",
+            ]
+            if agent_result is not None:
+                from levelup.agents.backend import AgentResult
+
+                if isinstance(agent_result, AgentResult) and agent_result.cost_usd:
+                    lines.append(f"- **Review cost:** ${agent_result.cost_usd:.4f}")
+            lines.append("")
+            self._append(lines)
+        except OSError:
+            logger.warning("Failed to write journal instruct: %s", self._path)
+
     def log_outcome(self, ctx: PipelineContext) -> None:
         """Append final status (completed/failed/aborted + error if any)."""
         try:

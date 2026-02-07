@@ -39,6 +39,7 @@ def get_checkpoint_decision(step_name: str) -> tuple[CheckpointDecision, str]:
         "[bold]Choose:[/bold] "
         "[green](a)pprove[/green] | "
         "[yellow](r)evise[/yellow] | "
+        "[cyan](i)nstruct[/cyan] | "
         "[red](x) reject[/red]"
     )
 
@@ -53,10 +54,17 @@ def get_checkpoint_decision(step_name: str) -> tuple[CheckpointDecision, str]:
                 multiline=True,
             )
             return CheckpointDecision.REVISE, feedback.strip()
+        elif choice in ("i", "instruct"):
+            console.print("[dim]Enter project rule (Escape then Enter to finish):[/dim]")
+            instruction = pt_prompt(
+                HTML("<b>Rule: </b>"),
+                multiline=True,
+            )
+            return CheckpointDecision.INSTRUCT, instruction.strip()
         elif choice in ("x", "reject"):
             return CheckpointDecision.REJECT, ""
         else:
-            console.print("[dim]Please enter a, r, or x[/dim]")
+            console.print("[dim]Please enter a, r, i, or x[/dim]")
 
 
 def get_conversation_reply(agent_message: str) -> str:

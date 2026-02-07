@@ -27,6 +27,7 @@ class CheckpointDecision(str, enum.Enum):
     APPROVE = "approve"
     REVISE = "revise"
     REJECT = "reject"
+    INSTRUCT = "instruct"
 
 
 class Severity(str, enum.Enum):

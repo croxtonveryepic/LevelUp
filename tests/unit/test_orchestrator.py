@@ -15,6 +15,7 @@ from levelup.config.settings import (
 )
 from levelup.core.context import (
     CheckpointDecision,
+    FileChange,
     PipelineContext,
     PipelineStatus,
     Requirements,
@@ -235,3 +236,118 @@ class TestOrchestrator:
         orch = Orchestrator(settings=settings)
         backend = orch._create_backend(tmp_path)
         assert isinstance(backend, AnthropicSDKBackend)
+
+    @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
+    @patch("levelup.core.orchestrator.Orchestrator._run_detection")
+    @patch("levelup.core.orchestrator.run_checkpoint")
+    def test_instruct_at_checkpoint_loops_then_approves(
+        self, mock_checkpoint, mock_detect, mock_agent, tmp_path
+    ):
+        """INSTRUCT decision loops back; next APPROVE proceeds normally."""
+        settings = self._make_settings(tmp_path)
+        settings.pipeline.require_checkpoints = True
+        orch = Orchestrator(settings=settings)
+
+        mock_detect.return_value = None
+        mock_agent.side_effect = lambda name, ctx: ctx
+
+        # First checkpoint: INSTRUCT then APPROVE; rest: APPROVE
+        call_count = {"n": 0}
+
+        def checkpoint_side_effect(step_name, ctx):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return CheckpointDecision.INSTRUCT, "Use type hints"
+            return CheckpointDecision.APPROVE, ""
+
+        mock_checkpoint.side_effect = checkpoint_side_effect
+
+        # Patch _run_instruct to avoid real backend call
+        with patch.object(orch, "_run_instruct") as mock_instruct:
+            task = TaskInput(title="Test task")
+            ctx = orch.run(task)
+
+        assert ctx.status == PipelineStatus.COMPLETED
+        # _run_instruct was called once (for the INSTRUCT at checkpoint 1)
+        mock_instruct.assert_called_once()
+        # Checkpoint was called 5 times: 1 INSTRUCT + 4 APPROVE (4 checkpoint steps)
+        assert mock_checkpoint.call_count == 5
+
+    def test_run_instruct_adds_rule_to_claude_md(self, tmp_path):
+        """_run_instruct writes to CLAUDE.md."""
+        from levelup.core.instructions import read_instructions
+
+        settings = self._make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+
+        ctx = PipelineContext(
+            task=TaskInput(title="Test"),
+            project_path=tmp_path,
+        )
+        journal = MagicMock()
+
+        orch._run_instruct(ctx, "Use type hints", tmp_path, journal)
+
+        rules = read_instructions(tmp_path)
+        assert "Use type hints" in rules
+        journal.log_instruct.assert_called_once()
+
+    def test_run_instruct_skips_review_when_no_files(self, tmp_path):
+        """_run_instruct skips review agent when there are no changed files."""
+        settings = self._make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+
+        ctx = PipelineContext(
+            task=TaskInput(title="Test"),
+            project_path=tmp_path,
+        )
+        journal = MagicMock()
+
+        # No pre_run_sha, no code_files, no test_files → no changed files
+        orch._run_instruct(ctx, "Use type hints", tmp_path, journal)
+
+        # Should still log the instruction
+        journal.log_instruct.assert_called_once_with("Use type hints")
+
+    def test_run_instruct_tracks_usage(self, tmp_path):
+        """_run_instruct captures usage into ctx.step_usage."""
+        from levelup.agents.backend import AgentResult
+
+        settings = self._make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+
+        # Set up a mock backend
+        mock_backend = MagicMock()
+        mock_backend.run_agent.return_value = AgentResult(
+            text="Fixed", cost_usd=0.01, input_tokens=100, output_tokens=50,
+        )
+        orch._backend = mock_backend
+
+        ctx = PipelineContext(
+            task=TaskInput(title="Test"),
+            project_path=tmp_path,
+            code_files=[FileChange(path="src/foo.py", content="x = 1")],
+        )
+        journal = MagicMock()
+
+        orch._run_instruct(ctx, "Use type hints", tmp_path, journal)
+
+        assert "instruct_review" in ctx.step_usage
+        assert ctx.step_usage["instruct_review"].cost_usd == 0.01
+
+    def test_get_changed_files_from_context(self, tmp_path):
+        """_get_changed_files falls back to context when no git."""
+        settings = self._make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+
+        ctx = PipelineContext(
+            task=TaskInput(title="Test"),
+            project_path=tmp_path,
+            code_files=[
+                FileChange(path="src/a.py", content=""),
+                FileChange(path="src/b.py", content=""),
+            ],
+            test_files=[FileChange(path="tests/test_a.py", content="")],
+        )
+        files = orch._get_changed_files(ctx, tmp_path)
+        assert set(files) == {"src/a.py", "src/b.py", "tests/test_a.py"}

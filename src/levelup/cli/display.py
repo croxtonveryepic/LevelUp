@@ -180,7 +180,32 @@ def print_pipeline_summary(ctx: PipelineContext) -> None:
             f"{'PASSED' if last.passed else 'FAILED'} ({last.total} tests)",
         )
     table.add_row("Review findings", str(len(ctx.review_findings)))
+
+    # Cost/token summary
+    if ctx.total_cost_usd > 0:
+        table.add_row("Total cost", f"${ctx.total_cost_usd:.4f}")
+    if ctx.step_usage:
+        total_input = sum(u.input_tokens for u in ctx.step_usage.values())
+        total_output = sum(u.output_tokens for u in ctx.step_usage.values())
+        if total_input or total_output:
+            table.add_row("Total tokens", f"{total_input + total_output:,} ({total_input:,} in / {total_output:,} out)")
+
     console.print(table)
+
+    # Per-step cost breakdown
+    if ctx.step_usage:
+        cost_table = Table(title="Cost Breakdown", border_style="dim")
+        cost_table.add_column("Step", style="bold")
+        cost_table.add_column("Cost", justify="right")
+        cost_table.add_column("Tokens", justify="right")
+        cost_table.add_column("Duration", justify="right")
+        cost_table.add_column("Turns", justify="right")
+        for step_name, usage in ctx.step_usage.items():
+            cost_str = f"${usage.cost_usd:.4f}" if usage.cost_usd else "-"
+            tokens_str = f"{usage.input_tokens + usage.output_tokens:,}" if (usage.input_tokens or usage.output_tokens) else "-"
+            dur_str = f"{usage.duration_ms / 1000:.1f}s" if usage.duration_ms else "-"
+            cost_table.add_row(step_name, cost_str, tokens_str, dur_str, str(usage.num_turns))
+        console.print(cost_table)
 
 
 def print_step_header(step_name: str, description: str) -> None:

@@ -41,7 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 CREATE INDEX IF NOT EXISTS idx_cp_pending ON checkpoint_requests(run_id, status);
 """
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 # List of (target_version, sql) tuples. Each migration upgrades from target_version-1.
 MIGRATIONS: list[tuple[int, str]] = [
@@ -55,6 +55,13 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         INSERT OR REPLACE INTO schema_version (rowid, version, applied_at)
         VALUES (1, 1, datetime('now'));
+        """,
+    ),
+    (
+        2,
+        """
+        ALTER TABLE runs ADD COLUMN total_cost_usd REAL DEFAULT 0;
+        UPDATE schema_version SET version = 2, applied_at = datetime('now') WHERE rowid = 1;
         """,
     ),
 ]

@@ -9,10 +9,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from levelup.agents.backend import AnthropicSDKBackend, Backend, ClaudeCodeBackend
+from levelup.agents.backend import AgentResult, AnthropicSDKBackend, Backend, ClaudeCodeBackend
 from levelup.agents.base import BaseAgent
 from levelup.agents.claude_code_client import ClaudeCodeClient
-from levelup.agents.llm_client import LLMClient
+from levelup.agents.llm_client import LLMClient, ToolLoopResult
 from levelup.agents.requirements import RequirementsAgent
 from levelup.agents.planning import PlanningAgent
 from levelup.agents.test_writer import TestWriterAgent
@@ -217,6 +217,9 @@ class TestLLMClient:
         text_block.text = "Final answer"
         mock_response = MagicMock()
         mock_response.content = [text_block]
+        mock_response.usage = MagicMock()
+        mock_response.usage.input_tokens = 100
+        mock_response.usage.output_tokens = 50
         mock_client.messages.create.return_value = mock_response
 
         llm = LLMClient(api_key="k")
@@ -227,7 +230,7 @@ class TestLLMClient:
             tools=[],
             tool_registry=reg,
         )
-        assert result == "Final answer"
+        assert result.text == "Final answer"
         # Only one API call since there was no tool use
         assert mock_client.messages.create.call_count == 1
 
@@ -244,6 +247,9 @@ class TestLLMClient:
         tool_block.input = {"x": "1"}
         resp1 = MagicMock()
         resp1.content = [tool_block]
+        resp1.usage = MagicMock()
+        resp1.usage.input_tokens = 100
+        resp1.usage.output_tokens = 50
 
         # Second response: text
         text_block = MagicMock()
@@ -251,6 +257,9 @@ class TestLLMClient:
         text_block.text = "Done"
         resp2 = MagicMock()
         resp2.content = [text_block]
+        resp2.usage = MagicMock()
+        resp2.usage.input_tokens = 100
+        resp2.usage.output_tokens = 50
 
         mock_client.messages.create.side_effect = [resp1, resp2]
 
@@ -268,7 +277,7 @@ class TestLLMClient:
             tools=[{"name": "dummy"}],
             tool_registry=reg,
         )
-        assert result == "Done"
+        assert result.text == "Done"
         assert mock_client.messages.create.call_count == 2
         dummy_tool.execute.assert_called_once_with(x="1")
 
@@ -284,12 +293,18 @@ class TestLLMClient:
         tool_block.input = {"key": "val"}
         resp1 = MagicMock()
         resp1.content = [tool_block]
+        resp1.usage = MagicMock()
+        resp1.usage.input_tokens = 100
+        resp1.usage.output_tokens = 50
 
         text_block = MagicMock()
         text_block.type = "text"
         text_block.text = "end"
         resp2 = MagicMock()
         resp2.content = [text_block]
+        resp2.usage = MagicMock()
+        resp2.usage.input_tokens = 100
+        resp2.usage.output_tokens = 50
 
         mock_client.messages.create.side_effect = [resp1, resp2]
 
@@ -322,12 +337,18 @@ class TestLLMClient:
         tool_block.input = {}
         resp1 = MagicMock()
         resp1.content = [tool_block]
+        resp1.usage = MagicMock()
+        resp1.usage.input_tokens = 100
+        resp1.usage.output_tokens = 50
 
         text_block = MagicMock()
         text_block.type = "text"
         text_block.text = "fallback"
         resp2 = MagicMock()
         resp2.content = [text_block]
+        resp2.usage = MagicMock()
+        resp2.usage.input_tokens = 100
+        resp2.usage.output_tokens = 50
 
         mock_client.messages.create.side_effect = [resp1, resp2]
 
@@ -339,7 +360,7 @@ class TestLLMClient:
             tools=[],
             tool_registry=reg,
         )
-        assert result == "fallback"
+        assert result.text == "fallback"
         # The second call's messages should include the error tool_result
         second_call_msgs = mock_client.messages.create.call_args_list[1].kwargs["messages"]
         tool_result_content = second_call_msgs[-1]["content"]
@@ -386,7 +407,8 @@ class TestClaudeCodeBackend:
             working_directory="/tmp",
         )
 
-        assert result == "Hello from Claude"
+        assert isinstance(result, AgentResult)
+        assert result.text == "Hello from Claude"
         mock_client.run.assert_called_once_with(
             prompt="hello",
             system_prompt="sys",
@@ -397,7 +419,7 @@ class TestClaudeCodeBackend:
 
 class TestAnthropicSDKBackend:
     def test_run_agent_maps_tools_and_calls_llm(self, mock_llm_client, tool_registry):
-        mock_llm_client.run_tool_loop.return_value = "agent response"
+        mock_llm_client.run_tool_loop.return_value = ToolLoopResult(text="agent response")
         backend = AnthropicSDKBackend(mock_llm_client, tool_registry)
 
         result = backend.run_agent(
@@ -407,7 +429,8 @@ class TestAnthropicSDKBackend:
             working_directory="/tmp",
         )
 
-        assert result == "agent response"
+        assert isinstance(result, AgentResult)
+        assert result.text == "agent response"
         mock_llm_client.run_tool_loop.assert_called_once()
 
     def test_tool_name_mapping(self, mock_llm_client, tool_registry):
@@ -455,10 +478,10 @@ class TestRequirementsAgent:
             "out_of_scope": ["Password reset"],
             "clarifications": [],
         })
-        mock_backend.run_agent.return_value = response_json
+        mock_backend.run_agent.return_value = AgentResult(text=response_json)
 
         agent = RequirementsAgent(backend=mock_backend, project_path=project_path)
-        ctx = agent.run(basic_ctx)
+        ctx, result = agent.run(basic_ctx)
 
         assert ctx.requirements is not None
         assert ctx.requirements.summary == "Implement login endpoint"
@@ -468,10 +491,10 @@ class TestRequirementsAgent:
         assert ctx.requirements.out_of_scope == ["Password reset"]
 
     def test_run_handles_malformed_json(self, mock_backend, project_path, basic_ctx):
-        mock_backend.run_agent.return_value = "This is not JSON at all"
+        mock_backend.run_agent.return_value = AgentResult(text="This is not JSON at all")
 
         agent = RequirementsAgent(backend=mock_backend, project_path=project_path)
-        ctx = agent.run(basic_ctx)
+        ctx, result = agent.run(basic_ctx)
 
         # Should fall back gracefully
         assert ctx.requirements is not None
@@ -514,10 +537,10 @@ class TestPlanningAgent:
             "affected_files": ["routes/login.py"],
             "risks": ["Token may expire"],
         })
-        mock_backend.run_agent.return_value = response_json
+        mock_backend.run_agent.return_value = AgentResult(text=response_json)
 
         agent = PlanningAgent(backend=mock_backend, project_path=project_path)
-        ctx = agent.run(rich_ctx)
+        ctx, result = agent.run(rich_ctx)
 
         assert ctx.plan is not None
         assert ctx.plan.approach == "Create login route with JWT"
@@ -526,10 +549,10 @@ class TestPlanningAgent:
         assert ctx.plan.risks == ["Token may expire"]
 
     def test_run_handles_malformed_json(self, mock_backend, project_path, basic_ctx):
-        mock_backend.run_agent.return_value = "Not valid JSON"
+        mock_backend.run_agent.return_value = AgentResult(text="Not valid JSON")
 
         agent = PlanningAgent(backend=mock_backend, project_path=project_path)
-        ctx = agent.run(basic_ctx)
+        ctx, result = agent.run(basic_ctx)
 
         assert ctx.plan is not None
         assert len(ctx.plan.steps) == 1  # fallback creates one step
@@ -573,12 +596,12 @@ class TestTestWriterAgent:
         # Set the project_path on basic_ctx to match
         basic_ctx.project_path = project_path
 
-        mock_backend.run_agent.return_value = json.dumps({
+        mock_backend.run_agent.return_value = AgentResult(text=json.dumps({
             "test_files": [{"path": "tests/test_new.py", "description": "New tests"}]
-        })
+        }))
 
         agent = TestWriterAgent(backend=mock_backend, project_path=project_path)
-        ctx = agent.run(basic_ctx)
+        ctx, result = agent.run(basic_ctx)
 
         assert len(ctx.test_files) == 1
         assert ctx.test_files[0].path == "tests/test_new.py"
@@ -587,12 +610,12 @@ class TestTestWriterAgent:
 
     def test_run_skips_missing_files(self, mock_backend, project_path, basic_ctx):
         basic_ctx.project_path = project_path
-        mock_backend.run_agent.return_value = json.dumps({
+        mock_backend.run_agent.return_value = AgentResult(text=json.dumps({
             "test_files": [{"path": "tests/nonexistent.py", "description": "Missing"}]
-        })
+        }))
 
         agent = TestWriterAgent(backend=mock_backend, project_path=project_path)
-        ctx = agent.run(basic_ctx)
+        ctx, result = agent.run(basic_ctx)
 
         # File that doesn't exist should NOT be added to test_files
         assert len(ctx.test_files) == 0
@@ -635,14 +658,14 @@ class TestCodeAgent:
         basic_ctx.project_path = project_path
         basic_ctx.test_command = None  # skip final test run
 
-        mock_backend.run_agent.return_value = json.dumps({
+        mock_backend.run_agent.return_value = AgentResult(text=json.dumps({
             "files_written": ["src/login.py"],
             "iterations": 1,
             "all_tests_passing": True,
-        })
+        }))
 
         agent = CodeAgent(backend=mock_backend, project_path=project_path)
-        ctx = agent.run(basic_ctx)
+        ctx, result = agent.run(basic_ctx)
 
         assert len(ctx.code_files) == 1
         assert ctx.code_files[0].path == "src/login.py"
@@ -652,14 +675,14 @@ class TestCodeAgent:
         basic_ctx.project_path = project_path
         basic_ctx.test_command = None
 
-        mock_backend.run_agent.return_value = json.dumps({
+        mock_backend.run_agent.return_value = AgentResult(text=json.dumps({
             "files_written": [],
             "iterations": 3,
             "all_tests_passing": True,
-        })
+        }))
 
         agent = CodeAgent(backend=mock_backend, project_path=project_path)
-        ctx = agent.run(basic_ctx)
+        ctx, result = agent.run(basic_ctx)
 
         assert ctx.code_iteration == 3
 
@@ -718,10 +741,10 @@ class TestReviewAgent:
             ],
             "overall_assessment": "Needs improvement",
         })
-        mock_backend.run_agent.return_value = response_json
+        mock_backend.run_agent.return_value = AgentResult(text=response_json)
 
         agent = ReviewAgent(backend=mock_backend, project_path=project_path)
-        ctx = agent.run(rich_ctx)
+        ctx, result = agent.run(rich_ctx)
 
         assert len(ctx.review_findings) == 2
         assert ctx.review_findings[0].severity == Severity.WARNING
@@ -735,18 +758,18 @@ class TestReviewAgent:
             "findings": [],
             "overall_assessment": "All good",
         })
-        mock_backend.run_agent.return_value = response_json
+        mock_backend.run_agent.return_value = AgentResult(text=response_json)
 
         agent = ReviewAgent(backend=mock_backend, project_path=project_path)
-        ctx = agent.run(rich_ctx)
+        ctx, result = agent.run(rich_ctx)
 
         assert ctx.review_findings == []
 
     def test_run_handles_malformed_json(self, mock_backend, project_path, rich_ctx):
-        mock_backend.run_agent.return_value = "not json"
+        mock_backend.run_agent.return_value = AgentResult(text="not json")
 
         agent = ReviewAgent(backend=mock_backend, project_path=project_path)
-        ctx = agent.run(rich_ctx)
+        ctx, result = agent.run(rich_ctx)
 
         # Should return empty findings on parse failure
         assert ctx.review_findings == []
@@ -763,10 +786,10 @@ class TestReviewAgent:
             ],
             "overall_assessment": "Ok",
         })
-        mock_backend.run_agent.return_value = response_json
+        mock_backend.run_agent.return_value = AgentResult(text=response_json)
 
         agent = ReviewAgent(backend=mock_backend, project_path=project_path)
-        ctx = agent.run(rich_ctx)
+        ctx, result = agent.run(rich_ctx)
 
         # Should fall back to INFO for invalid severity
         assert len(ctx.review_findings) == 1

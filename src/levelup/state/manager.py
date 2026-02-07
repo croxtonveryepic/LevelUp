@@ -90,7 +90,8 @@ class StateManager:
             conn.execute(
                 """UPDATE runs SET
                        status = ?, current_step = ?, language = ?, framework = ?,
-                       test_runner = ?, error_message = ?, context_json = ?, updated_at = ?
+                       test_runner = ?, error_message = ?, context_json = ?,
+                       total_cost_usd = ?, updated_at = ?
                    WHERE run_id = ?""",
                 (
                     ctx.status.value,
@@ -100,6 +101,7 @@ class StateManager:
                     ctx.test_runner,
                     ctx.error_message,
                     context_json,
+                    ctx.total_cost_usd,
                     _now_iso(),
                     ctx.run_id,
                 ),

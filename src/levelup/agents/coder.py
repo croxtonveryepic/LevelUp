@@ -82,7 +82,9 @@ class CodeAgent(BaseAgent):
     def get_allowed_tools(self) -> list[str]:
         return ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
 
-    def run(self, ctx: PipelineContext) -> PipelineContext:
+    def run(self, ctx: PipelineContext) -> tuple[PipelineContext, "AgentResult"]:
+        from levelup.agents.backend import AgentResult
+
         system = self.get_system_prompt(ctx)
         user_prompt = (
             "Implement the code to make all tests pass. "
@@ -91,7 +93,7 @@ class CodeAgent(BaseAgent):
             f"Maximum {self._max_iterations} iterations."
         )
 
-        response = self.backend.run_agent(
+        agent_result = self.backend.run_agent(
             system_prompt=system,
             user_prompt=user_prompt,
             allowed_tools=self.get_allowed_tools(),
@@ -99,7 +101,7 @@ class CodeAgent(BaseAgent):
         )
 
         # Parse JSON summary to find written files and iteration count
-        files_written, iterations = _parse_coder_summary(response)
+        files_written, iterations = _parse_coder_summary(agent_result.text)
 
         # Read back written files from disk
         for rel_path in files_written:
@@ -117,7 +119,7 @@ class CodeAgent(BaseAgent):
         # Run final test to get structured result
         if ctx.test_command:
             try:
-                result = subprocess.run(
+                proc = subprocess.run(
                     ctx.test_command,
                     shell=True,
                     cwd=str(self.project_path),
@@ -125,10 +127,10 @@ class CodeAgent(BaseAgent):
                     text=True,
                     timeout=120,
                 )
-                output = result.stdout
-                if result.stderr:
-                    output += "\n" + result.stderr
-                passed = result.returncode == 0
+                output = proc.stdout
+                if proc.stderr:
+                    output += "\n" + proc.stderr
+                passed = proc.returncode == 0
                 ctx.test_results.append(
                     TestResult(
                         passed=passed,
@@ -139,7 +141,7 @@ class CodeAgent(BaseAgent):
             except Exception as e:
                 logger.warning("Failed to run final tests: %s", e)
 
-        return ctx
+        return ctx, agent_result
 
 
 def _parse_coder_summary(response: str) -> tuple[list[str], int]:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 import anthropic
@@ -11,6 +12,16 @@ import anthropic
 from levelup.tools.base import ToolRegistry
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ToolLoopResult:
+    """Result from a tool-use loop, including token usage."""
+
+    text: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    num_turns: int = 0
 
 DEFAULT_MAX_TOKENS = 8192
 MAX_TOOL_ITERATIONS = 50
@@ -69,7 +80,7 @@ class LLMClient:
         tools: list[dict[str, Any]],
         tool_registry: ToolRegistry,
         on_tool_call: Any | None = None,
-    ) -> str:
+    ) -> ToolLoopResult:
         """Run a tool-use conversation loop until the model produces a final text response.
 
         Args:
@@ -80,9 +91,12 @@ class LLMClient:
             on_tool_call: Optional callback(tool_name, tool_input, result) for progress display.
 
         Returns:
-            Final text response from the model.
+            ToolLoopResult with final text and accumulated token usage.
         """
         conversation = list(messages)
+        total_input_tokens = 0
+        total_output_tokens = 0
+        num_turns = 0
 
         for _iteration in range(MAX_TOOL_ITERATIONS):
             response = self._client.messages.create(
@@ -93,6 +107,13 @@ class LLMClient:
                 messages=conversation,
                 tools=tools,
             )
+            num_turns += 1
+
+            # Accumulate token usage
+            usage = getattr(response, "usage", None)
+            if usage:
+                total_input_tokens += getattr(usage, "input_tokens", 0)
+                total_output_tokens += getattr(usage, "output_tokens", 0)
 
             # Check if the response contains tool use
             has_tool_use = any(block.type == "tool_use" for block in response.content)
@@ -100,7 +121,12 @@ class LLMClient:
             if not has_tool_use:
                 # Final text response
                 text_parts = [block.text for block in response.content if block.type == "text"]
-                return "\n".join(text_parts)
+                return ToolLoopResult(
+                    text="\n".join(text_parts),
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens,
+                    num_turns=num_turns,
+                )
 
             # Process tool calls
             assistant_content: list[dict[str, Any]] = []
@@ -139,4 +165,9 @@ class LLMClient:
             conversation.append({"role": "assistant", "content": assistant_content})
             conversation.append({"role": "user", "content": tool_results})
 
-        return "Error: tool loop exceeded maximum iterations"
+        return ToolLoopResult(
+            text="Error: tool loop exceeded maximum iterations",
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
+            num_turns=num_turns,
+        )

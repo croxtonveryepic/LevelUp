@@ -93,7 +93,9 @@ levelup run "Add feature" --backend anthropic_sdk
 7. **Code** — agent implements code, runs tests, iterates until they pass (TDD green phase)
 8. **Review** — agent checks for quality, security, and best practices
 9. **Checkpoint** — you review the final changes
-10. **Done** — summary shown, optional git commit
+10. **Done** — summary shown with cost/token breakdown
+
+When `create_git_branch: true` (default), LevelUp auto-commits after each step, giving you atomic rollback points. See `levelup rollback` below.
 
 At each checkpoint you can:
 - **(a)pprove** — continue to the next step
@@ -150,6 +152,50 @@ Prints a Rich table of all tracked runs. Useful when you don't have a GUI availa
 levelup status
 levelup status --db-path /tmp/my-state.db
 ```
+
+### `levelup resume` — Resume a failed run
+
+Pick up a failed or aborted pipeline run from where it left off (or from an earlier step).
+
+```bash
+# Resume from the step that failed
+levelup resume <run-id>
+
+# Resume from a specific earlier step
+levelup resume <run-id> --from-step planning
+
+# With overrides
+levelup resume <run-id> --model claude-opus-4-6 --backend anthropic_sdk
+```
+
+**Options:**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--from-step STEP` | | Step to resume from (default: where it failed) |
+| `--path PATH` | `-p` | Project directory (default: current dir) |
+| `--model MODEL` | `-m` | Claude model override |
+| `--backend NAME` | | Backend override |
+| `--db-path PATH` | | Override state DB path |
+
+### `levelup rollback` — Roll back a run
+
+Undo changes from a pipeline run by resetting git to a previous state. Requires that the run was made with `create_git_branch: true`.
+
+```bash
+# Roll back to the state before the run started
+levelup rollback <run-id>
+
+# Roll back to a specific step's commit
+levelup rollback <run-id> --to test_writing
+```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--to STEP` | Roll back to this step's commit (default: pre-run state) |
+| `--db-path PATH` | Override state DB path |
 
 ### `levelup config` — Show configuration
 

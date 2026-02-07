@@ -213,6 +213,7 @@ def status(
     table.add_column("Project", max_width=30)
     table.add_column("Status")
     table.add_column("Step")
+    table.add_column("Cost", justify="right")
     table.add_column("Started")
 
     status_styles = {
@@ -227,12 +228,14 @@ def status(
     for r in runs:
         style = status_styles.get(r.status, "")
         status_display = f"[{style}]{r.status}[/{style}]" if style else r.status
+        cost_display = f"${r.total_cost_usd:.4f}" if r.total_cost_usd else "-"
         table.add_row(
             r.run_id[:12],
             r.task_title,
             r.project_path,
             status_display,
             r.current_step or "",
+            cost_display,
             r.started_at[:19],
         )
 
@@ -246,6 +249,155 @@ def status(
             f"\n[bold]{active} active[/bold], "
             f"[yellow]{awaiting} awaiting input[/yellow]"
         )
+
+
+@app.command()
+def resume(
+    run_id: str = typer.Argument(..., help="Run ID to resume"),
+    from_step: Optional[str] = typer.Option(None, "--from-step", help="Step to resume from (default: where it failed)"),
+    path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Claude model override"),
+    backend: Optional[str] = typer.Option(None, "--backend", help="Backend override"),
+    db_path: Optional[Path] = typer.Option(
+        None, "--db-path", help="Override state DB path"
+    ),
+) -> None:
+    """Resume a failed or aborted pipeline run."""
+    from levelup.config.loader import load_settings
+    from levelup.core.context import PipelineContext, PipelineStatus
+    from levelup.core.orchestrator import Orchestrator
+    from levelup.state.manager import StateManager
+
+    print_banner()
+
+    # Open state DB
+    mgr_kwargs = {}
+    if db_path:
+        mgr_kwargs["db_path"] = db_path
+    state_manager = StateManager(**mgr_kwargs)
+
+    # Look up run
+    record = state_manager.get_run(run_id)
+    if record is None:
+        print_error(f"Run '{run_id}' not found.")
+        raise typer.Exit(1)
+
+    if record.status not in ("failed", "aborted"):
+        print_error(f"Run '{run_id}' has status '{record.status}' — only failed or aborted runs can be resumed.")
+        raise typer.Exit(1)
+
+    if not record.context_json:
+        print_error(f"Run '{run_id}' has no saved context — cannot resume.")
+        raise typer.Exit(1)
+
+    # Deserialize context
+    ctx = PipelineContext.model_validate_json(record.context_json)
+
+    # Load settings with CLI overrides
+    overrides: dict = {}
+    if model:
+        overrides.setdefault("llm", {})["model"] = model
+    if backend:
+        overrides.setdefault("llm", {})["backend"] = backend
+
+    settings = load_settings(project_path=path, overrides=overrides)
+    settings.project.path = path.resolve()
+
+    # Auth (same as run command)
+    if settings.llm.backend == "anthropic_sdk":
+        from levelup.config.auth import get_claude_code_api_key
+
+        api_key = settings.llm.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            claude_code_token = get_claude_code_api_key()
+            if claude_code_token:
+                settings.llm.auth_token = claude_code_token
+            else:
+                print_error("No API key found.")
+                raise typer.Exit(1)
+        else:
+            settings.llm.api_key = api_key
+
+    # Resume
+    orchestrator = Orchestrator(settings=settings, state_manager=state_manager)
+    ctx = orchestrator.resume(ctx, from_step=from_step)
+
+    if ctx.status.value == "failed":
+        print_error(f"Pipeline failed: {ctx.error_message}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def rollback(
+    run_id: str = typer.Argument(..., help="Run ID to roll back"),
+    to: Optional[str] = typer.Option(None, "--to", help="Roll back to this step's commit (default: pre-run state)"),
+    db_path: Optional[Path] = typer.Option(
+        None, "--db-path", help="Override state DB path"
+    ),
+) -> None:
+    """Roll back a pipeline run to a previous state via git reset."""
+    from levelup.core.context import PipelineContext
+    from levelup.state.manager import StateManager
+
+    print_banner()
+
+    # Open state DB
+    mgr_kwargs = {}
+    if db_path:
+        mgr_kwargs["db_path"] = db_path
+    state_manager = StateManager(**mgr_kwargs)
+
+    record = state_manager.get_run(run_id)
+    if record is None:
+        print_error(f"Run '{run_id}' not found.")
+        raise typer.Exit(1)
+
+    if not record.context_json:
+        print_error(f"Run '{run_id}' has no saved context — cannot rollback.")
+        raise typer.Exit(1)
+
+    ctx = PipelineContext.model_validate_json(record.context_json)
+
+    if not ctx.pre_run_sha:
+        print_error("No pre-run SHA recorded — this run did not create a git branch. Cannot rollback.")
+        raise typer.Exit(1)
+
+    # Determine target SHA
+    if to:
+        sha = ctx.step_commits.get(to)
+        if not sha:
+            available = ", ".join(ctx.step_commits.keys()) if ctx.step_commits else "none"
+            print_error(f"No commit found for step '{to}'. Available: {available}")
+            raise typer.Exit(1)
+        target_sha = sha
+    else:
+        target_sha = ctx.pre_run_sha
+
+    # Perform git reset
+    try:
+        import git
+
+        project_path = ctx.project_path
+        repo = git.Repo(str(project_path))
+
+        # Warn if not on expected branch
+        branch_name = f"levelup/{ctx.run_id}"
+        current = repo.active_branch.name if not repo.head.is_detached else None
+        if current and current != branch_name:
+            console.print(f"[yellow]Warning: currently on branch '{current}', expected '{branch_name}'[/yellow]")
+
+        repo.git.reset("--hard", target_sha)
+        console.print(f"[green]Reset to {target_sha[:12]}[/green]")
+
+    except Exception as e:
+        print_error(f"Git reset failed: {e}")
+        raise typer.Exit(1)
+
+    # Update run status to aborted in DB
+    from levelup.core.context import PipelineStatus
+    ctx.status = PipelineStatus.ABORTED
+    state_manager.update_run(ctx)
+    console.print(f"Run '{run_id}' marked as aborted.")
 
 
 @app.command()

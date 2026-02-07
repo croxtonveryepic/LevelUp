@@ -63,7 +63,9 @@ class PlanningAgent(BaseAgent):
     def get_allowed_tools(self) -> list[str]:
         return ["Read", "Write", "Glob", "Grep"]
 
-    def run(self, ctx: PipelineContext) -> PipelineContext:
+    def run(self, ctx: PipelineContext) -> tuple[PipelineContext, "AgentResult"]:
+        from levelup.agents.backend import AgentResult
+
         system = self.get_system_prompt(ctx)
         user_prompt = (
             "Please explore the codebase thoroughly and design an implementation plan "
@@ -71,15 +73,15 @@ class PlanningAgent(BaseAgent):
             "Start by searching for the project structure and relevant files."
         )
 
-        response = self.backend.run_agent(
+        result = self.backend.run_agent(
             system_prompt=system,
             user_prompt=user_prompt,
             allowed_tools=self.get_allowed_tools(),
             working_directory=str(self.project_path),
         )
 
-        ctx.plan = _parse_plan(response)
-        return ctx
+        ctx.plan = _parse_plan(result.text)
+        return ctx, result
 
 
 def _parse_plan(response: str) -> Plan:

@@ -52,7 +52,9 @@ class RequirementsAgent(BaseAgent):
     def get_allowed_tools(self) -> list[str]:
         return ["Read", "Write", "Glob", "Grep"]
 
-    def run(self, ctx: PipelineContext) -> PipelineContext:
+    def run(self, ctx: PipelineContext) -> tuple[PipelineContext, "AgentResult"]:
+        from levelup.agents.backend import AgentResult
+
         system = self.get_system_prompt(ctx)
         user_prompt = (
             f"Please analyze this task and produce structured requirements.\n\n"
@@ -62,7 +64,7 @@ class RequirementsAgent(BaseAgent):
             f"then produce your requirements as JSON."
         )
 
-        response = self.backend.run_agent(
+        result = self.backend.run_agent(
             system_prompt=system,
             user_prompt=user_prompt,
             allowed_tools=self.get_allowed_tools(),
@@ -70,8 +72,8 @@ class RequirementsAgent(BaseAgent):
         )
 
         # Parse the JSON response
-        ctx.requirements = _parse_requirements(response)
-        return ctx
+        ctx.requirements = _parse_requirements(result.text)
+        return ctx, result
 
 
 def _parse_requirements(response: str) -> Requirements:

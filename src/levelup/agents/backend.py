@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from levelup.agents.claude_code_client import ClaudeCodeClient
@@ -10,6 +11,18 @@ from levelup.agents.llm_client import LLMClient
 from levelup.tools.base import ToolRegistry
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AgentResult:
+    """Result from running an agent, including usage metrics."""
+
+    text: str = ""
+    cost_usd: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    duration_ms: float = 0.0
+    num_turns: int = 0
 
 # Mapping from Claude Code tool names to LevelUp tool names
 _CLAUDE_TO_LEVELUP: dict[str, list[str]] = {
@@ -32,8 +45,8 @@ class Backend(Protocol):
         user_prompt: str,
         allowed_tools: list[str],
         working_directory: str,
-    ) -> str:
-        """Run an agent and return its text response.
+    ) -> AgentResult:
+        """Run an agent and return its result with usage metrics.
 
         Args:
             system_prompt: The system prompt for the agent.
@@ -42,7 +55,7 @@ class Backend(Protocol):
             working_directory: Working directory for sandboxing.
 
         Returns:
-            The agent's final text response.
+            AgentResult with text response and usage metrics.
         """
         ...
 
@@ -59,14 +72,19 @@ class ClaudeCodeBackend:
         user_prompt: str,
         allowed_tools: list[str],
         working_directory: str,
-    ) -> str:
+    ) -> AgentResult:
         result = self._client.run(
             prompt=user_prompt,
             system_prompt=system_prompt,
             allowed_tools=allowed_tools,
             working_directory=working_directory,
         )
-        return result.text
+        return AgentResult(
+            text=result.text,
+            cost_usd=result.cost_usd,
+            duration_ms=result.duration_ms,
+            num_turns=result.num_turns,
+        )
 
 
 class AnthropicSDKBackend:
@@ -90,7 +108,7 @@ class AnthropicSDKBackend:
         user_prompt: str,
         allowed_tools: list[str],
         working_directory: str,
-    ) -> str:
+    ) -> AgentResult:
         # Map Claude Code tool names to LevelUp tool names
         levelup_tools = self._map_tool_names(allowed_tools)
 
@@ -102,11 +120,17 @@ class AnthropicSDKBackend:
             {"role": "user", "content": user_prompt},
         ]
 
-        return self._llm_client.run_tool_loop(
+        loop_result = self._llm_client.run_tool_loop(
             system=system_prompt,
             messages=messages,
             tools=tools,
             tool_registry=self._tool_registry,
+        )
+        return AgentResult(
+            text=loop_result.text,
+            input_tokens=loop_result.input_tokens,
+            output_tokens=loop_result.output_tokens,
+            num_turns=loop_result.num_turns,
         )
 
     def _map_tool_names(self, claude_code_names: list[str]) -> list[str]:

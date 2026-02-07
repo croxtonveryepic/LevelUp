@@ -87,6 +87,20 @@ class RunJournal:
             else:
                 lines.append(f"Step `{step_name}` completed.")
 
+            # Append usage info if available
+            usage = ctx.step_usage.get(step_name)
+            if usage:
+                parts = []
+                if usage.cost_usd:
+                    parts.append(f"${usage.cost_usd:.4f}")
+                tokens = usage.input_tokens + usage.output_tokens
+                if tokens:
+                    parts.append(f"{tokens:,} tokens")
+                if usage.duration_ms:
+                    parts.append(f"{usage.duration_ms / 1000:.1f}s")
+                if parts:
+                    lines.append(f"- **Usage:** {' | '.join(parts)}")
+
             lines.append("")
             self._append(lines)
         except OSError:
@@ -113,6 +127,8 @@ class RunJournal:
             lines = ["## Outcome", "", f"- **Status:** {ctx.status.value}"]
             if ctx.error_message:
                 lines.append(f"- **Error:** {ctx.error_message}")
+            if ctx.total_cost_usd:
+                lines.append(f"- **Total cost:** ${ctx.total_cost_usd:.4f}")
             lines.append("")
             self._append(lines)
         except OSError:
@@ -123,6 +139,7 @@ class RunJournal:
     # ------------------------------------------------------------------
 
     def _append(self, lines: list[str]) -> None:
+        self._dir.mkdir(parents=True, exist_ok=True)
         with self._path.open("a", encoding="utf-8") as f:
             f.write("\n".join(lines))
 

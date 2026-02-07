@@ -74,7 +74,9 @@ class TestWriterAgent(BaseAgent):
     def get_allowed_tools(self) -> list[str]:
         return ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
 
-    def run(self, ctx: PipelineContext) -> PipelineContext:
+    def run(self, ctx: PipelineContext) -> tuple[PipelineContext, "AgentResult"]:
+        from levelup.agents.backend import AgentResult
+
         system = self.get_system_prompt(ctx)
         user_prompt = (
             "Write comprehensive tests for the requirements. "
@@ -83,7 +85,7 @@ class TestWriterAgent(BaseAgent):
             "After writing, produce a JSON summary of what you wrote."
         )
 
-        response = self.backend.run_agent(
+        result = self.backend.run_agent(
             system_prompt=system,
             user_prompt=user_prompt,
             allowed_tools=self.get_allowed_tools(),
@@ -91,7 +93,7 @@ class TestWriterAgent(BaseAgent):
         )
 
         # Parse JSON summary to find written test files
-        test_file_paths = _parse_test_file_paths(response)
+        test_file_paths = _parse_test_file_paths(result.text)
 
         # Read back the files from disk
         for rel_path in test_file_paths:
@@ -104,7 +106,7 @@ class TestWriterAgent(BaseAgent):
             except OSError as e:
                 logger.warning("Could not read test file %s: %s", rel_path, e)
 
-        return ctx
+        return ctx, result
 
 
 def _parse_test_file_paths(response: str) -> list[str]:

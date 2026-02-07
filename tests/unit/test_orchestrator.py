@@ -109,9 +109,8 @@ class TestOrchestrator:
     @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
     @patch("levelup.core.orchestrator.Orchestrator._run_detection")
     @patch("levelup.core.orchestrator.run_checkpoint")
-    @patch("levelup.core.orchestrator.confirm_action", return_value=False)
     def test_orchestrator_with_checkpoints_approve(
-        self, mock_confirm, mock_checkpoint, mock_detect, mock_agent, tmp_path
+        self, mock_checkpoint, mock_detect, mock_agent, tmp_path
     ):
         settings = self._make_settings(tmp_path)
         settings.pipeline.require_checkpoints = True

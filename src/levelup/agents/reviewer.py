@@ -81,7 +81,9 @@ class ReviewAgent(BaseAgent):
     def get_allowed_tools(self) -> list[str]:
         return ["Read", "Glob", "Grep"]
 
-    def run(self, ctx: PipelineContext) -> PipelineContext:
+    def run(self, ctx: PipelineContext) -> tuple[PipelineContext, "AgentResult"]:
+        from levelup.agents.backend import AgentResult
+
         system = self.get_system_prompt(ctx)
         user_prompt = (
             "Review all the code changes described in the system prompt. "
@@ -89,15 +91,15 @@ class ReviewAgent(BaseAgent):
             "Produce your findings as a JSON object."
         )
 
-        response = self.backend.run_agent(
+        result = self.backend.run_agent(
             system_prompt=system,
             user_prompt=user_prompt,
             allowed_tools=self.get_allowed_tools(),
             working_directory=str(self.project_path),
         )
 
-        ctx.review_findings = _parse_findings(response)
-        return ctx
+        ctx.review_findings = _parse_findings(result.text)
+        return ctx, result
 
 
 def _parse_findings(response: str) -> list[ReviewFinding]:

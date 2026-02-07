@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from levelup.agents.backend import Backend
+from levelup.agents.backend import AgentResult, Backend
 from levelup.core.context import PipelineContext
 
 
@@ -28,5 +28,5 @@ class BaseAgent(ABC):
         """Return the list of tool names this agent is allowed to use."""
 
     @abstractmethod
-    def run(self, ctx: PipelineContext) -> PipelineContext:
-        """Execute this agent's work and return updated context."""
+    def run(self, ctx: PipelineContext) -> tuple[PipelineContext, AgentResult]:
+        """Execute this agent's work and return updated context plus usage metrics."""

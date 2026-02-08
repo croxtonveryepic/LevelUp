@@ -451,6 +451,117 @@ def instruct(
 
 
 @app.command()
+def recon(
+    path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path to explore"),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Claude model to use"),
+    backend: Optional[str] = typer.Option(
+        None, "--backend", help="Backend: 'claude_code' (default) or 'anthropic_sdk'"
+    ),
+) -> None:
+    """Run one-time project reconnaissance to enrich project_context.md."""
+    from rich.table import Table
+
+    from levelup.agents.backend import ClaudeCodeBackend
+    from levelup.agents.claude_code_client import ClaudeCodeClient
+    from levelup.agents.recon import ReconAgent
+    from levelup.config.loader import load_settings
+    from levelup.detection.detector import ProjectDetector
+
+    print_banner()
+
+    # Build settings with CLI overrides
+    overrides: dict = {}
+    if model:
+        overrides.setdefault("llm", {})["model"] = model
+    if backend:
+        overrides.setdefault("llm", {})["backend"] = backend
+
+    settings = load_settings(project_path=path, overrides=overrides)
+    settings.project.path = path.resolve()
+
+    # Run detection
+    console.print("[bold]Detecting project...[/bold]")
+    detector = ProjectDetector()
+    info = detector.detect(path)
+    print_project_info(info)
+
+    # Create backend
+    if settings.llm.backend == "claude_code":
+        client = ClaudeCodeClient(
+            model=settings.llm.model,
+            claude_executable=settings.llm.claude_executable,
+        )
+        be = ClaudeCodeBackend(client)
+    else:
+        from levelup.agents.backend import AnthropicSDKBackend
+        from levelup.agents.llm_client import LLMClient
+        from levelup.tools.base import ToolRegistry
+        from levelup.tools.file_read import FileReadTool
+        from levelup.tools.file_search import FileSearchTool
+        from levelup.tools.file_write import FileWriteTool
+
+        api_key = settings.llm.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        auth_token = None
+        if not api_key:
+            from levelup.config.auth import get_claude_code_api_key
+
+            claude_code_token = get_claude_code_api_key()
+            if claude_code_token:
+                auth_token = claude_code_token
+            else:
+                print_error(
+                    "No API key found. Set ANTHROPIC_API_KEY env var or add to config file."
+                )
+                raise typer.Exit(1)
+
+        llm_client = LLMClient(
+            api_key=api_key or settings.llm.api_key,
+            auth_token=auth_token or settings.llm.auth_token,
+            model=settings.llm.model,
+            max_tokens=settings.llm.max_tokens,
+            temperature=settings.llm.temperature,
+        )
+        registry = ToolRegistry()
+        registry.register(FileReadTool(path.resolve()))
+        registry.register(FileWriteTool(path.resolve()))
+        registry.register(FileSearchTool(path.resolve()))
+        be = AnthropicSDKBackend(llm_client, registry)
+
+    # Run recon agent
+    agent = ReconAgent(
+        be,
+        path.resolve(),
+        language=info.language,
+        framework=info.framework,
+        test_runner=info.test_runner,
+        test_command=info.test_command,
+    )
+
+    with console.status("[cyan]Running recon agent..."):
+        result = agent.run()
+
+    # Display usage
+    table = Table(title="Recon Usage")
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+    table.add_row("Cost", f"${result.cost_usd:.4f}")
+    table.add_row("Input tokens", f"{result.input_tokens:,}")
+    table.add_row("Output tokens", f"{result.output_tokens:,}")
+    table.add_row("Duration", f"{result.duration_ms / 1000:.1f}s")
+    table.add_row("Turns", str(result.num_turns))
+    console.print(table)
+
+    # Confirm file was written
+    from levelup.core.project_context import get_project_context_path
+
+    ctx_path = get_project_context_path(path.resolve())
+    if ctx_path.exists():
+        console.print(f"\n[bold green]Recon complete.[/bold green] Written to: {ctx_path}")
+    else:
+        console.print("\n[yellow]Warning: project_context.md was not written by the agent.[/yellow]")
+
+
+@app.command()
 def version() -> None:
     """Show the installed LevelUp version."""
     console.print(get_version_string())

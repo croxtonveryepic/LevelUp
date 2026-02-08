@@ -36,7 +36,7 @@ from levelup.core.context import (
 )
 from levelup.core.instructions import add_instruction, build_instruct_review_prompt
 from levelup.core.journal import RunJournal
-from levelup.core.project_context import write_project_context
+from levelup.core.project_context import write_project_context_preserving
 from levelup.core.pipeline import DEFAULT_PIPELINE, StepType
 from levelup.detection.detector import ProjectDetector
 from levelup.tools.base import ToolRegistry
@@ -271,7 +271,7 @@ class Orchestrator:
 
             if step.step_type == StepType.DETECTION:
                 self._run_detection(ctx)
-                write_project_context(
+                write_project_context_preserving(
                     project_path,
                     language=ctx.language,
                     framework=ctx.framework,

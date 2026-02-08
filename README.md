@@ -114,6 +114,25 @@ At each checkpoint you can:
 - **(r)evise** — provide feedback and re-run the step
 - **(x) reject** — abort and roll back
 
+### `levelup recon` — Project reconnaissance
+
+Run a one-time deep exploration of a project codebase. The recon agent examines directory structure, architecture, coding conventions, dependencies, and test patterns, then writes its findings to `levelup/project_context.md`. Subsequent `levelup run` calls preserve this enriched context.
+
+```bash
+levelup recon
+levelup recon --path /path/to/project
+levelup recon --model claude-opus-4-6
+levelup recon --backend anthropic_sdk
+```
+
+**Options:**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--path PATH` | `-p` | Project directory (default: current dir) |
+| `--model MODEL` | `-m` | Claude model override |
+| `--backend NAME` | | Backend: `claude_code` (default) or `anthropic_sdk` |
+
 ### `levelup detect` — Detect project info
 
 Analyzes a project directory and reports what it found. Useful for verifying detection before running the full pipeline.
@@ -311,7 +330,7 @@ python -m levelup detect --path .
 src/levelup/
   cli/          Commands (run, detect, config, gui, status), Rich display, prompts
   core/         Orchestrator, pipeline definitions, context models, checkpoints
-  agents/       Backend protocol, LLM client, claude -p client, base agent, and 5 specialized agents
+  agents/       Backend protocol, LLM client, claude -p client, base agent, recon agent, and 5 specialized agents
   tools/        Sandboxed file read/write/search, shell execution, test runner
   detection/    Language, framework, and test runner auto-detection
   config/       Pydantic Settings models, config file loader

@@ -22,6 +22,7 @@ LevelUp is an AI-Powered TDD Development Tool (Python CLI). It orchestrates Clau
 
 - Source code lives in `src/levelup/`
 - Pipeline steps: detection → requirements → planning → test_writing → coding → security → review
+- **Recon command**: `levelup recon` runs a standalone agent that deeply explores a project and writes enriched `levelup/project_context.md`; the detection step preserves this recon data on subsequent `levelup run` calls
 - **Instruct feature**: at any checkpoint, user can type `(i)nstruct` to add a project rule to the target project's CLAUDE.md; the orchestrator reviews branch changes for violations, auto-fixes them, then re-prompts the checkpoint
 - Agents use Anthropic tool-use loop (`agents/llm_client.py`)
 - All file tools are sandboxed to the project directory

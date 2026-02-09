@@ -524,12 +524,23 @@ def rollback(
     # Perform git reset
     try:
         import git
+        from levelup.core.orchestrator import Orchestrator
+        from levelup.config.settings import LevelUpSettings, LLMSettings, PipelineSettings, ProjectSettings
 
         project_path = ctx.project_path
         repo = git.Repo(str(project_path))
 
-        # Warn if not on expected branch
-        branch_name = f"levelup/{ctx.run_id}"
+        # Build expected branch name using stored convention
+        convention = ctx.branch_naming or "levelup/{run_id}"
+        # Create a temporary orchestrator just to use the helper method
+        temp_settings = LevelUpSettings(
+            llm=LLMSettings(api_key="temp", model="temp", backend="claude_code"),
+            project=ProjectSettings(path=project_path),
+            pipeline=PipelineSettings(create_git_branch=False),
+        )
+        temp_orch = Orchestrator(settings=temp_settings)
+        branch_name = temp_orch._build_branch_name(convention, ctx)
+
         current = repo.active_branch.name if not repo.head.is_detached else None
         if current and current != branch_name:
             console.print(f"[yellow]Warning: currently on branch '{current}', expected '{branch_name}'[/yellow]")

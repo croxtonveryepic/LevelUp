@@ -181,9 +181,14 @@ class Orchestrator:
             self._backend = self._create_backend(project_path, ctx)
             self._register_agents(self._backend, project_path)
 
-            # Optionally create git branch
+            # Prompt for branch naming convention if needed (before creating branch)
             if self._settings.pipeline.create_git_branch:
-                ctx.pre_run_sha = self._create_git_branch(project_path, ctx.run_id)
+                convention = self._prompt_branch_naming_if_needed(ctx, project_path)
+                ctx.branch_naming = convention
+
+            # Optionally create git branch (pre_run_sha is set inside the method)
+            if self._settings.pipeline.create_git_branch:
+                self._create_git_branch(project_path, ctx)
 
             ctx = self._execute_steps(ctx, DEFAULT_PIPELINE, journal, project_path)
 
@@ -249,7 +254,9 @@ class Orchestrator:
                 import git
 
                 repo = git.Repo(project_path)
-                branch_name = f"levelup/{ctx.run_id}"
+                # Build branch name using stored convention
+                convention = ctx.branch_naming or "levelup/{run_id}"
+                branch_name = self._build_branch_name(convention, ctx)
                 if branch_name in [h.name for h in repo.heads]:
                     repo.heads[branch_name].checkout()
             except Exception as e:
@@ -299,14 +306,7 @@ class Orchestrator:
                 print_step_header(step.name, step.description)
 
             if step.step_type == StepType.DETECTION:
-                self._run_detection(ctx)
-                write_project_context_preserving(
-                    project_path,
-                    language=ctx.language,
-                    framework=ctx.framework,
-                    test_runner=ctx.test_runner,
-                    test_command=ctx.test_command,
-                )
+                self._run_detection(project_path, ctx)
                 # Re-create backend/agents if SDK backend (needs updated test command)
                 if self._settings.llm.backend == "anthropic_sdk":
                     self._backend = self._create_backend(project_path, ctx)
@@ -435,16 +435,44 @@ class Orchestrator:
             "reviewer": ReviewAgent(backend, project_path),
         }
 
-    def _run_detection(self, ctx: PipelineContext) -> None:
-        """Run project detection and update context."""
+    def _run_project_detection(self, project_path: Path) -> tuple[str, str, str, str]:
+        """Run project detection and return detected values.
+
+        Returns: (language, framework, test_runner, test_command)
+        """
         detector = ProjectDetector()
-        info = detector.detect(ctx.project_path)
+        info = detector.detect(project_path)
 
         # Use detected values, but allow settings overrides
-        ctx.language = self._settings.project.language or info.language
-        ctx.framework = self._settings.project.framework or info.framework
-        ctx.test_runner = info.test_runner
-        ctx.test_command = self._settings.project.test_command or info.test_command
+        language = self._settings.project.language or info.language
+        framework = self._settings.project.framework or info.framework
+        test_runner = info.test_runner
+        test_command = self._settings.project.test_command or info.test_command
+
+        return language, framework, test_runner, test_command
+
+    def _run_detection(self, project_path: Path, ctx: PipelineContext) -> None:
+        """Run project detection and update context."""
+        language, framework, test_runner, test_command = self._run_project_detection(project_path)
+
+        ctx.language = language
+        ctx.framework = framework
+        ctx.test_runner = test_runner
+        ctx.test_command = test_command
+
+        # Load branch naming from project_context.md (if not already set)
+        if not ctx.branch_naming:
+            ctx.branch_naming = self._load_branch_naming_from_context(project_path)
+
+        # Write project context file
+        write_project_context_preserving(
+            project_path,
+            language=ctx.language,
+            framework=ctx.framework,
+            test_runner=ctx.test_runner,
+            test_command=ctx.test_command,
+            branch_naming=ctx.branch_naming,
+        )
 
         if not self._headless:
             from levelup.cli.display import print_project_info
@@ -553,18 +581,136 @@ class Orchestrator:
         ctx.task.description = original_desc
         return ctx
 
-    def _create_git_branch(self, project_path: Path, run_id: str) -> str | None:
-        """Create a git branch for this run. Returns the pre-branch HEAD SHA."""
+    def _sanitize_task_title(self, title: str) -> str:
+        """Sanitize task title for use in branch names.
+
+        - Converts to lowercase
+        - Replaces spaces and special chars with hyphens
+        - Removes consecutive hyphens
+        - Strips leading/trailing hyphens
+        - Limits to 50 characters
+        """
+        import re
+
+        if not title or not title.strip():
+            return "task"
+
+        # Convert to lowercase
+        sanitized = title.lower()
+
+        # Replace special chars and spaces with hyphens
+        sanitized = re.sub(r"[^a-z0-9]+", "-", sanitized)
+
+        # Remove consecutive hyphens
+        sanitized = re.sub(r"-+", "-", sanitized)
+
+        # Strip leading/trailing hyphens
+        sanitized = sanitized.strip("-")
+
+        # Limit to 50 characters
+        if len(sanitized) > 50:
+            sanitized = sanitized[:50].rstrip("-")
+
+        # Fallback to "task" if sanitization resulted in empty string
+        return sanitized if sanitized else "task"
+
+    def _build_branch_name(self, convention: str, ctx: PipelineContext) -> str:
+        """Build branch name from convention pattern by substituting placeholders.
+
+        Supports placeholders: {run_id}, {task_title}, {date}
+        Falls back to 'levelup/{run_id}' if pattern is empty.
+        """
+        from datetime import datetime
+
+        if not convention or not convention.strip():
+            return f"levelup/{ctx.run_id}"
+
+        # Prepare placeholder values
+        task_title = self._sanitize_task_title(ctx.task.title)
+        date_str = datetime.now().strftime("%Y%m%d")
+
+        # Substitute placeholders
+        branch_name = convention
+        branch_name = branch_name.replace("{run_id}", ctx.run_id)
+        branch_name = branch_name.replace("{task_title}", task_title)
+        branch_name = branch_name.replace("{date}", date_str)
+
+        return branch_name
+
+    def _load_branch_naming_from_context(self, project_path: Path) -> str:
+        """Load branch naming convention from project_context.md.
+
+        Returns the stored convention, or default 'levelup/{run_id}' if not found.
+        """
+        from levelup.core.project_context import read_project_context_header
+
+        header = read_project_context_header(project_path)
+        if header and header.get("branch_naming"):
+            return header["branch_naming"]
+        return "levelup/{run_id}"
+
+    def _prompt_branch_naming_if_needed(self, ctx: PipelineContext, project_path: Path) -> str:
+        """Prompt user for branch naming convention on first run if needed.
+
+        Returns the convention to use (either from context, from user prompt, or default).
+        """
+        # If already set in context, use it
+        if ctx.branch_naming:
+            return ctx.branch_naming
+
+        # If create_git_branch is False, don't prompt
+        if not self._settings.pipeline.create_git_branch:
+            return "levelup/{run_id}"
+
+        # If in headless mode, don't prompt
+        if self._headless:
+            return "levelup/{run_id}"
+
+        # Try to load from project_context.md
+        from levelup.core.project_context import read_project_context_header
+
+        header = read_project_context_header(project_path)
+        if header and header.get("branch_naming"):
+            convention = header["branch_naming"]
+            ctx.branch_naming = convention
+            return convention
+
+        # First run - prompt user
+        from levelup.cli.prompts import prompt_branch_naming_convention
+
+        convention = prompt_branch_naming_convention()
+        if not convention:
+            convention = "levelup/{run_id}"
+
+        ctx.branch_naming = convention
+        return convention
+
+    def _create_git_branch(self, project_path: Path, ctx: PipelineContext) -> str | None:
+        """Create a git branch for this run. Returns the pre-branch HEAD SHA.
+
+        Also stores the pre_run_sha in the context.
+        """
+        # Check if branch creation is enabled
+        if not self._settings.pipeline.create_git_branch:
+            return None
+
         try:
             import git
 
             repo = git.Repo(project_path)
             pre_sha = repo.head.commit.hexsha
-            branch_name = f"levelup/{run_id}"
+
+            # Build branch name using convention
+            convention = ctx.branch_naming or "levelup/{run_id}"
+            branch_name = self._build_branch_name(convention, ctx)
+
             repo.create_head(branch_name)
             repo.heads[branch_name].checkout()
             if not self._headless:
                 print_success(f"Created branch: {branch_name}")
+
+            # Store pre_run_sha in context
+            ctx.pre_run_sha = pre_sha
             return pre_sha
         except Exception as e:
             logger.warning("Failed to create git branch: %s", e)

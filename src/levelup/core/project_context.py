@@ -7,6 +7,9 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Sentinel value to distinguish "not provided" from "explicitly None"
+_NOT_PROVIDED = object()
+
 
 def get_project_context_path(project_path: Path) -> Path:
     """Return the path to the shared project context file."""
@@ -20,6 +23,7 @@ def write_project_context(
     framework: str | None = None,
     test_runner: str | None = None,
     test_command: str | None = None,
+    branch_naming: str | None | object = _NOT_PROVIDED,
 ) -> None:
     """Write (or overwrite) the shared project context file with detection results."""
     path = get_project_context_path(project_path)
@@ -33,22 +37,82 @@ def write_project_context(
             f"- **Framework:** {framework or 'none'}",
             f"- **Test runner:** {test_runner or 'unknown'}",
             f"- **Test command:** {test_command or 'unknown'}",
+        ]
+
+        # Handle branch_naming:
+        # - Not provided (_NOT_PROVIDED): don't write the field
+        # - None: write the default
+        # - String value: write that value
+        if branch_naming is not _NOT_PROVIDED:
+            value = branch_naming or "levelup/{run_id}"
+            lines.append(f"- **Branch naming:** {value}")
+
+        lines.extend([
             "",
             "## Codebase Insights",
             "",
             "(Agents append discoveries here)",
             "",
-        ]
+        ])
+
         path.write_text("\n".join(lines), encoding="utf-8")
     except OSError:
         logger.warning("Failed to write project context: %s", path)
 
 
-# The detection header ends after the "- **Test command:**" line.
+# The detection header ends after the "- **Branch naming:**" line (or "- **Test command:**" for old files).
 _DETECTION_HEADER_MARKER = "- **Test command:**"
+_BRANCH_NAMING_MARKER = "- **Branch naming:**"
 
 # Default placeholder body when no recon data exists.
 _DEFAULT_BODY = "\n## Codebase Insights\n\n(Agents append discoveries here)\n"
+
+
+def read_project_context_header(project_path: Path) -> dict[str, str] | None:
+    """Read the detection header fields from project_context.md.
+
+    Returns a dict with keys: language, framework, test_runner, test_command, branch_naming.
+    Returns None if the file is missing or can't be parsed.
+    """
+    path = get_project_context_path(project_path)
+    if not path.exists():
+        return None
+
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    result = {}
+
+    # Parse each header field
+    for line in content.split("\n"):
+        line = line.strip()
+        if line.startswith("- **Language:**"):
+            # Split on "**Language:**" to get the value after it
+            value = line.split("**Language:**", 1)[1].strip()
+            result["language"] = value
+        elif line.startswith("- **Framework:**"):
+            value = line.split("**Framework:**", 1)[1].strip()
+            result["framework"] = value
+        elif line.startswith("- **Test runner:**"):
+            value = line.split("**Test runner:**", 1)[1].strip()
+            result["test_runner"] = value
+        elif line.startswith("- **Test command:**"):
+            value = line.split("**Test command:**", 1)[1].strip()
+            result["test_command"] = value
+        elif line.startswith("- **Branch naming:**"):
+            value = line.split("**Branch naming:**", 1)[1].strip()
+            result["branch_naming"] = value
+        # Stop parsing at the body section
+        elif line.startswith("##"):
+            break
+
+    # Return None if we didn't parse any fields
+    if not result:
+        return None
+
+    return result
 
 
 def read_project_context_body(project_path: Path) -> str | None:
@@ -67,7 +131,10 @@ def read_project_context_body(project_path: Path) -> str | None:
         return None
 
     # Find the end of the detection header
-    marker_idx = content.find(_DETECTION_HEADER_MARKER)
+    # Try branch naming first (new format), fall back to test command (old format)
+    marker_idx = content.find(_BRANCH_NAMING_MARKER)
+    if marker_idx < 0:
+        marker_idx = content.find(_DETECTION_HEADER_MARKER)
     if marker_idx < 0:
         return None
 
@@ -94,6 +161,7 @@ def write_project_context_preserving(
     framework: str | None = None,
     test_runner: str | None = None,
     test_command: str | None = None,
+    branch_naming: str | None | object = _NOT_PROVIDED,
 ) -> None:
     """Write the detection header, preserving any existing body content.
 
@@ -115,6 +183,12 @@ def write_project_context_preserving(
             f"- **Test runner:** {test_runner or 'unknown'}",
             f"- **Test command:** {test_command or 'unknown'}",
         ]
+
+        # Handle branch_naming same as write_project_context
+        if branch_naming is not _NOT_PROVIDED:
+            value = branch_naming or "levelup/{run_id}"
+            header_lines.append(f"- **Branch naming:** {value}")
+
         header = "\n".join(header_lines) + "\n"
 
         if existing_body is not None:

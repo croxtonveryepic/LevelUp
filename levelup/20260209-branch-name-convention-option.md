@@ -55,3 +55,9 @@ Step `security` completed.
 ## Step: review  (23:00:19)
 
 No review findings.
+### Checkpoint: review
+
+- **Decision:** approve
+## Outcome
+
+- **Status:** completed

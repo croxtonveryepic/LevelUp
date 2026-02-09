@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import subprocess
 from dataclasses import dataclass, field
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +46,8 @@ class ClaudeCodeClient:
         claude_executable: str = "claude",
     ) -> None:
         self._model = model
-        self._claude_executable = claude_executable
+        resolved = shutil.which(claude_executable)
+        self._claude_executable = resolved or claude_executable
 
     def run(
         self,
@@ -95,6 +98,11 @@ class ClaudeCodeClient:
                 cwd=working_directory,
             )
         except FileNotFoundError:
+            if working_directory and not Path(working_directory).is_dir():
+                raise ClaudeCodeError(
+                    f"Working directory does not exist: {working_directory}",
+                    returncode=-1,
+                )
             raise ClaudeCodeError(
                 f"'{self._claude_executable}' not found. "
                 "Install Claude Code: https://docs.anthropic.com/en/docs/claude-code",

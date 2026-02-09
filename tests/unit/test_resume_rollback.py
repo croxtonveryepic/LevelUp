@@ -191,6 +191,77 @@ class TestOrchestratorResume:
         result = orch.resume(ctx)
 
         assert result.status == PipelineStatus.FAILED
+        # current_step should be preserved (not cleared) on failure
+        assert result.current_step is not None
+
+    @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
+    @patch("levelup.core.orchestrator.Orchestrator._run_detection")
+    def test_failed_run_preserves_current_step(
+        self, mock_detect, mock_agent, tmp_path
+    ):
+        """After agent failure, current_step is preserved so resume can use it."""
+        settings = _make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+
+        mock_detect.return_value = None
+
+        def fail_on_coder(name, ctx):
+            if name == "coder":
+                ctx.status = PipelineStatus.FAILED
+                ctx.error_message = "Coding failed"
+            return ctx
+
+        mock_agent.side_effect = fail_on_coder
+
+        ctx = _make_ctx(tmp_path, current_step="coding", status=PipelineStatus.FAILED)
+        result = orch.resume(ctx)
+
+        assert result.status == PipelineStatus.FAILED
+        assert result.current_step == "coding"
+
+    @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
+    @patch("levelup.core.orchestrator.Orchestrator._run_detection")
+    def test_completed_run_clears_current_step(
+        self, mock_detect, mock_agent, tmp_path
+    ):
+        """After successful completion, current_step is cleared to None."""
+        settings = _make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+
+        mock_detect.return_value = None
+        mock_agent.side_effect = lambda name, ctx: ctx
+
+        ctx = _make_ctx(tmp_path, current_step="coding", status=PipelineStatus.FAILED)
+        result = orch.resume(ctx)
+
+        assert result.status == PipelineStatus.COMPLETED
+        assert result.current_step is None
+
+    @patch("levelup.core.orchestrator.shutil.which", return_value=None)
+    def test_create_backend_failure_is_caught_in_run(self, _mock_which, tmp_path):
+        """RuntimeError from _create_backend() is caught, sets FAILED status."""
+        settings = _make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+
+        task = TaskInput(title="Test task", description="A test")
+        result = orch.run(task)
+
+        assert result.status == PipelineStatus.FAILED
+        assert "not found on PATH" in result.error_message
+
+    @patch("levelup.core.orchestrator.shutil.which", return_value=None)
+    def test_create_backend_failure_is_caught_in_resume(self, _mock_which, tmp_path):
+        """RuntimeError from _create_backend() in resume() is caught, sets FAILED status."""
+        settings = _make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+
+        ctx = _make_ctx(tmp_path, current_step="coding", status=PipelineStatus.FAILED)
+        result = orch.resume(ctx)
+
+        assert result.status == PipelineStatus.FAILED
+        assert "not found on PATH" in result.error_message
+        # current_step preserved even when backend creation fails
+        assert result.current_step == "coding"
 
 
 # ---------------------------------------------------------------------------

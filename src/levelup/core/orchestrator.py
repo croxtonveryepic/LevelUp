@@ -73,7 +73,8 @@ class Orchestrator:
         """Create the appropriate backend based on settings."""
         if self._settings.llm.backend == "claude_code":
             exe = self._settings.llm.claude_executable
-            if not shutil.which(exe):
+            resolved = shutil.which(exe)
+            if not resolved:
                 raise RuntimeError(
                     f"'{exe}' executable not found on PATH.\n"
                     f"  - Install Claude Code: https://docs.anthropic.com/en/docs/claude-code\n"
@@ -83,7 +84,7 @@ class Orchestrator:
                 )
             client = ClaudeCodeClient(
                 model=self._settings.llm.model,
-                claude_executable=self._settings.llm.claude_executable,
+                claude_executable=resolved,
             )
             return ClaudeCodeBackend(client)
         else:
@@ -159,15 +160,15 @@ class Orchestrator:
             assert isinstance(self._state_manager, StateManager)
             self._state_manager.register_run(ctx)
 
-        # Create backend and register agents
-        self._backend = self._create_backend(project_path, ctx)
-        self._register_agents(self._backend, project_path)
-
-        # Optionally create git branch
-        if self._settings.pipeline.create_git_branch:
-            ctx.pre_run_sha = self._create_git_branch(project_path, ctx.run_id)
-
         try:
+            # Create backend and register agents
+            self._backend = self._create_backend(project_path, ctx)
+            self._register_agents(self._backend, project_path)
+
+            # Optionally create git branch
+            if self._settings.pipeline.create_git_branch:
+                ctx.pre_run_sha = self._create_git_branch(project_path, ctx.run_id)
+
             ctx = self._execute_steps(ctx, DEFAULT_PIPELINE, journal, project_path)
 
             # Pipeline complete
@@ -188,7 +189,8 @@ class Orchestrator:
                 print_error(str(e))
 
         journal.log_outcome(ctx)
-        ctx.current_step = None
+        if ctx.status == PipelineStatus.COMPLETED:
+            ctx.current_step = None
         self._persist_state(ctx)
         return ctx
 
@@ -221,26 +223,26 @@ class Orchestrator:
         journal = RunJournal(ctx)
         journal._append([f"\n## Resumed from step: {target_step}", ""])
 
-        # Create backend and register agents
-        self._backend = self._create_backend(project_path, ctx)
-        self._register_agents(self._backend, project_path)
-
-        # Checkout the run branch if it exists
         try:
-            import git
+            # Create backend and register agents
+            self._backend = self._create_backend(project_path, ctx)
+            self._register_agents(self._backend, project_path)
 
-            repo = git.Repo(project_path)
-            branch_name = f"levelup/{ctx.run_id}"
-            if branch_name in [h.name for h in repo.heads]:
-                repo.heads[branch_name].checkout()
-        except Exception as e:
-            logger.warning("Could not checkout run branch: %s", e)
+            # Checkout the run branch if it exists
+            try:
+                import git
 
-        # Slice pipeline from target step onward
-        start_idx = step_names.index(target_step)
-        remaining_steps = DEFAULT_PIPELINE[start_idx:]
+                repo = git.Repo(project_path)
+                branch_name = f"levelup/{ctx.run_id}"
+                if branch_name in [h.name for h in repo.heads]:
+                    repo.heads[branch_name].checkout()
+            except Exception as e:
+                logger.warning("Could not checkout run branch: %s", e)
 
-        try:
+            # Slice pipeline from target step onward
+            start_idx = step_names.index(target_step)
+            remaining_steps = DEFAULT_PIPELINE[start_idx:]
+
             ctx = self._execute_steps(ctx, remaining_steps, journal, project_path)
 
             if ctx.status == PipelineStatus.RUNNING:
@@ -260,7 +262,8 @@ class Orchestrator:
                 print_error(str(e))
 
         journal.log_outcome(ctx)
-        ctx.current_step = None
+        if ctx.status == PipelineStatus.COMPLETED:
+            ctx.current_step = None
         self._persist_state(ctx)
         return ctx
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -202,3 +203,55 @@ class TestClaudeCodeClient:
 
         cmd = mock_run.call_args.args[0]
         assert "--allowedTools" not in cmd
+
+    @patch("levelup.agents.claude_code_client.shutil.which")
+    def test_init_resolves_executable_via_shutil_which(self, mock_which: MagicMock):
+        """__init__ uses shutil.which() to resolve the executable path."""
+        mock_which.return_value = "/usr/local/bin/claude"
+
+        client = ClaudeCodeClient(claude_executable="claude")
+
+        mock_which.assert_called_once_with("claude")
+        assert client._claude_executable == "/usr/local/bin/claude"
+
+    @patch("levelup.agents.claude_code_client.shutil.which")
+    def test_init_resolves_cmd_file_on_windows(self, mock_which: MagicMock):
+        """shutil.which() finds .cmd files on Windows — resolved path is stored."""
+        mock_which.return_value = "C:\\Users\\user\\AppData\\Roaming\\npm\\claude.cmd"
+
+        client = ClaudeCodeClient(claude_executable="claude")
+
+        assert client._claude_executable == "C:\\Users\\user\\AppData\\Roaming\\npm\\claude.cmd"
+
+    @patch("levelup.agents.claude_code_client.shutil.which")
+    def test_init_falls_back_to_original_when_which_returns_none(self, mock_which: MagicMock):
+        """When shutil.which() returns None, the original executable name is kept."""
+        mock_which.return_value = None
+
+        client = ClaudeCodeClient(claude_executable="my-claude")
+
+        assert client._claude_executable == "my-claude"
+
+    @patch("levelup.agents.claude_code_client.shutil.which", return_value="/usr/bin/claude")
+    @patch("levelup.agents.claude_code_client.subprocess.run")
+    def test_resolved_path_used_in_command(self, mock_run: MagicMock, _mock_which: MagicMock):
+        """The resolved executable path is used in the subprocess command."""
+        mock_run.return_value = self._make_completed_process(
+            stdout=self._success_json()
+        )
+
+        client = ClaudeCodeClient(claude_executable="claude")
+        client.run(prompt="hello")
+
+        cmd = mock_run.call_args.args[0]
+        assert cmd[0] == "/usr/bin/claude"
+
+    @patch("levelup.agents.claude_code_client.shutil.which", return_value=None)
+    @patch("levelup.agents.claude_code_client.subprocess.run")
+    def test_bad_cwd_error_message(self, mock_run: MagicMock, _mock_which: MagicMock):
+        """FileNotFoundError with non-existent cwd gives a specific error message."""
+        mock_run.side_effect = FileNotFoundError()
+
+        client = ClaudeCodeClient()
+        with pytest.raises(ClaudeCodeError, match="Working directory does not exist"):
+            client.run(prompt="hello", working_directory="/nonexistent/path")

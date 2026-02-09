@@ -181,6 +181,94 @@ def config(
     console.print(f"\n[bold]Ticket source:[/bold] {settings.ticket_source}")
 
 
+def _get_gui_install_hint() -> str:
+    """Return a context-aware install hint for GUI support."""
+    meta = _load_install_meta()
+    method = (meta or {}).get("method", "")
+    if method == "global":
+        return (
+            "GUI support is not installed. To add it:\n"
+            "  levelup self-update --gui"
+        )
+    elif method == "editable":
+        return (
+            "GUI support is not installed. To add it:\n"
+            '  uv pip install -e ".[gui]" --python '
+            + sys.executable
+        )
+    else:
+        return (
+            "GUI support is not installed. To add it:\n"
+            '  uv pip install PyQt6>=6.6.0 --python '
+            + sys.executable
+        )
+
+
+def _auto_install_gui() -> bool:
+    """Attempt to install GUI support. Returns True on success."""
+    meta = _load_install_meta()
+    method = (meta or {}).get("method", "")
+
+    if method == "global":
+        source_path = (meta or {}).get("source_path", "")
+        if not source_path:
+            print_error("No source_path in install metadata. Run: levelup self-update --gui")
+            return False
+        install_target = f"{source_path}[gui]"
+        console.print("[dim]Installing GUI via uv tool...[/dim]")
+        result = subprocess.run(
+            ["uv", "tool", "install", "--force", install_target],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print_error(f"Install failed:\n{result.stderr.strip()}")
+            return False
+        # Update extras in metadata
+        if meta is None:
+            meta = {}
+        extras = meta.get("extras", [])
+        if "gui" not in extras:
+            extras.append("gui")
+            meta["extras"] = extras
+            _save_install_meta(meta)
+        # Global rebuild — can't re-import in this process
+        console.print(
+            "[bold green]GUI support installed.[/bold green] "
+            "Please re-run [cyan]levelup gui[/cyan]."
+        )
+        return False  # Signal caller to exit 0 (success but can't launch)
+    else:
+        # Editable or no metadata — install into current venv
+        if method == "editable":
+            install_spec = [
+                sys.executable, "-m", "uv", "pip", "install", "-e", ".[gui]",
+                "--python", sys.executable,
+            ]
+        else:
+            install_spec = [
+                sys.executable, "-m", "uv", "pip", "install", "PyQt6>=6.6.0",
+                "--python", sys.executable,
+            ]
+        console.print("[dim]Installing GUI dependencies...[/dim]")
+        result = subprocess.run(
+            install_spec,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print_error(f"Install failed:\n{result.stderr.strip()}")
+            return False
+        # Update extras in metadata if present
+        if meta is not None:
+            extras = meta.get("extras", [])
+            if "gui" not in extras:
+                extras.append("gui")
+                meta["extras"] = extras
+                _save_install_meta(meta)
+        return True  # Can re-import in this process
+
+
 @app.command()
 def gui(
     db_path: Optional[Path] = typer.Option(
@@ -191,11 +279,34 @@ def gui(
     try:
         from levelup.gui.app import launch_gui
     except ImportError:
-        print_error(
-            "PyQt6 is not installed. Install with: "
-            'pip install "levelup[gui]"'
-        )
-        raise typer.Exit(1)
+        hint = _get_gui_install_hint()
+        if sys.stdin.isatty():
+            from levelup.cli.prompts import confirm_action
+
+            console.print(f"[yellow]{hint}[/yellow]")
+            if confirm_action("Install GUI support now?"):
+                success = _auto_install_gui()
+                if success:
+                    # Editable / direct install — try re-importing
+                    try:
+                        from levelup.gui.app import launch_gui as lg
+
+                        lg(db_path=db_path)
+                        return
+                    except ImportError:
+                        print_error(
+                            "Install succeeded but import still failed. "
+                            "Please restart your shell and try again."
+                        )
+                        raise typer.Exit(1)
+                else:
+                    # Global install printed "re-run" message, or install failed
+                    raise typer.Exit(0)
+            else:
+                raise typer.Exit(1)
+        else:
+            print_error(hint)
+            raise typer.Exit(1)
 
     launch_gui(db_path=db_path)
 
@@ -618,6 +729,9 @@ def self_update(
     source: Optional[Path] = typer.Option(
         None, "--source", help="Path to LevelUp git clone (overrides saved metadata)"
     ),
+    install_gui: bool = typer.Option(
+        False, "--gui", help="Add GUI support (PyQt6) during update"
+    ),
 ) -> None:
     """Pull the latest code and reinstall LevelUp."""
     from datetime import datetime, timezone
@@ -628,7 +742,16 @@ def self_update(
 
     # Load install metadata
     meta = _load_install_meta()
-    method = (meta or {}).get("method", "")
+    if meta is None:
+        meta = {}
+    method = meta.get("method", "")
+
+    # Merge --gui into extras
+    if install_gui:
+        extras = meta.get("extras", [])
+        if "gui" not in extras:
+            extras.append("gui")
+            meta["extras"] = extras
 
     # Determine source path: --source flag > metadata > fallback to _get_project_root()
     if source:
@@ -673,7 +796,7 @@ def self_update(
     # Reinstall based on method
     if method == "global":
         # Global install via uv tool
-        extras = (meta or {}).get("extras", [])
+        extras = meta.get("extras", [])
         if "gui" in extras:
             install_target = f"{source_path}[gui]"
         else:
@@ -691,10 +814,12 @@ def self_update(
             raise typer.Exit(1)
     else:
         # Editable install (dev mode or fallback)
+        extras = meta.get("extras", [])
+        install_spec = f".[{','.join(extras)}]" if extras else "."
         console.print("[dim]Reinstalling in editable mode...[/dim]")
         with Status("Reinstalling dependencies...", console=console):
             result = subprocess.run(
-                [sys.executable, "-m", "uv", "pip", "install", "-e", ".",
+                [sys.executable, "-m", "uv", "pip", "install", "-e", install_spec,
                  "--python", sys.executable],
                 cwd=str(source_path),
                 capture_output=True,
@@ -705,8 +830,6 @@ def self_update(
             raise typer.Exit(1)
 
     # Update metadata
-    if meta is None:
-        meta = {}
     if source:
         meta["source_path"] = str(source.resolve())
     if not meta.get("method"):

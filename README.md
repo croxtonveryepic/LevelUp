@@ -188,7 +188,9 @@ levelup detect --path /path/to/project
 
 ### `levelup gui` — Launch the GUI dashboard
 
-Opens a PyQt6 desktop window to monitor and control all running LevelUp instances. Requires the `gui` extra (`pip install "levelup[gui]"`).
+Opens a PyQt6 desktop window to monitor and control all running LevelUp instances. Requires the `gui` extra.
+
+If PyQt6 is not installed and you're running interactively, LevelUp will offer to install it automatically. For a global install, you can also run `levelup self-update --gui` to add GUI support.
 
 ```bash
 levelup gui
@@ -289,6 +291,7 @@ levelup self-update --source /path/to/LevelUp
 | Flag | Description |
 |------|-------------|
 | `--source PATH` | Path to LevelUp git clone (overrides saved metadata) |
+| `--gui` | Add GUI support (PyQt6) during update |
 
 ## Configuration
 

@@ -221,3 +221,94 @@ class TestSelfUpdateCommand:
         result = runner.invoke(app, ["self-update"])
         assert result.exit_code == 1
         assert "uv tool install failed" in result.output
+
+    @patch("levelup.cli.app._load_install_meta")
+    @patch("levelup.cli.app._save_install_meta")
+    @patch("levelup.cli.app._get_project_root")
+    @patch("levelup.cli.app.subprocess.run")
+    def test_self_update_gui_flag_global(self, mock_run, mock_root, mock_save, mock_load, tmp_path):
+        """--gui flag adds [gui] to global install target."""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        mock_root.return_value = tmp_path
+        mock_load.return_value = {"method": "global", "source_path": str(tmp_path)}
+
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="Already up to date.", stderr=""),
+            MagicMock(returncode=0, stdout="", stderr=""),
+        ]
+
+        result = runner.invoke(app, ["self-update", "--gui"])
+        assert result.exit_code == 0
+
+        # Check that [gui] was appended to install target
+        calls = mock_run.call_args_list
+        install_cmd = calls[1][0][0]
+        install_target = install_cmd[-1]
+        assert "[gui]" in install_target
+
+        # Metadata should include gui extra
+        saved_meta = mock_save.call_args[0][0]
+        assert "gui" in saved_meta.get("extras", [])
+
+    @patch("levelup.cli.app._load_install_meta")
+    @patch("levelup.cli.app._save_install_meta")
+    @patch("levelup.cli.app._get_project_root")
+    @patch("levelup.cli.app.subprocess.run")
+    def test_self_update_gui_flag_editable(self, mock_run, mock_root, mock_save, mock_load, tmp_path):
+        """--gui flag causes .[gui] in editable install."""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        mock_root.return_value = tmp_path
+        mock_load.return_value = {"method": "editable", "source_path": str(tmp_path)}
+
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="Already up to date.", stderr=""),
+            MagicMock(returncode=0, stdout="", stderr=""),
+        ]
+
+        result = runner.invoke(app, ["self-update", "--gui"])
+        assert result.exit_code == 0
+
+        # Check that .[gui] was used in pip install -e
+        calls = mock_run.call_args_list
+        install_cmd = calls[1][0][0]
+        assert "-e" in install_cmd
+        # Find the spec after -e
+        e_idx = install_cmd.index("-e")
+        spec = install_cmd[e_idx + 1]
+        assert ".[gui]" == spec
+
+        # Metadata should include gui extra
+        saved_meta = mock_save.call_args[0][0]
+        assert "gui" in saved_meta.get("extras", [])
+
+    @patch("levelup.cli.app._load_install_meta")
+    @patch("levelup.cli.app._save_install_meta")
+    @patch("levelup.cli.app._get_project_root")
+    @patch("levelup.cli.app.subprocess.run")
+    def test_self_update_editable_preserves_gui_extra(self, mock_run, mock_root, mock_save, mock_load, tmp_path):
+        """Existing gui extra in metadata is preserved in editable reinstall."""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        mock_root.return_value = tmp_path
+        mock_load.return_value = {
+            "method": "editable",
+            "source_path": str(tmp_path),
+            "extras": ["gui"],
+        }
+
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="Already up to date.", stderr=""),
+            MagicMock(returncode=0, stdout="", stderr=""),
+        ]
+
+        result = runner.invoke(app, ["self-update"])
+        assert result.exit_code == 0
+
+        # Check that .[gui] was used (not just ".")
+        calls = mock_run.call_args_list
+        install_cmd = calls[1][0][0]
+        e_idx = install_cmd.index("-e")
+        spec = install_cmd[e_idx + 1]
+        assert ".[gui]" == spec

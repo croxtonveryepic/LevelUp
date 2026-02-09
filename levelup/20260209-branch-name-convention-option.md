@@ -17,3 +17,21 @@ See `levelup/project_context.md` for project details.
 - 7 assumption(s)
 - 6 out-of-scope item(s)
 - **Usage:** 105.1s
+### Checkpoint: requirements
+
+- **Decision:** approve
+## Step: planning  (22:43:48)
+
+**Approach:** Add configurable branch naming convention by: (1) extending project_context.md to store branch naming pattern in header, (2) adding read function to parse header fields, (3) prompting user on first run to choose convention, (4) storing convention in PipelineContext, (5) using convention in _create_git_branch() with placeholder substitution, and (6) ensuring resume/rollback work with custom branch names.
+- 18 implementation step(s)
+- **Affected files:** src/levelup/core/context.py, src/levelup/core/project_context.py, src/levelup/core/orchestrator.py, src/levelup/cli/prompts.py, src/levelup/cli/app.py, tests/unit/test_project_context.py, tests/unit/test_step_commits.py, tests/unit/test_branch_naming.py, tests/unit/test_prompts_branch_naming.py, tests/integration/test_branch_naming_flow.py
+- **Risks:**
+  - Backward compatibility: existing runs without branch_naming field must default to 'levelup/{run_id}' pattern
+  - Headless mode: must skip interactive prompt and use existing convention or default
+  - Resume/rollback: branch name reconstruction must match original branch created during run()
+  - Placeholder validation: invalid placeholders or convention strings could break branch creation
+  - Git branch name constraints: sanitized task titles must comply with git branch naming rules (no spaces, special chars)
+  - First-run detection timing: prompt must occur before branch creation but after detection step completes
+  - Context serialization: branch_naming field must survive JSON serialization in state DB
+  - Project context file parsing: header parsing logic must be robust to variations in whitespace and formatting
+- **Usage:** 129.9s

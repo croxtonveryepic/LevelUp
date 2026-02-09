@@ -82,6 +82,8 @@ class ClaudeCodeBackend:
         return AgentResult(
             text=result.text,
             cost_usd=result.cost_usd,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
             duration_ms=result.duration_ms,
             num_turns=result.num_turns,
         )

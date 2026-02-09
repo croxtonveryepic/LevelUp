@@ -1,3 +1,7 @@
+---
+model: haiku
+---
+
 Increment the LevelUp version number.
 
 ## Arguments

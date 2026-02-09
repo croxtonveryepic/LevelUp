@@ -147,6 +147,8 @@ class TestClaudeCodeBackendCostFields:
         mock_result = MagicMock()
         mock_result.text = "hello"
         mock_result.cost_usd = 0.05
+        mock_result.input_tokens = 1200
+        mock_result.output_tokens = 350
         mock_result.duration_ms = 1500.0
         mock_result.num_turns = 3
         mock_client.run.return_value = mock_result
@@ -162,6 +164,8 @@ class TestClaudeCodeBackendCostFields:
         assert isinstance(result, AgentResult)
         assert result.text == "hello"
         assert result.cost_usd == 0.05
+        assert result.input_tokens == 1200
+        assert result.output_tokens == 350
         assert result.duration_ms == 1500.0
         assert result.num_turns == 3
 
@@ -170,6 +174,8 @@ class TestClaudeCodeBackendCostFields:
         mock_result = MagicMock()
         mock_result.text = "result"
         mock_result.cost_usd = 0.0
+        mock_result.input_tokens = 0
+        mock_result.output_tokens = 0
         mock_result.duration_ms = 0.0
         mock_result.num_turns = 0
         mock_client.run.return_value = mock_result
@@ -183,6 +189,8 @@ class TestClaudeCodeBackendCostFields:
         )
 
         assert result.cost_usd == 0.0
+        assert result.input_tokens == 0
+        assert result.output_tokens == 0
         assert result.duration_ms == 0.0
         assert result.num_turns == 0
 

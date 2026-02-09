@@ -60,6 +60,8 @@ class TestClaudeCodeClient:
             "result": "Hello from Claude",
             "session_id": "sess_123",
             "cost_usd": 0.05,
+            "input_tokens": 1200,
+            "output_tokens": 350,
             "duration_ms": 1500.0,
             "num_turns": 3,
             "is_error": False,
@@ -111,6 +113,8 @@ class TestClaudeCodeClient:
         assert result.text == "Hello from Claude"
         assert result.session_id == "sess_123"
         assert result.cost_usd == 0.05
+        assert result.input_tokens == 1200
+        assert result.output_tokens == 350
         assert result.duration_ms == 1500.0
         assert result.num_turns == 3
         assert result.is_error is False

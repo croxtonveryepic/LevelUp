@@ -26,6 +26,8 @@ class ClaudeCodeResult:
     text: str = ""
     session_id: str = ""
     cost_usd: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
     duration_ms: float = 0.0
     num_turns: int = 0
     is_error: bool = False
@@ -88,6 +90,7 @@ class ClaudeCodeClient:
                 input=prompt,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 timeout=timeout,
                 cwd=working_directory,
             )
@@ -139,6 +142,8 @@ class ClaudeCodeClient:
             text=data.get("result", ""),
             session_id=data.get("session_id", ""),
             cost_usd=data.get("cost_usd", 0.0),
+            input_tokens=data.get("input_tokens", 0),
+            output_tokens=data.get("output_tokens", 0),
             duration_ms=data.get("duration_ms", 0.0),
             num_turns=data.get("num_turns", 0),
             is_error=data.get("is_error", False),

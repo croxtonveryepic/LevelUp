@@ -52,51 +52,81 @@ class TestPromptBranchNamingConvention:
         assert result == "ai/{run_id}"
 
     @patch("levelup.cli.prompts.pt_prompt")
-    def test_accepts_custom_format_for_option_4(self, mock_prompt, tmp_path: Path):
-        """Option 4 prompts for custom format and returns it."""
-        # First call returns "4", second call returns custom format
-        mock_prompt.side_effect = ["4", "custom/{date}-{run_id}"]
-
-        result = prompt_branch_naming_convention()
-        assert result == "custom/{date}-{run_id}"
-        assert mock_prompt.call_count == 2
-
-    @patch("levelup.cli.prompts.pt_prompt")
-    def test_reprompts_on_invalid_choice(self, mock_prompt, tmp_path: Path):
-        """Re-prompts when user enters invalid option."""
-        mock_prompt.side_effect = ["invalid", "5", "1"]
+    def test_option_4_shows_help_hint(self, mock_prompt, tmp_path: Path):
+        """Option 4 shows a help hint and re-prompts."""
+        # First call "4" shows hint, second call is actual input
+        mock_prompt.side_effect = ["4", "1"]
 
         result = prompt_branch_naming_convention()
         assert result == "levelup/{run_id}"
+        assert mock_prompt.call_count == 2
+
+    @patch("levelup.cli.prompts.pt_prompt")
+    def test_free_form_with_existing_placeholders(self, mock_prompt, tmp_path: Path):
+        """Free-form input already using {placeholder} syntax is accepted as-is."""
+        mock_prompt.return_value = "custom/{date}-{run_id}"
+
+        result = prompt_branch_naming_convention()
+        assert result == "custom/{date}-{run_id}"
+        # Only one prompt call — no confirmation needed.
+        assert mock_prompt.call_count == 1
+
+    @patch("levelup.cli.prompts.pt_prompt")
+    def test_free_form_natural_language_confirmed(self, mock_prompt, tmp_path: Path):
+        """Free-form natural-language input is normalized and confirmed."""
+        # First call: natural pattern, second call: confirm "y"
+        mock_prompt.side_effect = ["levelup/task-title-in-kebab-case", "y"]
+
+        result = prompt_branch_naming_convention()
+        assert result == "levelup/{task_title}"
+        assert mock_prompt.call_count == 2
+
+    @patch("levelup.cli.prompts.pt_prompt")
+    def test_free_form_natural_language_default_confirm(self, mock_prompt, tmp_path: Path):
+        """Empty confirm (Enter) accepts the normalized pattern."""
+        mock_prompt.side_effect = ["feature/task-title", ""]
+
+        result = prompt_branch_naming_convention()
+        assert result == "feature/{task_title}"
+
+    @patch("levelup.cli.prompts.pt_prompt")
+    def test_free_form_rejected_reprompts(self, mock_prompt, tmp_path: Path):
+        """User rejects normalized interpretation, gets re-prompted."""
+        mock_prompt.side_effect = [
+            "levelup/task-title",  # natural language input
+            "n",                    # reject interpretation
+            "2",                    # pick preset instead
+        ]
+
+        result = prompt_branch_naming_convention()
+        assert result == "feature/{task_title}"
         assert mock_prompt.call_count == 3
+
+    @patch("levelup.cli.prompts.pt_prompt")
+    def test_free_form_no_aliases_accepted_directly(self, mock_prompt, tmp_path: Path):
+        """Free-form input with no aliases is accepted without confirmation."""
+        mock_prompt.return_value = "my-static-branch"
+
+        result = prompt_branch_naming_convention()
+        assert result == "my-static-branch"
+        assert mock_prompt.call_count == 1
 
     @patch("levelup.cli.prompts.pt_prompt")
     def test_displays_examples_in_prompt(self, mock_prompt, tmp_path: Path):
         """Prompt displays examples of branch naming patterns."""
         mock_prompt.return_value = "1"
 
-        # We can't directly test console output, but we can verify the function runs
         result = prompt_branch_naming_convention()
         assert result is not None
 
     @patch("levelup.cli.prompts.pt_prompt")
-    def test_accepts_custom_format_with_placeholders(self, mock_prompt, tmp_path: Path):
-        """Custom format can include all valid placeholders."""
-        mock_prompt.side_effect = ["4", "dev/{run_id}/{task_title}/{date}"]
+    def test_empty_input_reprompts(self, mock_prompt, tmp_path: Path):
+        """Empty input re-prompts the user."""
+        mock_prompt.side_effect = ["", "", "1"]
 
         result = prompt_branch_naming_convention()
-        assert result == "dev/{run_id}/{task_title}/{date}"
-        assert "{run_id}" in result
-        assert "{task_title}" in result
-        assert "{date}" in result
-
-    @patch("levelup.cli.prompts.pt_prompt")
-    def test_accepts_custom_format_without_placeholders(self, mock_prompt, tmp_path: Path):
-        """Custom format doesn't require placeholders."""
-        mock_prompt.side_effect = ["4", "my-static-branch"]
-
-        result = prompt_branch_naming_convention()
-        assert result == "my-static-branch"
+        assert result == "levelup/{run_id}"
+        assert mock_prompt.call_count == 3
 
 
 class TestOrchestratorPromptBranchNamingIfNeeded:

@@ -186,14 +186,23 @@ def pick_run_to_forget(runs: list) -> object:
 def prompt_branch_naming_convention() -> str | None:
     """Prompt user to choose a branch naming convention.
 
+    Users can pick a numbered preset (1-3) or type a free-form pattern like
+    ``levelup/task-title-in-kebab-case`` which is automatically normalized to
+    canonical ``{placeholder}`` syntax.
+
     Returns:
         The chosen branch naming pattern, or None if user cancels.
     """
+    from levelup.core.branch_naming import normalize_branch_convention
+
     console.print("\n[bold]Choose a branch naming convention:[/bold]")
     console.print("  [cyan]1.[/cyan] levelup/{run_id}  [dim](default, e.g., levelup/a1b2c3d4)[/dim]")
     console.print("  [cyan]2.[/cyan] feature/{task_title}  [dim](e.g., feature/add-user-login)[/dim]")
     console.print("  [cyan]3.[/cyan] ai/{run_id}  [dim](e.g., ai/a1b2c3d4)[/dim]")
-    console.print("  [cyan]4.[/cyan] Custom format  [dim](use {run_id}, {task_title}, {date})[/dim]")
+    console.print(
+        "\n[dim]Or type a custom pattern "
+        "(e.g., levelup/task-title-in-kebab-case):[/dim]"
+    )
 
     conventions = {
         "1": "levelup/{run_id}",
@@ -204,13 +213,32 @@ def prompt_branch_naming_convention() -> str | None:
     while True:
         choice = pt_prompt(HTML("<b>> </b>")).strip()
 
+        if not choice:
+            continue
+
         if choice in conventions:
             return conventions[choice]
-        elif choice == "4":
-            console.print("[dim]Enter custom format (use {run_id}, {task_title}, {date}):[/dim]")
-            custom = pt_prompt(HTML("<b>Format: </b>")).strip()
-            if custom:
-                return custom
-            console.print("[yellow]Custom format cannot be empty. Please try again.[/yellow]")
-        else:
-            console.print("[dim]Please enter 1, 2, 3, or 4[/dim]")
+
+        if choice == "4":
+            console.print(
+                "[dim]Tip: just type your pattern directly "
+                "(e.g., levelup/task-title-in-kebab-case)[/dim]"
+            )
+            continue
+
+        # Free-form input — normalize and possibly confirm.
+        normalized = normalize_branch_convention(choice)
+
+        # If normalization didn't change anything (already canonical or
+        # no aliases found), accept as-is.
+        if normalized == choice:
+            return normalized
+
+        # Show interpretation and ask for confirmation.
+        console.print(f"  [cyan]Interpreted as:[/cyan] {normalized}")
+        confirm = pt_prompt(HTML("<b>  Use this? [Y/n] </b>")).strip().lower()
+        if confirm in ("", "y", "yes"):
+            return normalized
+
+        # User rejected — re-prompt.
+        console.print("[dim]Okay, try again.[/dim]")

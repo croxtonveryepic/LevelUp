@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import time
 from pathlib import Path
 
@@ -71,6 +72,15 @@ class Orchestrator:
     def _create_backend(self, project_path: Path, ctx: PipelineContext | None = None) -> Backend:
         """Create the appropriate backend based on settings."""
         if self._settings.llm.backend == "claude_code":
+            exe = self._settings.llm.claude_executable
+            if not shutil.which(exe):
+                raise RuntimeError(
+                    f"'{exe}' executable not found on PATH.\n"
+                    f"  - Install Claude Code: https://docs.anthropic.com/en/docs/claude-code\n"
+                    f"  - Or set a custom path in levelup.yaml:  llm: {{ claude_executable: /path/to/claude }}\n"
+                    f"  - Or use env var: LEVELUP_LLM__CLAUDE_EXECUTABLE=/path/to/claude\n"
+                    f"  - Or switch backend: llm: {{ backend: anthropic_sdk }}"
+                )
             client = ClaudeCodeClient(
                 model=self._settings.llm.model,
                 claude_executable=self._settings.llm.claude_executable,

@@ -87,10 +87,11 @@ class TestOrchestrator:
         orch = Orchestrator(settings=settings)
         assert orch is not None
 
+    @patch("shutil.which", return_value="/usr/bin/claude")
     @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
     @patch("levelup.core.orchestrator.Orchestrator._run_detection")
     def test_orchestrator_runs_pipeline_no_checkpoints(
-        self, mock_detect, mock_agent, tmp_path
+        self, mock_detect, mock_agent, mock_which, tmp_path
     ):
         settings = self._make_settings(tmp_path)
         orch = Orchestrator(settings=settings)
@@ -109,11 +110,12 @@ class TestOrchestrator:
         assert mock_detect.called
         assert mock_agent.call_count == 6  # 6 agent steps (requirements, planning, test_writer, coder, security, reviewer)
 
+    @patch("shutil.which", return_value="/usr/bin/claude")
     @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
     @patch("levelup.core.orchestrator.Orchestrator._run_detection")
     @patch("levelup.core.orchestrator.run_checkpoint")
     def test_orchestrator_with_checkpoints_approve(
-        self, mock_checkpoint, mock_detect, mock_agent, tmp_path
+        self, mock_checkpoint, mock_detect, mock_agent, mock_which, tmp_path
     ):
         settings = self._make_settings(tmp_path)
         settings.pipeline.require_checkpoints = True
@@ -129,11 +131,12 @@ class TestOrchestrator:
         assert ctx.status == PipelineStatus.COMPLETED
         assert mock_checkpoint.call_count == 4  # 4 checkpoints (requirements, test_writing, security, review)
 
+    @patch("shutil.which", return_value="/usr/bin/claude")
     @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
     @patch("levelup.core.orchestrator.Orchestrator._run_detection")
     @patch("levelup.core.orchestrator.run_checkpoint")
     def test_orchestrator_checkpoint_reject_aborts(
-        self, mock_checkpoint, mock_detect, mock_agent, tmp_path
+        self, mock_checkpoint, mock_detect, mock_agent, mock_which, tmp_path
     ):
         settings = self._make_settings(tmp_path)
         settings.pipeline.require_checkpoints = True
@@ -148,9 +151,10 @@ class TestOrchestrator:
 
         assert ctx.status == PipelineStatus.ABORTED
 
+    @patch("shutil.which", return_value="/usr/bin/claude")
     @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
     @patch("levelup.core.orchestrator.Orchestrator._run_detection")
-    def test_orchestrator_agent_failure(self, mock_detect, mock_agent, tmp_path):
+    def test_orchestrator_agent_failure(self, mock_detect, mock_agent, mock_which, tmp_path):
         settings = self._make_settings(tmp_path)
         orch = Orchestrator(settings=settings)
 
@@ -182,10 +186,11 @@ class TestOrchestrator:
         orch = Orchestrator(settings=settings, state_manager=mgr)
         assert orch._state_manager is mgr
 
+    @patch("shutil.which", return_value="/usr/bin/claude")
     @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
     @patch("levelup.core.orchestrator.Orchestrator._run_detection")
     def test_orchestrator_with_state_manager_persists(
-        self, mock_detect, mock_agent, tmp_path
+        self, mock_detect, mock_agent, mock_which, tmp_path
     ):
         from levelup.state.manager import StateManager
 
@@ -204,10 +209,11 @@ class TestOrchestrator:
         assert record is not None
         assert record.status == "completed"
 
+    @patch("shutil.which", return_value="/usr/bin/claude")
     @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
     @patch("levelup.core.orchestrator.Orchestrator._run_detection")
     def test_headless_no_checkpoints_completes(
-        self, mock_detect, mock_agent, tmp_path
+        self, mock_detect, mock_agent, mock_which, tmp_path
     ):
         settings = self._make_settings(tmp_path)
         orch = Orchestrator(settings=settings, headless=True)
@@ -220,13 +226,34 @@ class TestOrchestrator:
 
         assert ctx.status == PipelineStatus.COMPLETED
 
-    def test_create_backend_claude_code(self, tmp_path):
+    @patch("shutil.which", return_value="/usr/bin/claude")
+    def test_create_backend_claude_code(self, mock_which, tmp_path):
         """Verify claude_code backend creates ClaudeCodeBackend."""
         from levelup.agents.backend import ClaudeCodeBackend
         settings = self._make_settings(tmp_path, backend="claude_code")
         orch = Orchestrator(settings=settings)
         backend = orch._create_backend(tmp_path)
         assert isinstance(backend, ClaudeCodeBackend)
+
+    @patch("shutil.which", return_value=None)
+    def test_create_backend_claude_code_missing_executable(self, mock_which, tmp_path):
+        """Raise RuntimeError when claude executable is not found on PATH."""
+        settings = self._make_settings(tmp_path, backend="claude_code")
+        orch = Orchestrator(settings=settings)
+        with pytest.raises(RuntimeError, match="executable not found on PATH"):
+            orch._create_backend(tmp_path)
+
+    @patch("shutil.which", return_value=None)
+    def test_create_backend_missing_executable_shows_workarounds(self, mock_which, tmp_path):
+        """Error message includes install link, config path, env var, and alt backend."""
+        settings = self._make_settings(tmp_path, backend="claude_code")
+        orch = Orchestrator(settings=settings)
+        with pytest.raises(RuntimeError, match="Install Claude Code") as exc_info:
+            orch._create_backend(tmp_path)
+        msg = str(exc_info.value)
+        assert "claude_executable" in msg
+        assert "LEVELUP_LLM__CLAUDE_EXECUTABLE" in msg
+        assert "anthropic_sdk" in msg
 
     @patch("levelup.agents.llm_client.anthropic.Anthropic")
     def test_create_backend_anthropic_sdk(self, MockAnthropic, tmp_path):
@@ -237,11 +264,12 @@ class TestOrchestrator:
         backend = orch._create_backend(tmp_path)
         assert isinstance(backend, AnthropicSDKBackend)
 
+    @patch("shutil.which", return_value="/usr/bin/claude")
     @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
     @patch("levelup.core.orchestrator.Orchestrator._run_detection")
     @patch("levelup.core.orchestrator.run_checkpoint")
     def test_instruct_at_checkpoint_loops_then_approves(
-        self, mock_checkpoint, mock_detect, mock_agent, tmp_path
+        self, mock_checkpoint, mock_detect, mock_agent, mock_which, tmp_path
     ):
         """INSTRUCT decision loops back; next APPROVE proceeds normally."""
         settings = self._make_settings(tmp_path)

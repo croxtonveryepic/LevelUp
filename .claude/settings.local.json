@@ -19,7 +19,10 @@
       "Bash(python -m uv lock:*)",
       "Bash(python -m levelup:*)",
       "Bash(git add:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)",
+      "Bash(git branch:*)"
     ]
   }
 }

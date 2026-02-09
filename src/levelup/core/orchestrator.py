@@ -211,6 +211,7 @@ class Orchestrator:
 
         journal.log_outcome(ctx)
         if ctx.status == PipelineStatus.COMPLETED:
+            self._git_journal_commit(project_path, ctx, journal)
             ctx.current_step = None
         self._persist_state(ctx)
         return ctx
@@ -286,6 +287,7 @@ class Orchestrator:
 
         journal.log_outcome(ctx)
         if ctx.status == PipelineStatus.COMPLETED:
+            self._git_journal_commit(project_path, ctx, journal)
             ctx.current_step = None
         self._persist_state(ctx)
         return ctx
@@ -812,3 +814,22 @@ class Orchestrator:
             ctx.step_commits[step_name] = commit.hexsha
         except Exception as e:
             logger.warning("Failed to create step commit for %s: %s", step_name, e)
+
+    def _git_journal_commit(
+        self, project_path: Path, ctx: PipelineContext, journal: RunJournal
+    ) -> None:
+        """Commit the run journal after pipeline completion."""
+        if not self._settings.pipeline.create_git_branch or ctx.pre_run_sha is None:
+            return
+        try:
+            import git
+
+            repo = git.Repo(project_path)
+            journal_rel = journal.path.relative_to(project_path)
+            repo.git.add(str(journal_rel))
+            if not repo.index.diff("HEAD"):
+                return
+            message = f"levelup(documentation): {ctx.task.title}\n\nRun ID: {ctx.run_id}"
+            repo.index.commit(message)
+        except Exception as e:
+            logger.warning("Failed to commit run journal: %s", e)

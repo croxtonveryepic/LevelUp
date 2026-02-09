@@ -426,3 +426,193 @@ class TestOrchestrator:
         )
         files = orch._get_changed_files(ctx, tmp_path)
         assert set(files) == {"src/a.py", "src/b.py", "tests/test_a.py"}
+
+
+class TestGitJournalCommit:
+    """Tests for _git_journal_commit and its integration into run()/resume()."""
+
+    def _make_settings(self, tmp_path: Path, create_git_branch: bool = True) -> LevelUpSettings:
+        return LevelUpSettings(
+            llm=LLMSettings(
+                api_key="test-key",
+                model="test-model",
+                backend="claude_code",
+            ),
+            project=ProjectSettings(path=tmp_path),
+            pipeline=PipelineSettings(
+                require_checkpoints=False,
+                create_git_branch=create_git_branch,
+                max_code_iterations=2,
+            ),
+        )
+
+    def _init_git_repo(self, tmp_path: Path):
+        """Initialise a git repo with an initial commit so HEAD exists."""
+        import git
+
+        repo = git.Repo.init(tmp_path)
+        (tmp_path / "README.md").write_text("init")
+        repo.index.add(["README.md"])
+        repo.index.commit("initial commit")
+        return repo
+
+    def test_journal_committed_on_successful_run(self, tmp_path):
+        """_git_journal_commit creates a commit for the journal file."""
+        import git
+
+        repo = self._init_git_repo(tmp_path)
+
+        settings = self._make_settings(tmp_path, create_git_branch=True)
+        orch = Orchestrator(settings=settings)
+
+        ctx = PipelineContext(
+            task=TaskInput(title="Add login feature"),
+            project_path=tmp_path,
+            status=PipelineStatus.COMPLETED,
+            pre_run_sha=repo.head.commit.hexsha,
+        )
+
+        # Create a journal with a file on disk
+        from levelup.core.journal import RunJournal
+
+        journal = RunJournal(ctx)
+        journal.write_header(ctx)
+        assert journal.path.exists()
+
+        orch._git_journal_commit(tmp_path, ctx, journal)
+
+        # Verify the commit was created
+        latest = repo.head.commit
+        assert "levelup(documentation)" in latest.message
+        assert "Add login feature" in latest.message
+        assert ctx.run_id in latest.message
+
+    def test_journal_not_committed_when_create_git_branch_false(self, tmp_path):
+        """No commit when create_git_branch setting is False."""
+        import git
+
+        repo = self._init_git_repo(tmp_path)
+        initial_sha = repo.head.commit.hexsha
+
+        settings = self._make_settings(tmp_path, create_git_branch=False)
+        orch = Orchestrator(settings=settings)
+
+        ctx = PipelineContext(
+            task=TaskInput(title="Test"),
+            project_path=tmp_path,
+            status=PipelineStatus.COMPLETED,
+            pre_run_sha=initial_sha,
+        )
+
+        from levelup.core.journal import RunJournal
+
+        journal = RunJournal(ctx)
+        journal.write_header(ctx)
+
+        orch._git_journal_commit(tmp_path, ctx, journal)
+
+        # HEAD should not have changed
+        assert repo.head.commit.hexsha == initial_sha
+
+    def test_journal_not_committed_when_no_pre_run_sha(self, tmp_path):
+        """No commit when pre_run_sha is None (no branch was created)."""
+        import git
+
+        repo = self._init_git_repo(tmp_path)
+        initial_sha = repo.head.commit.hexsha
+
+        settings = self._make_settings(tmp_path, create_git_branch=True)
+        orch = Orchestrator(settings=settings)
+
+        ctx = PipelineContext(
+            task=TaskInput(title="Test"),
+            project_path=tmp_path,
+            status=PipelineStatus.COMPLETED,
+            pre_run_sha=None,
+        )
+
+        from levelup.core.journal import RunJournal
+
+        journal = RunJournal(ctx)
+        journal.write_header(ctx)
+
+        orch._git_journal_commit(tmp_path, ctx, journal)
+
+        assert repo.head.commit.hexsha == initial_sha
+
+    @patch("shutil.which", return_value="/usr/bin/claude")
+    @patch("levelup.core.orchestrator.subprocess.run")
+    @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
+    @patch("levelup.core.orchestrator.Orchestrator._run_detection")
+    def test_run_calls_journal_commit_on_completion(
+        self, mock_detect, mock_agent, mock_subprocess, mock_which, tmp_path
+    ):
+        """run() calls _git_journal_commit when pipeline completes successfully."""
+        settings = self._make_settings(tmp_path, create_git_branch=False)
+        orch = Orchestrator(settings=settings)
+
+        mock_detect.return_value = None
+        mock_agent.side_effect = lambda name, ctx: ctx
+
+        with patch.object(orch, "_git_journal_commit") as mock_commit:
+            task = TaskInput(title="Test task")
+            ctx = orch.run(task)
+
+        assert ctx.status == PipelineStatus.COMPLETED
+        mock_commit.assert_called_once()
+
+    @patch("shutil.which", return_value="/usr/bin/claude")
+    @patch("levelup.core.orchestrator.subprocess.run")
+    @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
+    @patch("levelup.core.orchestrator.Orchestrator._run_detection")
+    def test_run_skips_journal_commit_on_failure(
+        self, mock_detect, mock_agent, mock_subprocess, mock_which, tmp_path
+    ):
+        """run() does NOT call _git_journal_commit when pipeline fails."""
+        settings = self._make_settings(tmp_path, create_git_branch=False)
+        orch = Orchestrator(settings=settings)
+
+        mock_detect.return_value = None
+
+        def fail_agent(name, ctx):
+            if name == "requirements":
+                ctx.status = PipelineStatus.FAILED
+                ctx.error_message = "API error"
+            return ctx
+
+        mock_agent.side_effect = fail_agent
+
+        with patch.object(orch, "_git_journal_commit") as mock_commit:
+            task = TaskInput(title="Test task")
+            ctx = orch.run(task)
+
+        assert ctx.status == PipelineStatus.FAILED
+        mock_commit.assert_not_called()
+
+    @patch("shutil.which", return_value="/usr/bin/claude")
+    @patch("levelup.core.orchestrator.subprocess.run")
+    @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
+    @patch("levelup.core.orchestrator.Orchestrator._run_detection")
+    def test_resume_calls_journal_commit_on_completion(
+        self, mock_detect, mock_agent, mock_subprocess, mock_which, tmp_path
+    ):
+        """resume() calls _git_journal_commit when pipeline completes successfully."""
+        settings = self._make_settings(tmp_path, create_git_branch=False)
+        orch = Orchestrator(settings=settings)
+
+        mock_detect.return_value = None
+        mock_agent.side_effect = lambda name, ctx: ctx
+
+        # Build a context that looks like a previously failed run
+        ctx = PipelineContext(
+            task=TaskInput(title="Test task"),
+            project_path=tmp_path,
+            status=PipelineStatus.FAILED,
+            current_step="detect",
+        )
+
+        with patch.object(orch, "_git_journal_commit") as mock_commit:
+            ctx = orch.resume(ctx, from_step="detect")
+
+        assert ctx.status == PipelineStatus.COMPLETED
+        mock_commit.assert_called_once()

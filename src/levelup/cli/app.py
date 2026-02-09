@@ -590,22 +590,78 @@ def _get_project_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+INSTALL_META_PATH = Path.home() / ".levelup" / "install.json"
+
+
+def _load_install_meta() -> dict | None:
+    """Load install metadata from ~/.levelup/install.json."""
+    if INSTALL_META_PATH.exists():
+        import json
+
+        try:
+            return json.loads(INSTALL_META_PATH.read_text())
+        except (json.JSONDecodeError, OSError):
+            return None
+    return None
+
+
+def _save_install_meta(meta: dict) -> None:
+    """Write install metadata to ~/.levelup/install.json."""
+    import json
+
+    INSTALL_META_PATH.parent.mkdir(parents=True, exist_ok=True)
+    INSTALL_META_PATH.write_text(json.dumps(meta, indent=2))
+
+
 @app.command("self-update")
-def self_update() -> None:
+def self_update(
+    source: Optional[Path] = typer.Option(
+        None, "--source", help="Path to LevelUp git clone (overrides saved metadata)"
+    ),
+) -> None:
     """Pull the latest code and reinstall LevelUp."""
+    from datetime import datetime, timezone
+
     from rich.status import Status
 
     console.print(f"Current: {get_version_string()}")
 
-    project_root = _get_project_root()
-    if not (project_root / ".git").exists():
-        print_error("Not a git repository — cannot self-update.")
+    # Load install metadata
+    meta = _load_install_meta()
+    method = (meta or {}).get("method", "")
+
+    # Determine source path: --source flag > metadata > fallback to _get_project_root()
+    if source:
+        source_path = source.resolve()
+    elif meta and meta.get("source_path"):
+        source_path = Path(meta["source_path"])
+    else:
+        source_path = _get_project_root()
+
+    # Validate source path has .git
+    if not source_path.exists():
+        print_error(
+            f"Source directory not found: {source_path}\n"
+            "Re-clone the repository and run the install script, or use:\n"
+            "  levelup self-update --source /path/to/LevelUp"
+        )
         raise typer.Exit(1)
 
+    if not (source_path / ".git").exists():
+        print_error(
+            f"No git repository at: {source_path}\n"
+            "Re-clone the repository and run the install script, or use:\n"
+            "  levelup self-update --source /path/to/LevelUp"
+        )
+        raise typer.Exit(1)
+
+    console.print(f"Source: {source_path}")
+
+    # Git pull
     with Status("Pulling latest changes...", console=console):
         result = subprocess.run(
             ["git", "pull"],
-            cwd=str(project_root),
+            cwd=str(source_path),
             capture_output=True,
             text=True,
         )
@@ -614,17 +670,49 @@ def self_update() -> None:
         raise typer.Exit(1)
     console.print(result.stdout.strip())
 
-    with Status("Reinstalling dependencies...", console=console):
-        result = subprocess.run(
-            [sys.executable, "-m", "uv", "pip", "install", "-e", ".",
-             "--python", sys.executable],
-            cwd=str(project_root),
-            capture_output=True,
-            text=True,
-        )
-    if result.returncode != 0:
-        print_error(f"pip install failed:\n{result.stderr.strip()}")
-        raise typer.Exit(1)
+    # Reinstall based on method
+    if method == "global":
+        # Global install via uv tool
+        extras = (meta or {}).get("extras", [])
+        if "gui" in extras:
+            install_target = f"{source_path}[gui]"
+        else:
+            install_target = str(source_path)
+
+        console.print("[dim]Reinstalling via uv tool...[/dim]")
+        with Status("Reinstalling globally...", console=console):
+            result = subprocess.run(
+                ["uv", "tool", "install", "--force", install_target],
+                capture_output=True,
+                text=True,
+            )
+        if result.returncode != 0:
+            print_error(f"uv tool install failed:\n{result.stderr.strip()}")
+            raise typer.Exit(1)
+    else:
+        # Editable install (dev mode or fallback)
+        console.print("[dim]Reinstalling in editable mode...[/dim]")
+        with Status("Reinstalling dependencies...", console=console):
+            result = subprocess.run(
+                [sys.executable, "-m", "uv", "pip", "install", "-e", ".",
+                 "--python", sys.executable],
+                cwd=str(source_path),
+                capture_output=True,
+                text=True,
+            )
+        if result.returncode != 0:
+            print_error(f"pip install failed:\n{result.stderr.strip()}")
+            raise typer.Exit(1)
+
+    # Update metadata
+    if meta is None:
+        meta = {}
+    if source:
+        meta["source_path"] = str(source.resolve())
+    if not meta.get("method"):
+        meta["method"] = "editable"
+    meta["last_updated"] = datetime.now(timezone.utc).isoformat()
+    _save_install_meta(meta)
 
     console.print(f"[bold green]Updated:[/bold green] {get_version_string()}")
 

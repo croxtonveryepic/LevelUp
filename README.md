@@ -6,16 +6,43 @@ AI-Powered TDD Development Tool. LevelUp orchestrates Claude AI agents to perfor
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
+### Quick Install (recommended)
+
 ```bash
-# Clone and install
 git clone <repo-url> && cd LevelUp
+./install.sh          # macOS / Linux / Git Bash
+.\install.ps1         # Windows PowerShell
+```
+
+This installs `levelup` globally via `uv tool`. Run from anywhere:
+
+```bash
+levelup run "Add a /health endpoint"
+```
+
+**Options:**
+
+| Flag | PowerShell | Description |
+|------|------------|-------------|
+| `--gui` | `-GUI` | Include GUI dashboard (PyQt6) |
+| `--dev` | `-Dev` | Developer install (venv + editable + test tools) |
+
+### Updating
+
+```bash
+levelup self-update
+```
+
+### Developer Setup
+
+For working on LevelUp itself, use dev mode:
+
+```bash
+./install.sh --dev          # creates .venv with editable install + dev deps
+# or manually:
 uv venv .venv
 uv pip install -e ".[dev]" --python .venv/Scripts/python.exe   # Windows
-# or
 uv pip install -e ".[dev]" --python .venv/bin/python            # macOS/Linux
-
-# GUI support (optional — installs PyQt6)
-uv pip install -e ".[gui]" --python .venv/Scripts/python.exe
 ```
 
 A `uv.lock` lockfile is included for reproducible installs. Run `uv sync` to install from the lockfile.
@@ -248,11 +275,20 @@ levelup version
 
 ### `levelup self-update` — Update LevelUp
 
-Pulls the latest code from git and reinstalls dependencies. Requires that LevelUp was installed from a git clone.
+Pulls the latest code from git and reinstalls LevelUp. Automatically detects whether you did a global or dev install (via `~/.levelup/install.json` written by the install scripts) and uses the matching strategy.
 
 ```bash
 levelup self-update
+
+# Point at a different clone location (updates saved metadata)
+levelup self-update --source /path/to/LevelUp
 ```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--source PATH` | Path to LevelUp git clone (overrides saved metadata) |
 
 ## Configuration
 

@@ -16,7 +16,10 @@
       "Bash(.venv/Scripts/python.exe -m pytest:*)",
       "Bash(.venv/Scripts/python.exe:*)",
       "Bash(ls -la \"C:\\\\Users\\\\jccvae\\\\.claude\"\" 2>&1 || echo \"Directory listing failed \")",
-      "Bash(python -m uv lock:*)"
+      "Bash(python -m uv lock:*)",
+      "Bash(python -m levelup:*)",
+      "Bash(git add:*)",
+      "Bash(ls:*)"
     ]
   }
 }

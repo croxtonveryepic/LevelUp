@@ -128,3 +128,36 @@ def confirm_action(message: str, default: bool = True) -> bool:
     if not choice:
         return default
     return choice in ("y", "yes")
+
+
+def prompt_branch_naming_convention() -> str | None:
+    """Prompt user to choose a branch naming convention.
+
+    Returns:
+        The chosen branch naming pattern, or None if user cancels.
+    """
+    console.print("\n[bold]Choose a branch naming convention:[/bold]")
+    console.print("  [cyan]1.[/cyan] levelup/{run_id}  [dim](default, e.g., levelup/a1b2c3d4)[/dim]")
+    console.print("  [cyan]2.[/cyan] feature/{task_title}  [dim](e.g., feature/add-user-login)[/dim]")
+    console.print("  [cyan]3.[/cyan] ai/{run_id}  [dim](e.g., ai/a1b2c3d4)[/dim]")
+    console.print("  [cyan]4.[/cyan] Custom format  [dim](use {run_id}, {task_title}, {date})[/dim]")
+
+    conventions = {
+        "1": "levelup/{run_id}",
+        "2": "feature/{task_title}",
+        "3": "ai/{run_id}",
+    }
+
+    while True:
+        choice = pt_prompt(HTML("<b>> </b>")).strip()
+
+        if choice in conventions:
+            return conventions[choice]
+        elif choice == "4":
+            console.print("[dim]Enter custom format (use {run_id}, {task_title}, {date}):[/dim]")
+            custom = pt_prompt(HTML("<b>Format: </b>")).strip()
+            if custom:
+                return custom
+            console.print("[yellow]Custom format cannot be empty. Please try again.[/yellow]")
+        else:
+            console.print("[dim]Please enter 1, 2, 3, or 4[/dim]")

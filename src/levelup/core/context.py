@@ -164,6 +164,7 @@ class PipelineContext(BaseModel):
     framework: str | None = None
     test_runner: str | None = None
     test_command: str | None = None
+    branch_naming: str | None = None
 
     # Agent outputs (populated sequentially)
     requirements: Requirements | None = None

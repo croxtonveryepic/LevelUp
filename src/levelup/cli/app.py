@@ -824,6 +824,59 @@ def _resolve_source(
     return _get_project_root(), None
 
 
+def _get_uv_bin_exe() -> Path | None:
+    """Return the path to ``~/.local/bin/levelup.exe`` if it exists (Windows only)."""
+    if sys.platform != "win32":
+        return None
+    exe = Path.home() / ".local" / "bin" / "levelup.exe"
+    return exe if exe.exists() else None
+
+
+def _unlock_exe_for_update() -> Path | None:
+    """On Windows, rename the running ``levelup.exe`` so *uv* can write a new one.
+
+    Returns the ``.old`` path if a rename was performed, else ``None``.
+    """
+    exe = _get_uv_bin_exe()
+    if exe is None:
+        return None
+    old = exe.with_suffix(".exe.old")
+    try:
+        # Remove a previous .old file first (may exist from a prior failed cleanup)
+        if old.exists():
+            old.unlink()
+        exe.rename(old)
+        return old
+    except OSError:
+        return None
+
+
+def _cleanup_old_exe(old_path: Path | None) -> None:
+    """Try to delete a ``.old`` exe left by ``_unlock_exe_for_update``.
+
+    Silently ignores errors — the file may still be locked by the
+    current process and will be cleaned up on the next update.
+    """
+    if old_path is None:
+        return
+    try:
+        old_path.unlink()
+    except OSError:
+        pass
+
+
+def _cleanup_stale_old_exe() -> None:
+    """Remove any leftover ``levelup.exe.old`` from a previous update."""
+    if sys.platform != "win32":
+        return
+    old = Path.home() / ".local" / "bin" / "levelup.exe.old"
+    try:
+        if old.exists():
+            old.unlink()
+    except OSError:
+        pass
+
+
 @app.command("self-update")
 def self_update(
     source: Optional[Path] = typer.Option(
@@ -842,6 +895,9 @@ def self_update(
     from rich.status import Status
 
     console.print(f"Current: {get_version_string()}")
+
+    # Clean up stale .old exe from a previous update (Windows)
+    _cleanup_stale_old_exe()
 
     # Load install metadata
     meta = _load_install_meta()
@@ -873,6 +929,7 @@ def self_update(
 
         console.print(f"Source: {remote_url}")
         console.print("[dim]Installing from remote via uv tool...[/dim]")
+        old_exe = _unlock_exe_for_update()
         with Status("Installing from remote...", console=console):
             result = subprocess.run(
                 ["uv", "tool", "install", "--force", install_target],
@@ -882,6 +939,7 @@ def self_update(
         if result.returncode != 0:
             print_error(f"uv tool install failed:\n{result.stderr.strip()}")
             raise typer.Exit(1)
+        _cleanup_old_exe(old_exe)
 
         # Save metadata
         if not meta.get("method"):
@@ -940,6 +998,7 @@ def self_update(
             install_target = str(source_path)
 
         console.print("[dim]Reinstalling via uv tool...[/dim]")
+        old_exe = _unlock_exe_for_update()
         with Status("Reinstalling globally...", console=console):
             result = subprocess.run(
                 ["uv", "tool", "install", "--force", install_target],
@@ -949,6 +1008,7 @@ def self_update(
         if result.returncode != 0:
             print_error(f"uv tool install failed:\n{result.stderr.strip()}")
             raise typer.Exit(1)
+        _cleanup_old_exe(old_exe)
     else:
         # Editable install (dev mode or fallback)
         extras = meta.get("extras", [])

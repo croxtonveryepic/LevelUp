@@ -11,9 +11,13 @@ import pytest
 from typer.testing import CliRunner
 
 from levelup.cli.app import (
+    _cleanup_old_exe,
+    _cleanup_stale_old_exe,
+    _get_uv_bin_exe,
     _is_levelup_repo,
     _normalize_git_url,
     _resolve_source,
+    _unlock_exe_for_update,
     app,
 )
 
@@ -702,3 +706,166 @@ class TestSelfUpdateRepoUrlSave:
 
         saved_meta = mock_save.call_args[0][0]
         assert "repo_url" not in saved_meta
+
+
+class TestWindowsExeUnlock:
+    """Tests for _get_uv_bin_exe, _unlock_exe_for_update, _cleanup_old_exe, _cleanup_stale_old_exe."""
+
+    @patch("levelup.cli.app.sys")
+    def test_get_uv_bin_exe_not_windows(self, mock_sys):
+        mock_sys.platform = "linux"
+        assert _get_uv_bin_exe() is None
+
+    def test_get_uv_bin_exe_windows_exists(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("levelup.cli.app.sys.platform", "win32")
+        monkeypatch.setattr("levelup.cli.app.Path.home", lambda: tmp_path)
+        bin_dir = tmp_path / ".local" / "bin"
+        bin_dir.mkdir(parents=True)
+        exe = bin_dir / "levelup.exe"
+        exe.write_text("fake")
+        result = _get_uv_bin_exe()
+        assert result is not None
+        assert result == exe
+
+    @patch("levelup.cli.app.sys")
+    def test_get_uv_bin_exe_windows_missing(self, mock_sys, tmp_path, monkeypatch):
+        mock_sys.platform = "win32"
+        # Point Path.home() to tmp_path (no .local/bin/levelup.exe exists)
+        monkeypatch.setattr("levelup.cli.app.Path.home", lambda: tmp_path)
+        assert _get_uv_bin_exe() is None
+
+    def test_unlock_exe_not_windows(self, monkeypatch):
+        monkeypatch.setattr("levelup.cli.app.sys.platform", "linux")
+        assert _unlock_exe_for_update() is None
+
+    def test_unlock_exe_no_exe_file(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("levelup.cli.app.sys.platform", "win32")
+        monkeypatch.setattr("levelup.cli.app.Path.home", lambda: tmp_path)
+        # No .local/bin/levelup.exe exists
+        assert _unlock_exe_for_update() is None
+
+    def test_unlock_exe_renames(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("levelup.cli.app.sys.platform", "win32")
+        monkeypatch.setattr("levelup.cli.app.Path.home", lambda: tmp_path)
+        bin_dir = tmp_path / ".local" / "bin"
+        bin_dir.mkdir(parents=True)
+        exe = bin_dir / "levelup.exe"
+        exe.write_text("fake exe")
+
+        result = _unlock_exe_for_update()
+
+        assert result is not None
+        assert result.name == "levelup.exe.old"
+        assert result.exists()
+        assert not exe.exists()
+
+    def test_unlock_exe_removes_existing_old(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("levelup.cli.app.sys.platform", "win32")
+        monkeypatch.setattr("levelup.cli.app.Path.home", lambda: tmp_path)
+        bin_dir = tmp_path / ".local" / "bin"
+        bin_dir.mkdir(parents=True)
+        exe = bin_dir / "levelup.exe"
+        exe.write_text("new exe")
+        old = bin_dir / "levelup.exe.old"
+        old.write_text("stale old")
+
+        result = _unlock_exe_for_update()
+
+        assert result is not None
+        assert result.exists()
+        assert result.read_text() == "new exe"
+        assert not exe.exists()
+
+    def test_cleanup_old_exe_deletes(self, tmp_path):
+        old = tmp_path / "levelup.exe.old"
+        old.write_text("old")
+        _cleanup_old_exe(old)
+        assert not old.exists()
+
+    def test_cleanup_old_exe_none(self):
+        # Should not raise
+        _cleanup_old_exe(None)
+
+    def test_cleanup_old_exe_missing_file(self, tmp_path):
+        old = tmp_path / "levelup.exe.old"
+        # File doesn't exist — should not raise
+        _cleanup_old_exe(old)
+
+    def test_cleanup_stale_old_exe_not_windows(self, monkeypatch):
+        monkeypatch.setattr("levelup.cli.app.sys.platform", "linux")
+        # Should not raise
+        _cleanup_stale_old_exe()
+
+    def test_cleanup_stale_old_exe_removes(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("levelup.cli.app.sys.platform", "win32")
+        monkeypatch.setattr("levelup.cli.app.Path.home", lambda: tmp_path)
+        bin_dir = tmp_path / ".local" / "bin"
+        bin_dir.mkdir(parents=True)
+        old = bin_dir / "levelup.exe.old"
+        old.write_text("stale")
+
+        _cleanup_stale_old_exe()
+
+        assert not old.exists()
+
+    def test_cleanup_stale_old_exe_no_file(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("levelup.cli.app.sys.platform", "win32")
+        monkeypatch.setattr("levelup.cli.app.Path.home", lambda: tmp_path)
+        # No file to clean — should not raise
+        _cleanup_stale_old_exe()
+
+    @patch("levelup.cli.app._cleanup_stale_old_exe")
+    @patch("levelup.cli.app._unlock_exe_for_update")
+    @patch("levelup.cli.app._cleanup_old_exe")
+    @patch("levelup.cli.app._load_install_meta")
+    @patch("levelup.cli.app._save_install_meta")
+    @patch("levelup.cli.app._get_project_root")
+    @patch("levelup.cli.app.subprocess.run")
+    def test_self_update_global_calls_unlock(
+        self, mock_run, mock_root, mock_save, mock_load,
+        mock_cleanup, mock_unlock, mock_stale, tmp_path,
+    ):
+        """Global self-update calls _unlock_exe_for_update before uv tool install."""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        mock_root.return_value = tmp_path
+        mock_load.return_value = {"method": "global", "source_path": str(tmp_path)}
+        mock_unlock.return_value = tmp_path / "levelup.exe.old"
+
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="Already up to date.", stderr=""),
+            MagicMock(returncode=0, stdout="", stderr=""),
+            MagicMock(returncode=0, stdout="", stderr=""),
+        ]
+
+        result = runner.invoke(app, ["self-update"])
+        assert result.exit_code == 0
+
+        mock_stale.assert_called_once()
+        mock_unlock.assert_called_once()
+        mock_cleanup.assert_called_once_with(tmp_path / "levelup.exe.old")
+
+    @patch("levelup.cli.app._cleanup_stale_old_exe")
+    @patch("levelup.cli.app._unlock_exe_for_update")
+    @patch("levelup.cli.app._cleanup_old_exe")
+    @patch("levelup.cli.app._load_install_meta")
+    @patch("levelup.cli.app._save_install_meta")
+    @patch("levelup.cli.app.subprocess.run")
+    def test_self_update_remote_calls_unlock(
+        self, mock_run, mock_save, mock_load,
+        mock_cleanup, mock_unlock, mock_stale,
+    ):
+        """Remote self-update calls _unlock_exe_for_update before uv tool install."""
+        mock_load.return_value = {"method": "global"}
+        mock_unlock.return_value = Path("fake.old")
+
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        result = runner.invoke(app, [
+            "self-update", "--remote", "https://github.com/user/repo.git"
+        ])
+        assert result.exit_code == 0
+
+        mock_stale.assert_called_once()
+        mock_unlock.assert_called_once()
+        mock_cleanup.assert_called_once_with(Path("fake.old"))

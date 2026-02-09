@@ -181,6 +181,19 @@ class TestClaudeCodeClient:
             client.run(prompt="hello")
 
     @patch("levelup.agents.claude_code_client.subprocess.run")
+    def test_claude_not_found_shows_workarounds(self, mock_run: MagicMock):
+        """Error message includes config path, env var, and alternative backend."""
+        mock_run.side_effect = FileNotFoundError()
+
+        client = ClaudeCodeClient()
+        with pytest.raises(ClaudeCodeError) as exc_info:
+            client.run(prompt="hello")
+        msg = str(exc_info.value)
+        assert "claude_executable" in msg
+        assert "LEVELUP_LLM__CLAUDE_EXECUTABLE" in msg
+        assert "anthropic_sdk" in msg
+
+    @patch("levelup.agents.claude_code_client.subprocess.run")
     def test_no_system_prompt_omits_flag(self, mock_run: MagicMock):
         mock_run.return_value = self._make_completed_process(
             stdout=self._success_json()

@@ -104,8 +104,11 @@ class ClaudeCodeClient:
                     returncode=-1,
                 )
             raise ClaudeCodeError(
-                f"'{self._claude_executable}' not found. "
-                "Install Claude Code: https://docs.anthropic.com/en/docs/claude-code",
+                f"'{self._claude_executable}' not found.\n"
+                "  - Install Claude Code: https://docs.anthropic.com/en/docs/claude-code\n"
+                "  - Or set a custom path in levelup.yaml:  llm: { claude_executable: /path/to/claude }\n"
+                "  - Or use env var: LEVELUP_LLM__CLAUDE_EXECUTABLE=/path/to/claude\n"
+                "  - Or switch backend: llm: { backend: anthropic_sdk }",
                 returncode=-1,
             )
         except subprocess.TimeoutExpired:

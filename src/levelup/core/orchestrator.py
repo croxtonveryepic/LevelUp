@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from rich.console import Console
 
 from levelup.agents.backend import AgentResult, AnthropicSDKBackend, Backend, ClaudeCodeBackend
 from levelup.agents.base import BaseAgent
-from levelup.agents.claude_code_client import ClaudeCodeClient
+from levelup.agents.claude_code_client import ClaudeCodeClient, ClaudeCodeError
 from levelup.agents.coder import CodeAgent
 from levelup.agents.llm_client import LLMClient
 from levelup.agents.planning import PlanningAgent
@@ -78,6 +79,21 @@ class Orchestrator:
                 raise RuntimeError(
                     f"'{exe}' executable not found on PATH.\n"
                     f"  - Install Claude Code: https://docs.anthropic.com/en/docs/claude-code\n"
+                    f"  - Or set a custom path in levelup.yaml:  llm: {{ claude_executable: /path/to/claude }}\n"
+                    f"  - Or use env var: LEVELUP_LLM__CLAUDE_EXECUTABLE=/path/to/claude\n"
+                    f"  - Or switch backend: llm: {{ backend: anthropic_sdk }}"
+                )
+            # Verify the executable actually runs (catches broken shims/stubs)
+            try:
+                subprocess.run(
+                    [resolved, "--version"],
+                    capture_output=True,
+                    timeout=10,
+                )
+            except (FileNotFoundError, subprocess.SubprocessError) as exc:
+                raise RuntimeError(
+                    f"'{resolved}' was found on PATH but failed to run: {exc}\n"
+                    f"  - Reinstall Claude Code: https://docs.anthropic.com/en/docs/claude-code\n"
                     f"  - Or set a custom path in levelup.yaml:  llm: {{ claude_executable: /path/to/claude }}\n"
                     f"  - Or use env var: LEVELUP_LLM__CLAUDE_EXECUTABLE=/path/to/claude\n"
                     f"  - Or switch backend: llm: {{ backend: anthropic_sdk }}"
@@ -468,6 +484,35 @@ class Orchestrator:
                         ctx, agent_result = agent.run(ctx)
                 self._capture_usage(ctx, agent_name, agent_result)
                 return ctx
+            except ClaudeCodeError as e:
+                if "not found" in str(e).lower():
+                    # Executable missing — retrying won't help
+                    logger.error("Agent %s: unrecoverable error: %s", agent_name, e)
+                    ctx.status = PipelineStatus.FAILED
+                    ctx.error_message = f"Agent {agent_name} failed: {e}"
+                    if not self._headless:
+                        print_error(ctx.error_message)
+                    return ctx
+                # Other ClaudeCodeError: fall through to retry logic
+                if attempt < MAX_AGENT_RETRIES:
+                    logger.warning(
+                        "Agent %s failed (attempt %d/%d): %s",
+                        agent_name,
+                        attempt + 1,
+                        MAX_AGENT_RETRIES + 1,
+                        e,
+                    )
+                    if not self._headless:
+                        self._console.print(
+                            f"[yellow]Agent {agent_name} failed, retrying "
+                            f"({attempt + 1}/{MAX_AGENT_RETRIES})...[/yellow]"
+                        )
+                else:
+                    logger.error("Agent %s failed after all retries: %s", agent_name, e)
+                    ctx.status = PipelineStatus.FAILED
+                    ctx.error_message = f"Agent {agent_name} failed: {e}"
+                    if not self._headless:
+                        print_error(ctx.error_message)
             except Exception as e:
                 if attempt < MAX_AGENT_RETRIES:
                     logger.warning(

@@ -9,6 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from levelup.cli.app import app
+from levelup.cli.prompts import pick_resumable_run
 from levelup.config.settings import (
     LevelUpSettings,
     LLMSettings,
@@ -323,3 +324,150 @@ class TestCLIRollback:
 
         assert result.exit_code == 1
         assert "no saved context" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Interactive resume picker tests
+# ---------------------------------------------------------------------------
+
+
+def _make_run_record(**overrides) -> RunRecord:
+    """Build a RunRecord with sensible defaults."""
+    defaults = dict(
+        run_id="abc12345-6789-0000-0000-000000000000",
+        task_title="Test task",
+        project_path="/tmp/test",
+        status="failed",
+        current_step="coding",
+        context_json='{"some": "json"}',
+        started_at="2025-01-15T10:00:00",
+        updated_at="2025-01-15T12:00:00",
+    )
+    defaults.update(overrides)
+    return RunRecord(**defaults)
+
+
+class TestResumeInteractivePicker:
+    """Test the `levelup resume` (no args) interactive picker flow."""
+
+    @patch("levelup.cli.app.print_banner")
+    @patch("levelup.state.manager.StateManager")
+    def test_resume_no_args_no_resumable_runs(self, MockStateManager, _banner):
+        """resume with no args and no resumable runs shows message and exits 0."""
+        mock_mgr = MagicMock()
+        mock_mgr.list_runs.return_value = []
+        MockStateManager.return_value = mock_mgr
+
+        result = runner.invoke(app, ["resume"])
+
+        assert result.exit_code == 0
+        assert "no resumable runs" in result.output.lower()
+
+    @patch("levelup.cli.app.print_banner")
+    @patch("levelup.state.manager.StateManager")
+    def test_resume_no_args_skips_non_resumable_runs(self, MockStateManager, _banner):
+        """resume with no args filters out completed/running runs."""
+        mock_mgr = MagicMock()
+        mock_mgr.list_runs.return_value = [
+            _make_run_record(run_id="completed-1", status="completed"),
+            _make_run_record(run_id="running-1", status="running"),
+            _make_run_record(run_id="no-ctx", status="failed", context_json=None),
+        ]
+        MockStateManager.return_value = mock_mgr
+
+        result = runner.invoke(app, ["resume"])
+
+        assert result.exit_code == 0
+        assert "no resumable runs" in result.output.lower()
+
+    @patch("levelup.cli.prompts.pick_resumable_run")
+    @patch("levelup.cli.app.print_banner")
+    @patch("levelup.state.manager.StateManager")
+    def test_resume_no_args_shows_picker(self, MockStateManager, _banner, mock_picker):
+        """resume with no args calls picker and proceeds with selected run."""
+        ctx = _make_ctx(Path("/tmp/test"), current_step="coding", status=PipelineStatus.FAILED)
+        selected_run = _make_run_record(
+            run_id="selected-run",
+            status="failed",
+            context_json=ctx.model_dump_json(),
+        )
+
+        mock_mgr = MagicMock()
+        mock_mgr.list_runs.return_value = [
+            selected_run,
+            _make_run_record(run_id="completed-1", status="completed"),
+        ]
+        mock_mgr.get_run.return_value = selected_run
+        MockStateManager.return_value = mock_mgr
+        mock_picker.return_value = selected_run
+
+        with patch("levelup.config.loader.load_settings") as mock_load, \
+             patch("levelup.core.orchestrator.Orchestrator") as MockOrch:
+            mock_settings = MagicMock()
+            mock_settings.llm.backend = "claude_code"
+            mock_load.return_value = mock_settings
+            mock_orch_inst = MagicMock()
+            mock_orch_inst.resume.return_value = ctx
+            MockOrch.return_value = mock_orch_inst
+
+            result = runner.invoke(app, ["resume"])
+
+        mock_picker.assert_called_once()
+        picked_runs = mock_picker.call_args[0][0]
+        assert len(picked_runs) == 1
+        assert picked_runs[0].run_id == "selected-run"
+
+    @patch("levelup.cli.app.print_banner")
+    @patch("levelup.state.manager.StateManager")
+    def test_resume_with_explicit_id_still_works(self, MockStateManager, _banner):
+        """resume with explicit run_id still works as before."""
+        mock_mgr = MagicMock()
+        mock_mgr.get_run.return_value = None
+        MockStateManager.return_value = mock_mgr
+
+        result = runner.invoke(app, ["resume", "nonexistent-id"])
+
+        assert result.exit_code == 1
+        assert "not found" in result.output.lower()
+
+
+class TestPickResumableRun:
+    """Test the pick_resumable_run() prompt function directly."""
+
+    @patch("levelup.cli.prompts.pt_prompt", return_value="1")
+    def test_pick_first_run(self, _mock_prompt):
+        """Typing '1' selects the first run."""
+        runs = [
+            _make_run_record(run_id="run-aaa"),
+            _make_run_record(run_id="run-bbb"),
+        ]
+        selected = pick_resumable_run(runs)
+        assert selected.run_id == "run-aaa"
+
+    @patch("levelup.cli.prompts.pt_prompt", return_value="2")
+    def test_pick_second_run(self, _mock_prompt):
+        """Typing '2' selects the second run."""
+        runs = [
+            _make_run_record(run_id="run-aaa"),
+            _make_run_record(run_id="run-bbb"),
+        ]
+        selected = pick_resumable_run(runs)
+        assert selected.run_id == "run-bbb"
+
+    @patch("levelup.cli.prompts.pt_prompt", return_value="q")
+    def test_pick_quit_raises_keyboard_interrupt(self, _mock_prompt):
+        """Typing 'q' raises KeyboardInterrupt."""
+        runs = [_make_run_record()]
+        with pytest.raises(KeyboardInterrupt):
+            pick_resumable_run(runs)
+
+    @patch("levelup.cli.prompts.pt_prompt", side_effect=["invalid", "0", "3", "2"])
+    def test_pick_retries_on_invalid_input(self, _mock_prompt):
+        """Invalid inputs are retried until valid."""
+        runs = [
+            _make_run_record(run_id="run-aaa"),
+            _make_run_record(run_id="run-bbb"),
+        ]
+        selected = pick_resumable_run(runs)
+        assert selected.run_id == "run-bbb"
+        assert _mock_prompt.call_count == 4

@@ -67,6 +67,15 @@ if (-not (Test-Path $LevelUpDir)) {
     New-Item -ItemType Directory -Path $LevelUpDir -Force | Out-Null
 }
 
+# ── Detect git remote URL ───────────────────────────────────────────────────
+$RepoUrl = $null
+try {
+    $RepoUrl = & git -C $SourceDir remote get-url origin 2>$null
+    if ($LASTEXITCODE -ne 0) { $RepoUrl = $null }
+} catch {
+    $RepoUrl = $null
+}
+
 # ── Install ──────────────────────────────────────────────────────────────────
 if ($Dev) {
     Info "Installing in dev mode (venv + editable)..."
@@ -99,19 +108,14 @@ if ($Dev) {
     & uv pip install -e $Extras --python $VenvPython
 
     # Write install metadata
-    if ($GUI) {
-        $meta = @{
-            method = "editable"
-            source_path = $SourceDir
-            extras = @("gui")
-        }
-    } else {
-        $meta = @{
-            method = "editable"
-            source_path = $SourceDir
-        }
+    $meta = @{
+        method = "editable"
+        source_path = $SourceDir
     }
-    $meta | ConvertTo-Json | Set-Content -Path $MetaFile -Encoding utf8
+    if ($GUI) { $meta["extras"] = @("gui") }
+    if ($RepoUrl) { $meta["repo_url"] = $RepoUrl }
+    $json = $meta | ConvertTo-Json
+    [System.IO.File]::WriteAllText($MetaFile, $json)
 
     Ok "Dev install complete!"
     Write-Host ""
@@ -134,19 +138,14 @@ if ($Dev) {
     & uv tool install --force $InstallTarget --python $PythonCmd
 
     # Write install metadata
-    if ($GUI) {
-        $meta = @{
-            method = "global"
-            source_path = $SourceDir
-            extras = @("gui")
-        }
-    } else {
-        $meta = @{
-            method = "global"
-            source_path = $SourceDir
-        }
+    $meta = @{
+        method = "global"
+        source_path = $SourceDir
     }
-    $meta | ConvertTo-Json | Set-Content -Path $MetaFile -Encoding utf8
+    if ($GUI) { $meta["extras"] = @("gui") }
+    if ($RepoUrl) { $meta["repo_url"] = $RepoUrl }
+    $json = $meta | ConvertTo-Json
+    [System.IO.File]::WriteAllText($MetaFile, $json)
 
     Ok "Global install complete!"
     Write-Host ""

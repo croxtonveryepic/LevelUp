@@ -74,6 +74,52 @@ def get_conversation_reply(agent_message: str) -> str:
     return reply.strip()
 
 
+def pick_resumable_run(runs: list) -> object:
+    """Display resumable runs and let the user pick one.
+
+    Args:
+        runs: List of RunRecord objects (must be non-empty).
+
+    Returns:
+        The selected RunRecord.
+    """
+    from rich.table import Table
+
+    table = Table(title="Resumable Runs", show_lines=False)
+    table.add_column("#", style="bold", width=4)
+    table.add_column("Run ID", style="cyan", width=10)
+    table.add_column("Task", style="white")
+    table.add_column("Step", style="yellow", width=14)
+    table.add_column("Status", style="red", width=10)
+    table.add_column("Updated", style="dim", width=20)
+
+    for i, run in enumerate(runs, 1):
+        table.add_row(
+            str(i),
+            run.run_id[:8],
+            run.task_title or "(untitled)",
+            run.current_step or "—",
+            run.status,
+            run.updated_at[:19].replace("T", " "),
+        )
+
+    console.print(table)
+    console.print("[dim]Enter a number to select a run, or 'q' to quit.[/dim]")
+
+    while True:
+        choice = pt_prompt(HTML("<b>> </b>")).strip().lower()
+        if choice in ("q", "quit"):
+            raise KeyboardInterrupt
+        try:
+            idx = int(choice)
+        except ValueError:
+            console.print(f"[dim]Please enter a number 1-{len(runs)}, or 'q'[/dim]")
+            continue
+        if 1 <= idx <= len(runs):
+            return runs[idx - 1]
+        console.print(f"[dim]Please enter a number 1-{len(runs)}, or 'q'[/dim]")
+
+
 def confirm_action(message: str, default: bool = True) -> bool:
     """Ask user for a yes/no confirmation."""
     suffix = "[Y/n]" if default else "[y/N]"

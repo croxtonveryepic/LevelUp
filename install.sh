@@ -62,6 +62,12 @@ META_FILE="$LEVELUP_DIR/install.json"
 
 mkdir -p "$LEVELUP_DIR"
 
+# ── Detect git remote URL ───────────────────────────────────────────────────
+REPO_URL=""
+if git -C "$SOURCE_DIR" remote get-url origin &>/dev/null; then
+    REPO_URL="$(git -C "$SOURCE_DIR" remote get-url origin)"
+fi
+
 # ── Install ──────────────────────────────────────────────────────────────────
 if [[ "$DEV" == true ]]; then
     info "Installing in dev mode (venv + editable)..."
@@ -92,23 +98,12 @@ if [[ "$DEV" == true ]]; then
     info "Installing: uv pip install -e \"$EXTRAS\" ..."
     uv pip install -e "$EXTRAS" --python "$VENV_PYTHON"
 
-    # Write install metadata
-    if [[ "$GUI" == true ]]; then
-        cat > "$META_FILE" <<EOJSON
-{
-  "method": "editable",
-  "source_path": "$SOURCE_DIR",
-  "extras": ["gui"]
-}
-EOJSON
-    else
-        cat > "$META_FILE" <<EOJSON
-{
-  "method": "editable",
-  "source_path": "$SOURCE_DIR"
-}
-EOJSON
-    fi
+    # Write install metadata (build JSON manually to include optional fields)
+    _meta="{\"method\":\"editable\",\"source_path\":\"$SOURCE_DIR\""
+    if [[ "$GUI" == true ]]; then _meta="$_meta,\"extras\":[\"gui\"]"; fi
+    if [[ -n "$REPO_URL" ]]; then _meta="$_meta,\"repo_url\":\"$REPO_URL\""; fi
+    _meta="$_meta}"
+    echo "$_meta" > "$META_FILE"
 
     ok "Dev install complete!"
     echo ""
@@ -134,23 +129,12 @@ else
 
     uv tool install --force "$INSTALL_TARGET" --python "$PYTHON"
 
-    # Write install metadata
-    if [[ "$GUI" == true ]]; then
-        cat > "$META_FILE" <<EOJSON
-{
-  "method": "global",
-  "source_path": "$SOURCE_DIR",
-  "extras": ["gui"]
-}
-EOJSON
-    else
-        cat > "$META_FILE" <<EOJSON
-{
-  "method": "global",
-  "source_path": "$SOURCE_DIR"
-}
-EOJSON
-    fi
+    # Write install metadata (build JSON manually to include optional fields)
+    _meta="{\"method\":\"global\",\"source_path\":\"$SOURCE_DIR\""
+    if [[ "$GUI" == true ]]; then _meta="$_meta,\"extras\":[\"gui\"]"; fi
+    if [[ -n "$REPO_URL" ]]; then _meta="$_meta,\"repo_url\":\"$REPO_URL\""; fi
+    _meta="$_meta}"
+    echo "$_meta" > "$META_FILE"
 
     ok "Global install complete!"
     echo ""

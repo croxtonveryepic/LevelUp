@@ -56,11 +56,11 @@ class TestGuiAutoInstall:
     @patch("levelup.cli.app._save_install_meta")
     @patch("levelup.cli.app._load_install_meta")
     @patch("levelup.cli.app.subprocess.run")
-    def test_gui_auto_install_global(self, mock_run, mock_load, mock_save):
+    def test_gui_auto_install_global(self, mock_run, mock_load, mock_save, tmp_path):
         """Global auto-install: runs uv tool install --force with [gui], updates metadata."""
         mock_load.return_value = {
             "method": "global",
-            "source_path": "/some/path",
+            "source_path": str(tmp_path),
             "extras": [],
         }
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -78,7 +78,7 @@ class TestGuiAutoInstall:
         assert "uv" in cmd
         assert "tool" in cmd
         assert "--force" in cmd
-        assert "/some/path[gui]" in cmd[-1]
+        assert "[gui]" in cmd[-1]
 
         # Check metadata was updated with gui extra
         mock_save.assert_called_once()

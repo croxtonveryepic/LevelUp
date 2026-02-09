@@ -211,10 +211,13 @@ def _auto_install_gui() -> bool:
 
     if method == "global":
         source_path = (meta or {}).get("source_path", "")
-        if not source_path:
-            print_error("No source_path in install metadata. Run: levelup self-update --gui")
-            return False
-        install_target = f"{source_path}[gui]"
+        # Check if source_path exists; if not, fall back to remote URL
+        if source_path and Path(source_path).is_dir():
+            install_target = f"{source_path}[gui]"
+        else:
+            # Try repo_url from metadata, then default
+            repo_url = (meta or {}).get("repo_url", "") or DEFAULT_REPO_URL
+            install_target = f"levelup[gui] @ {_normalize_git_url(repo_url)}"
         console.print("[dim]Installing GUI via uv tool...[/dim]")
         result = subprocess.run(
             ["uv", "tool", "install", "--force", install_target],
@@ -382,7 +385,7 @@ def status(
 
 @app.command()
 def resume(
-    run_id: str = typer.Argument(..., help="Run ID to resume"),
+    run_id: Optional[str] = typer.Argument(None, help="Run ID to resume (omit to pick interactively)"),
     from_step: Optional[str] = typer.Option(None, "--from-step", help="Step to resume from (default: where it failed)"),
     path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Claude model override"),
@@ -405,19 +408,35 @@ def resume(
         mgr_kwargs["db_path"] = db_path
     state_manager = StateManager(**mgr_kwargs)
 
-    # Look up run
-    record = state_manager.get_run(run_id)
-    if record is None:
-        print_error(f"Run '{run_id}' not found.")
-        raise typer.Exit(1)
+    # Interactive picker when no run_id provided
+    if run_id is None:
+        from levelup.cli.prompts import pick_resumable_run
 
-    if record.status not in ("failed", "aborted"):
-        print_error(f"Run '{run_id}' has status '{record.status}' — only failed or aborted runs can be resumed.")
-        raise typer.Exit(1)
+        state_manager.mark_dead_runs()
+        all_runs = state_manager.list_runs()
+        resumable = [
+            r for r in all_runs
+            if r.status in ("failed", "aborted") and r.context_json
+        ]
+        if not resumable:
+            console.print("[yellow]No resumable runs found.[/yellow]")
+            raise typer.Exit(0)
+        record = pick_resumable_run(resumable)
+        run_id = record.run_id
+    else:
+        # Look up run by explicit ID
+        record = state_manager.get_run(run_id)
+        if record is None:
+            print_error(f"Run '{run_id}' not found.")
+            raise typer.Exit(1)
 
-    if not record.context_json:
-        print_error(f"Run '{run_id}' has no saved context — cannot resume.")
-        raise typer.Exit(1)
+        if record.status not in ("failed", "aborted"):
+            print_error(f"Run '{run_id}' has status '{record.status}' — only failed or aborted runs can be resumed.")
+            raise typer.Exit(1)
+
+        if not record.context_json:
+            print_error(f"Run '{run_id}' has no saved context — cannot resume.")
+            raise typer.Exit(1)
 
     # Deserialize context
     ctx = PipelineContext.model_validate_json(record.context_json)
@@ -710,7 +729,7 @@ def _load_install_meta() -> dict | None:
         import json
 
         try:
-            return json.loads(INSTALL_META_PATH.read_text())
+            return json.loads(INSTALL_META_PATH.read_text(encoding="utf-8-sig"))
         except (json.JSONDecodeError, OSError):
             return None
     return None
@@ -724,10 +743,94 @@ def _save_install_meta(meta: dict) -> None:
     INSTALL_META_PATH.write_text(json.dumps(meta, indent=2))
 
 
+DEFAULT_REPO_URL = "https://github.com/croxtonveryepic/LevelUp.git"
+
+
+def _is_levelup_repo(path: Path) -> bool:
+    """Check if *path* looks like a LevelUp git checkout."""
+    if not (path / ".git").is_dir():
+        return False
+    pyproject = path / "pyproject.toml"
+    if not pyproject.is_file():
+        return False
+    try:
+        text = pyproject.read_text(encoding="utf-8", errors="replace")
+        return 'name = "levelup"' in text
+    except OSError:
+        return False
+
+
+def _normalize_git_url(url: str) -> str:
+    """Convert git SSH URLs to a form usable with ``uv tool install``.
+
+    ``git@host:user/repo.git`` → ``git+ssh://git@host/user/repo.git``
+    ``https://…``              → ``git+https://…``
+    Already-prefixed URLs are returned as-is.
+    """
+    url = url.strip()
+    if url.startswith("git+"):
+        return url
+    if url.startswith("git@"):
+        # git@github.com:user/repo.git → git+ssh://git@github.com/user/repo.git
+        without_prefix = url[len("git@"):]
+        host, _, path = without_prefix.partition(":")
+        return f"git+ssh://git@{host}/{path}"
+    if url.startswith("https://") or url.startswith("http://"):
+        return f"git+{url}"
+    return url
+
+
+def _resolve_source(
+    *,
+    source_flag: Path | None,
+    remote_flag: str | None,
+    meta: dict,
+) -> tuple[Path | None, str | None]:
+    """Resolve the update source.
+
+    Returns ``(local_path, remote_url)``.  Exactly one will be non-None.
+    """
+    method = meta.get("method", "")
+
+    # 1. --remote flag → remote install (no git pull needed)
+    if remote_flag:
+        return None, _normalize_git_url(remote_flag)
+
+    # 2. --source flag → local path
+    if source_flag:
+        return source_flag.resolve(), None
+
+    # 3. install.json source_path (if still a valid git repo)
+    saved_source = meta.get("source_path")
+    if saved_source:
+        p = Path(saved_source)
+        if p.is_dir() and (p / ".git").is_dir():
+            return p, None
+        # Source path gone — check for saved repo_url
+        repo_url = meta.get("repo_url")
+        if repo_url:
+            return None, _normalize_git_url(repo_url)
+
+    # 4. Global install with no usable source → default remote
+    if method == "global":
+        return None, _normalize_git_url(DEFAULT_REPO_URL)
+
+    # 5. CWD is a LevelUp repo
+    cwd = Path.cwd()
+    if _is_levelup_repo(cwd):
+        return cwd, None
+
+    # 6. Ultimate fallback (_get_project_root — works for editable installs)
+    return _get_project_root(), None
+
+
 @app.command("self-update")
 def self_update(
     source: Optional[Path] = typer.Option(
         None, "--source", help="Path to LevelUp git clone (overrides saved metadata)"
+    ),
+    remote: Optional[str] = typer.Option(
+        None, "--remote", help="Git URL to install from (skips git pull, installs directly)"
     ),
     install_gui: bool = typer.Option(
         False, "--gui", help="Add GUI support (PyQt6) during update"
@@ -753,20 +856,53 @@ def self_update(
             extras.append("gui")
             meta["extras"] = extras
 
-    # Determine source path: --source flag > metadata > fallback to _get_project_root()
-    if source:
-        source_path = source.resolve()
-    elif meta and meta.get("source_path"):
-        source_path = Path(meta["source_path"])
-    else:
-        source_path = _get_project_root()
+    # Resolve source (local path or remote URL)
+    source_path, remote_url = _resolve_source(
+        source_flag=source,
+        remote_flag=remote,
+        meta=meta,
+    )
+
+    if remote_url:
+        # ── Remote install path (no git pull) ──────────────────────────────
+        extras = meta.get("extras", [])
+        if "gui" in extras:
+            install_target = f"levelup[gui] @ {remote_url}"
+        else:
+            install_target = f"levelup @ {remote_url}"
+
+        console.print(f"Source: {remote_url}")
+        console.print("[dim]Installing from remote via uv tool...[/dim]")
+        with Status("Installing from remote...", console=console):
+            result = subprocess.run(
+                ["uv", "tool", "install", "--force", install_target],
+                capture_output=True,
+                text=True,
+            )
+        if result.returncode != 0:
+            print_error(f"uv tool install failed:\n{result.stderr.strip()}")
+            raise typer.Exit(1)
+
+        # Save metadata
+        if not meta.get("method"):
+            meta["method"] = "global"
+        meta["repo_url"] = remote or remote_url
+        meta["last_updated"] = datetime.now(timezone.utc).isoformat()
+        _save_install_meta(meta)
+
+        console.print(f"[bold green]Updated:[/bold green] {get_version_string()}")
+        return
+
+    # ── Local source path ──────────────────────────────────────────────────
+    assert source_path is not None
 
     # Validate source path has .git
     if not source_path.exists():
         print_error(
             f"Source directory not found: {source_path}\n"
             "Re-clone the repository and run the install script, or use:\n"
-            "  levelup self-update --source /path/to/LevelUp"
+            "  levelup self-update --source /path/to/LevelUp\n"
+            "  levelup self-update --remote https://github.com/croxtonveryepic/LevelUp.git"
         )
         raise typer.Exit(1)
 
@@ -774,7 +910,8 @@ def self_update(
         print_error(
             f"No git repository at: {source_path}\n"
             "Re-clone the repository and run the install script, or use:\n"
-            "  levelup self-update --source /path/to/LevelUp"
+            "  levelup self-update --source /path/to/LevelUp\n"
+            "  levelup self-update --remote https://github.com/croxtonveryepic/LevelUp.git"
         )
         raise typer.Exit(1)
 
@@ -834,6 +971,18 @@ def self_update(
         meta["source_path"] = str(source.resolve())
     if not meta.get("method"):
         meta["method"] = "editable"
+    # Auto-detect and save repo_url from git remote
+    try:
+        remote_result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=str(source_path),
+            capture_output=True,
+            text=True,
+        )
+        if remote_result.returncode == 0 and remote_result.stdout.strip():
+            meta["repo_url"] = remote_result.stdout.strip()
+    except OSError:
+        pass
     meta["last_updated"] = datetime.now(timezone.utc).isoformat()
     _save_install_meta(meta)
 

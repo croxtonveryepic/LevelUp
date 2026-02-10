@@ -32,7 +32,7 @@ class TicketSidebarWidget(QWidget):
         add_btn = QPushButton("+")
         add_btn.setObjectName("addTicketBtn")
         add_btn.setToolTip("Create new ticket")
-        add_btn.clicked.connect(self.create_ticket_clicked)
+        add_btn.clicked.connect(lambda: self.create_ticket_clicked.emit())
         header_layout.addWidget(add_btn)
 
         layout.addLayout(header_layout)

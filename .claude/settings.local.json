@@ -24,7 +24,12 @@
       "Bash(git merge:*)",
       "Bash(git branch:*)",
       "Bash(find:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(grep:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(echo:*)",
+      "Bash(findstr:*)",
+      "Bash(uv tool dir:*)"
     ]
   }
 }

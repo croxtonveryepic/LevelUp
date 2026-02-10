@@ -125,6 +125,22 @@ QPushButton#saveBtn:disabled {
     background-color: #45475A;
     color: #6C7086;
 }
+QPushButton#addTicketBtn {
+    background-color: #2ECC71;
+    color: #1E1E2E;
+    border: none;
+    border-radius: 4px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    font-size: 18px;
+    font-weight: bold;
+}
+QPushButton#addTicketBtn:hover {
+    background-color: #27AE60;
+}
 QPushButton#backBtn {
     background-color: transparent;
     border: none;

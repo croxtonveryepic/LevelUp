@@ -283,3 +283,42 @@ def update_ticket(
         new_lines[body_start:next_heading_idx] = desc_lines
 
     path.write_text("".join(new_lines), encoding="utf-8")
+
+
+def add_ticket(
+    project_path: Path,
+    title: str,
+    description: str = "",
+    filename: str | None = None,
+) -> Ticket:
+    """Append a new ticket to the markdown file and return it.
+
+    Creates the parent directory and file if they don't exist.
+    """
+    path = get_tickets_path(project_path, filename)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Read existing tickets to determine next number
+    existing = parse_tickets(path.read_text(encoding="utf-8")) if path.exists() else []
+    new_number = len(existing) + 1
+
+    # Build the markdown block
+    block = f"## {title}\n"
+    if description:
+        block += description.rstrip("\n\r") + "\n"
+
+    # Append with a blank-line separator
+    if path.exists():
+        current = path.read_text(encoding="utf-8")
+        if current and not current.endswith("\n"):
+            current += "\n"
+        path.write_text(current + "\n" + block, encoding="utf-8")
+    else:
+        path.write_text(block, encoding="utf-8")
+
+    return Ticket(
+        number=new_number,
+        title=title,
+        description=description.strip(),
+        status=TicketStatus.PENDING,
+    )

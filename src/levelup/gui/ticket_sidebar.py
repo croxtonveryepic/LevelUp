@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget
 
 from levelup.core.tickets import Ticket
 from levelup.gui.resources import TICKET_STATUS_COLORS, TICKET_STATUS_ICONS
@@ -14,6 +14,7 @@ class TicketSidebarWidget(QWidget):
     """Left-hand sidebar listing all tickets with status indicators."""
 
     ticket_selected = pyqtSignal(int)  # emits ticket number
+    create_ticket_clicked = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -22,9 +23,19 @@ class TicketSidebarWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        header = QLabel("Tickets")
-        header.setStyleSheet("font-size: 15px; font-weight: bold; padding: 8px;")
-        layout.addWidget(header)
+        header_layout = QHBoxLayout()
+        header_label = QLabel("Tickets")
+        header_label.setStyleSheet("font-size: 15px; font-weight: bold; padding: 8px;")
+        header_layout.addWidget(header_label)
+        header_layout.addStretch()
+
+        add_btn = QPushButton("+")
+        add_btn.setObjectName("addTicketBtn")
+        add_btn.setToolTip("Create new ticket")
+        add_btn.clicked.connect(self.create_ticket_clicked)
+        header_layout.addWidget(add_btn)
+
+        layout.addLayout(header_layout)
 
         self._list = QListWidget()
         self._list.currentRowChanged.connect(self._on_row_changed)

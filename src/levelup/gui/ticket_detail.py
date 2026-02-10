@@ -26,12 +26,14 @@ class TicketDetailWidget(QWidget):
 
     back_clicked = pyqtSignal()
     ticket_saved = pyqtSignal(int, str, str)  # number, title, description
+    ticket_created = pyqtSignal(str, str)     # title, description
     run_pid_changed = pyqtSignal(int, bool)   # pid, active
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._ticket: Ticket | None = None
         self._dirty = False
+        self._create_mode = False
         self._project_path: str | None = None
         self._db_path: str | None = None
 
@@ -127,8 +129,32 @@ class TicketDetailWidget(QWidget):
         # Enable run button if a ticket is loaded
         self._terminal.enable_run(self._ticket is not None)
 
+    def set_create_mode(self) -> None:
+        """Switch to create-new-ticket mode: clear fields and disable Run."""
+        self._create_mode = True
+        self._ticket = None
+
+        self._number_label.setText("New Ticket")
+
+        self._title_edit.blockSignals(True)
+        self._title_edit.setText("")
+        self._title_edit.blockSignals(False)
+
+        self._status_label.hide()
+
+        self._desc_edit.blockSignals(True)
+        self._desc_edit.setPlainText("")
+        self._desc_edit.blockSignals(False)
+
+        self._dirty = False
+        self._save_btn.setEnabled(False)
+        self._terminal.enable_run(False)
+        self._title_edit.setFocus()
+
     def set_ticket(self, ticket: Ticket) -> None:
         """Load ticket data into the form, clearing the dirty flag."""
+        self._create_mode = False
+        self._status_label.show()
         self._ticket = ticket
         self._number_label.setText(f"Ticket #{ticket.number}")
 
@@ -177,6 +203,21 @@ class TicketDetailWidget(QWidget):
         self.back_clicked.emit()
 
     def _on_cancel(self) -> None:
+        if self._create_mode:
+            if self._dirty:
+                reply = QMessageBox.question(
+                    self,
+                    "Unsaved Changes",
+                    "Discard unsaved changes?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
+            self._create_mode = False
+            self._dirty = False
+            self.back_clicked.emit()
+            return
         if self._ticket is not None:
             if self._dirty:
                 reply = QMessageBox.question(
@@ -191,6 +232,16 @@ class TicketDetailWidget(QWidget):
             self.set_ticket(self._ticket)
 
     def _on_save(self) -> None:
+        if self._create_mode:
+            title = self._title_edit.text().replace("\n", " ").strip()
+            if not title:
+                QMessageBox.warning(self, "Validation", "Title cannot be empty.")
+                return
+            description = self._desc_edit.toPlainText()
+            self.ticket_created.emit(title, description)
+            self._dirty = False
+            self._save_btn.setEnabled(False)
+            return
         if self._ticket is None:
             return
         title = self._title_edit.text().replace("\n", " ").strip()

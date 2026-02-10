@@ -95,6 +95,7 @@ class MainWindow(QMainWindow):
         self._sidebar.setMinimumWidth(200)
         self._sidebar.setMaximumWidth(400)
         self._sidebar.ticket_selected.connect(self._on_ticket_selected)
+        self._sidebar.create_ticket_clicked.connect(self._on_create_ticket)
         splitter.addWidget(self._sidebar)
 
         # Right: stacked widget (page 0 = runs table, page 1 = ticket detail)
@@ -121,6 +122,7 @@ class MainWindow(QMainWindow):
         self._detail = TicketDetailWidget()
         self._detail.back_clicked.connect(self._on_ticket_back)
         self._detail.ticket_saved.connect(self._on_ticket_saved)
+        self._detail.ticket_created.connect(self._on_ticket_created)
         self._detail.run_pid_changed.connect(self._on_run_pid_changed)
         self._stack.addWidget(self._detail)  # index 1
 
@@ -212,6 +214,39 @@ class MainWindow(QMainWindow):
         """Return to the runs table view."""
         self._stack.setCurrentIndex(0)
         self._sidebar.clear_selection()
+
+    def _on_create_ticket(self) -> None:
+        """Open the detail widget in create mode."""
+        if self._project_path is None:
+            return
+        self._sidebar.clear_selection()
+        self._detail.set_create_mode()
+        self._stack.setCurrentIndex(1)
+
+    def _on_ticket_created(self, title: str, description: str) -> None:
+        """Persist a newly created ticket and show it."""
+        if self._project_path is None:
+            return
+
+        from levelup.core.tickets import add_ticket
+
+        try:
+            ticket = add_ticket(
+                self._project_path,
+                title,
+                description=description,
+                filename=self._tickets_file,
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Create Error", f"Failed to create ticket: {e}")
+            return
+
+        self._refresh_tickets()
+        self._detail.set_ticket(ticket)
+        if self._project_path is not None:
+            self._detail.set_project_context(
+                str(self._project_path), self._db_path
+            )
 
     def _on_ticket_saved(self, number: int, title: str, description: str) -> None:
         """Persist ticket edits to the markdown file."""

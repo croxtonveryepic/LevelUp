@@ -9,6 +9,7 @@ import pytest
 from levelup.core.tickets import (
     Ticket,
     TicketStatus,
+    add_ticket,
     get_next_ticket,
     get_tickets_path,
     parse_tickets,
@@ -439,3 +440,66 @@ class TestUpdateTicket:
         update_ticket(tmp_path, 1, description="")
         tickets = read_tickets(tmp_path)
         assert tickets[0].description == ""
+
+
+# ---------------------------------------------------------------------------
+# TestAddTicket
+# ---------------------------------------------------------------------------
+
+
+class TestAddTicket:
+    def test_creates_file_and_parent_dir(self, tmp_path: Path):
+        t = add_ticket(tmp_path, "First ticket", "Some description")
+        assert t.number == 1
+        assert t.title == "First ticket"
+        assert t.description == "Some description"
+        assert t.status == TicketStatus.PENDING
+        # File should exist
+        path = tmp_path / "levelup" / "tickets.md"
+        assert path.exists()
+
+    def test_appends_to_existing(self, tmp_path: Path):
+        d = tmp_path / "levelup"
+        d.mkdir()
+        (d / "tickets.md").write_text("## Existing task\nDesc\n", encoding="utf-8")
+
+        t = add_ticket(tmp_path, "Second task", "More info")
+        assert t.number == 2
+        tickets = read_tickets(tmp_path)
+        assert len(tickets) == 2
+        assert tickets[0].title == "Existing task"
+        assert tickets[1].title == "Second task"
+        assert tickets[1].description == "More info"
+
+    def test_custom_filename(self, tmp_path: Path):
+        t = add_ticket(tmp_path, "Custom", filename="backlog.md")
+        assert t.number == 1
+        assert (tmp_path / "backlog.md").exists()
+        tickets = read_tickets(tmp_path, "backlog.md")
+        assert len(tickets) == 1
+        assert tickets[0].title == "Custom"
+
+    def test_empty_description(self, tmp_path: Path):
+        t = add_ticket(tmp_path, "No desc")
+        assert t.description == ""
+        tickets = read_tickets(tmp_path)
+        assert tickets[0].description == ""
+
+    def test_multiple_sequential_adds(self, tmp_path: Path):
+        t1 = add_ticket(tmp_path, "First")
+        t2 = add_ticket(tmp_path, "Second")
+        t3 = add_ticket(tmp_path, "Third")
+        assert t1.number == 1
+        assert t2.number == 2
+        assert t3.number == 3
+        tickets = read_tickets(tmp_path)
+        assert len(tickets) == 3
+        assert [t.title for t in tickets] == ["First", "Second", "Third"]
+
+    def test_round_trip(self, tmp_path: Path):
+        add_ticket(tmp_path, "Round trip", "Detailed description\n- item 1\n- item 2")
+        tickets = read_tickets(tmp_path)
+        assert len(tickets) == 1
+        assert tickets[0].title == "Round trip"
+        assert "item 1" in tickets[0].description
+        assert "item 2" in tickets[0].description

@@ -29,7 +29,9 @@
       "Bash(python -m pytest:*)",
       "Bash(echo:*)",
       "Bash(findstr:*)",
-      "Bash(uv tool dir:*)"
+      "Bash(uv tool dir:*)",
+      "Bash(git push:*)",
+      "Bash(set QT_QPA_PLATFORM=offscreen)"
     ]
   }
 }

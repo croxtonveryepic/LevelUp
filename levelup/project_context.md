@@ -31,8 +31,9 @@
 - **Main window**: `src/levelup/gui/main_window.py` - dashboard with run table and ticket sidebar
 - **Theming**:
   - Current theme: Catppuccin Mocha (dark theme) defined in `src/levelup/gui/styles.py`
-  - Applied globally via `app.setStyleSheet(DARK_THEME)` in `app.py`
+  - Applied globally via `app.setStyleSheet(DARK_THEME)` in `app.py` (line 25)
   - Terminal emulator has its own color scheme class: `CatppuccinMochaColors` in `terminal_emulator.py`
+  - Some widgets use inline `setStyleSheet()` calls for specific styling (e.g., ticket_detail.py, ticket_sidebar.py)
 - **Key widgets**:
   - `checkpoint_dialog.py` - Modal dialog for approving/revising/rejecting pipeline steps
   - `terminal_emulator.py` - Full VT100 terminal emulator with pyte + pywinpty/ptyprocess
@@ -43,8 +44,28 @@
 
 ### Configuration
 - Uses Pydantic settings with environment variable support
-- Settings classes: `LLMSettings`, `ProjectSettings`, `PipelineSettings`, `LevelUpSettings`
+- Settings classes in `src/levelup/config/settings.py`:
+  - `LLMSettings` - LLM backend configuration
+  - `ProjectSettings` - Project-specific settings
+  - `PipelineSettings` - Pipeline behavior settings
+  - `LevelUpSettings` - Root settings class with nested models
+- Configuration loading in `src/levelup/config/loader.py`:
+  - Searches for config files: `levelup.yaml`, `levelup.yml`, `.levelup.yaml`, `.levelup.yml`
+  - Layered config: defaults → file → env vars → overrides
 - No GUI/theme configuration currently exists in settings
+
+### Styling Patterns
+- Global stylesheet applied to QApplication in `app.py`
+- Widget-specific styles use `setObjectName()` for ID selectors (e.g., `#saveBtn`, `#approveBtn`)
+- Some widgets have inline `setStyleSheet()` calls for custom colors
+- Status colors for runs and tickets defined in `resources.py`
+- Terminal emulator uses custom color scheme class with QColor objects
+
+### System Theme Detection
+- PyQt6 doesn't provide native cross-platform dark mode detection API
+- Recommended approach: use `darkdetect` library (cross-platform, supports Windows/macOS/Linux)
+- darkdetect provides: `theme()` returns "Dark"/"Light", `isDark()`, `isLight()`, and `listener()` for watching changes
+- Alternative: PyQt6's `QStyleHints.colorScheme()` (Qt 6.5+) but less reliable across platforms
 
 ### Testing Patterns
 - Unit tests in `tests/unit/`
@@ -53,7 +74,8 @@
 - Path normalization needed on Windows: `.replace("\\", "/")` in assertions
 
 ### Key Dependencies
-- PyQt6 for GUI
+- PyQt6 for GUI (installed via `gui` or `dev` optional dependencies)
 - Pydantic for configuration
 - pyte for terminal emulation
 - pywinpty (Windows) / ptyprocess (Unix) for PTY support
+- Would need to add: `darkdetect` for system theme detection

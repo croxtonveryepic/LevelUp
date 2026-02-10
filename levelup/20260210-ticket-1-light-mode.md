@@ -18,3 +18,19 @@ See `levelup/project_context.md` for project details.
 - 5 assumption(s)
 - 5 out-of-scope item(s)
 - **Usage:** 74.5s
+### Checkpoint: requirements
+
+- **Decision:** approve
+## Step: planning  (22:45:52)
+
+**Approach:** Implement light theme support with a theme switcher that allows users to choose between light, dark, and system-match modes. Add a GUISettings configuration model to persist theme preference. Use the darkdetect library for cross-platform system theme detection. Create light theme stylesheets mirroring the existing dark theme structure. Add a theme switcher control to the main window toolbar and implement dynamic theme switching throughout the application.
+- 12 implementation step(s)
+- **Affected files:** pyproject.toml, src/levelup/config/settings.py, src/levelup/config/loader.py, src/levelup/gui/styles.py, src/levelup/gui/terminal_emulator.py, src/levelup/gui/theme_manager.py, src/levelup/gui/resources.py, src/levelup/gui/app.py, src/levelup/gui/main_window.py, src/levelup/gui/ticket_detail.py, src/levelup/gui/ticket_sidebar.py, tests/unit/test_gui_tickets.py, tests/unit/test_theme_manager.py, tests/unit/test_gui_settings.py
+- **Risks:**
+  - System theme detection may not work reliably on all Linux desktop environments (depends on darkdetect library support)
+  - Dynamic theme switching requires careful state management to ensure all widgets update correctly without restart
+  - Inline setStyleSheet() calls in widgets may conflict with global stylesheet and need careful coordination
+  - Color contrast ratios must be verified for accessibility in light theme, especially for status colors
+  - Terminal emulator color switching while shell is running may cause visual artifacts if not handled atomically
+  - Configuration file format change requires backward compatibility - missing 'gui' section should not break existing configs
+- **Usage:** 77.4s

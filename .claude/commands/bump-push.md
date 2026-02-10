@@ -2,14 +2,18 @@
 model: haiku
 ---
 
-Bump the version and then commit and push the change.
+Bump the version, commit with a message, and push.
 
 ## Arguments
 
-$ARGUMENTS should be one of: `major`, `minor`, or `patch` (default: `patch` if no argument given).
+$ARGUMENTS is an optional commit message. If no argument is given, the commit message defaults to `bump version to X.Y.Z`.
 
 ## Instructions
 
-1. Run the /bump-version skill with $ARGUMENTS to increment the version.
+1. Run the /bump-version skill with `patch` to increment the version. Note the new version number X.Y.Z.
 
-2. After the version is bumped, run the /push skill with the commit message: `bump version to X.Y.Z` (where X.Y.Z is the new version number from step 1).
+2. Determine the commit message:
+   - If $ARGUMENTS is provided and non-empty, use it as the commit message.
+   - Otherwise, use: `bump version to X.Y.Z`
+
+3. Run the /push skill with the determined commit message.

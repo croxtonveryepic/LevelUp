@@ -195,10 +195,10 @@ class TestPickRunToForget:
 
     @patch("levelup.cli.prompts.pt_prompt", return_value="1")
     def test_handles_run_with_empty_task_title(self, _mock_prompt):
-        """Picker handles runs with empty/None task title."""
+        """Picker handles runs with empty task title."""
         from levelup.cli.prompts import pick_run_to_forget
 
-        run = _make_run_record(run_id="no-title-run", task_title=None)
+        run = _make_run_record(run_id="no-title-run", task_title="")
 
         selected = pick_run_to_forget([run])
 

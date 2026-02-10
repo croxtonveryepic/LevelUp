@@ -583,6 +583,95 @@ def rollback(
 
 
 @app.command()
+def forget(
+    run_id: Optional[str] = typer.Argument(None, help="Run ID to delete (omit for interactive picker)"),
+    nuke: bool = typer.Option(False, "--nuke", help="Delete ALL runs from the database"),
+    db_path: Optional[Path] = typer.Option(
+        None, "--db-path", help="Override state DB path (default: ~/.levelup/state.db)"
+    ),
+) -> None:
+    """Delete a pipeline run from the state database."""
+    from levelup.state.manager import StateManager
+
+    print_banner()
+
+    mgr_kwargs: dict = {}
+    if db_path:
+        mgr_kwargs["db_path"] = db_path
+    state_manager = StateManager(**mgr_kwargs)
+
+    if nuke:
+        # --nuke: delete all runs
+        runs = state_manager.list_runs()
+        if not runs:
+            console.print("[dim]No runs to delete.[/dim]")
+            return
+
+        from levelup.cli.prompts import confirm_action
+
+        console.print(f"[bold red]This will delete {len(runs)} run(s).[/bold red]")
+        if not confirm_action(f"Delete all {len(runs)} runs?", default=False):
+            console.print("[dim]Cancelled.[/dim]")
+            return
+
+        errors = []
+        for r in runs:
+            try:
+                state_manager.delete_run(r.run_id)
+            except Exception as e:
+                errors.append((r.run_id, str(e)))
+
+        if errors:
+            for rid, err in errors:
+                console.print(f"[red]Error deleting {rid}: {err}[/red]")
+            raise typer.Exit(1)
+
+        console.print(f"[green]Deleted {len(runs)} run(s).[/green]")
+        return
+
+    if run_id is not None:
+        # Explicit run ID
+        if not run_id.strip():
+            print_error("Run ID cannot be empty.")
+            raise typer.Exit(1)
+
+        record = state_manager.get_run(run_id)
+        if record is None:
+            print_error(f"Run '{run_id}' not found.")
+            raise typer.Exit(1)
+
+        try:
+            state_manager.delete_run(run_id)
+        except Exception as e:
+            print_error(f"Error deleting run: {e}")
+            raise typer.Exit(1)
+
+        console.print(f"[green]Run '{run_id}' deleted.[/green]")
+        return
+
+    # Interactive mode: pick a run to delete
+    state_manager.mark_dead_runs()
+    runs = state_manager.list_runs()
+    if not runs:
+        console.print("[dim]No runs found.[/dim]")
+        return
+
+    from levelup.cli.prompts import confirm_action, pick_run_to_forget
+
+    try:
+        selected = pick_run_to_forget(runs)
+    except KeyboardInterrupt:
+        return
+
+    if not confirm_action(f"Delete run '{selected.run_id[:12]}'?", default=False):
+        console.print("[dim]Cancelled.[/dim]")
+        return
+
+    state_manager.delete_run(selected.run_id)
+    console.print(f"[green]Run '{selected.run_id}' deleted.[/green]")
+
+
+@app.command()
 def instruct(
     action: str = typer.Argument("list", help="Action: add, list, or remove"),
     text: Optional[str] = typer.Argument(None, help="Instruction text (add) or index (remove)"),

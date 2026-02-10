@@ -130,6 +130,59 @@ def confirm_action(message: str, default: bool = True) -> bool:
     return choice in ("y", "yes")
 
 
+def pick_run_to_forget(runs: list) -> object:
+    """Display all runs and let the user pick one to delete.
+
+    Args:
+        runs: List of RunRecord objects (must be non-empty).
+
+    Returns:
+        The selected RunRecord.
+
+    Raises:
+        ValueError: If runs list is empty.
+        KeyboardInterrupt: If user chooses to quit.
+    """
+    if not runs:
+        raise ValueError("No runs to pick from")
+
+    from rich.table import Table
+
+    table = Table(title="Runs", show_lines=False)
+    table.add_column("#", style="bold", width=4)
+    table.add_column("Run ID", style="cyan", width=10)
+    table.add_column("Task", style="white")
+    table.add_column("Status", width=10)
+    table.add_column("Step", style="yellow", width=14)
+    table.add_column("Updated", style="dim", width=20)
+
+    for i, run in enumerate(runs, 1):
+        table.add_row(
+            str(i),
+            run.run_id[:8],
+            run.task_title or "(untitled)",
+            run.status or "—",
+            run.current_step or "—",
+            (run.updated_at[:19].replace("T", " ") if run.updated_at else "—"),
+        )
+
+    console.print(table)
+    console.print("[dim]Enter a number to select a run, or 'q' to quit.[/dim]")
+
+    while True:
+        choice = pt_prompt(HTML("<b>> </b>")).strip().lower()
+        if choice in ("q", "quit"):
+            raise KeyboardInterrupt
+        try:
+            idx = int(choice)
+        except ValueError:
+            console.print(f"[dim]Please enter a number 1-{len(runs)}, or 'q'[/dim]")
+            continue
+        if 1 <= idx <= len(runs):
+            return runs[idx - 1]
+        console.print(f"[dim]Please enter a number 1-{len(runs)}, or 'q'[/dim]")
+
+
 def prompt_branch_naming_convention() -> str | None:
     """Prompt user to choose a branch naming convention.
 

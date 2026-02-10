@@ -189,18 +189,22 @@ class _PtyReaderThread(QThread):
 
     def _read_windows(self) -> None:
         """Read from pywinpty PTY (returns str)."""
+        import time
+
         while self._running:
             try:
-                data = self._pty.read(4096, blocking=True, timeout=100)  # type: ignore[union-attr]
+                data = self._pty.read(blocking=False)  # type: ignore[union-attr]
                 if data:
                     if isinstance(data, str):
                         self.data_received.emit(data.encode("utf-8"))
                     else:
                         self.data_received.emit(data)
+                else:
+                    time.sleep(0.01)  # 10ms poll interval when no data
             except Exception:
-                # Timeout or PTY closed
                 if not self._running:
                     break
+                time.sleep(0.01)
 
     def _read_unix(self) -> None:
         """Read from ptyprocess PTY (returns bytes)."""
@@ -305,7 +309,8 @@ class PtyBackend(QObject):
         if self._pty is not None:
             try:
                 if self._is_windows:
-                    self._pty.close(force=True)  # type: ignore[union-attr]
+                    # pywinpty PTY has no close() method; release reference for GC
+                    pass
                 else:
                     self._pty.terminate(force=True)  # type: ignore[union-attr]
             except Exception:
@@ -322,9 +327,13 @@ class PtyBackend(QObject):
 
     def _on_reader_done(self) -> None:
         exit_code = 0
-        if not self._is_windows and self._pty is not None:
+        if self._pty is not None:
             try:
-                exit_code = self._pty.exitstatus or 0  # type: ignore[union-attr]
+                if self._is_windows:
+                    status = self._pty.get_exitstatus()  # type: ignore[union-attr]
+                    exit_code = status if status is not None else 0
+                else:
+                    exit_code = self._pty.exitstatus or 0  # type: ignore[union-attr]
             except Exception:
                 pass
         self.process_exited.emit(exit_code)

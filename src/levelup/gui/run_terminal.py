@@ -37,7 +37,6 @@ def build_run_command(
     python = sys.executable.replace("\\", "/")
     return (
         f'"{python}" -m levelup run'
-        f" --gui"
         f" --ticket {ticket_number}"
         f' --path "{project_path}"'
         f' --db-path "{db_path}"'
@@ -53,14 +52,13 @@ def build_resume_command(
     python = sys.executable.replace("\\", "/")
     return (
         f'"{python}" -m levelup resume {run_id}'
-        f" --gui"
         f' --path "{project_path}"'
         f' --db-path "{db_path}"'
     )
 
 
 class RunTerminalWidget(QWidget):
-    """Embedded interactive terminal for running ``levelup run --gui``."""
+    """Embedded interactive terminal for running ``levelup run`` pipelines."""
 
     run_started = pyqtSignal(int)   # PID (emitted as 0 — no separate process PID)
     run_finished = pyqtSignal(int)  # exit code
@@ -174,6 +172,7 @@ class RunTerminalWidget(QWidget):
 
         cmd = build_run_command(ticket_number, project_path, db_path)
         self._terminal.send_command(cmd)
+        self._terminal.setFocus()
 
         self._set_running_state(True)
         self.run_started.emit(0)
@@ -303,9 +302,13 @@ class RunTerminalWidget(QWidget):
 
         cmd = build_resume_command(self._last_run_id, self._project_path, self._db_path)
         self._terminal.send_command(cmd)
+        self._terminal.setFocus()
 
         self._set_running_state(True)
         self.run_started.emit(0)
+
+        # Start polling for completion detection
+        self._run_id_poll_timer.start(1000)
 
     def _on_forget_clicked(self) -> None:
         """Delete the last run from the state DB."""
@@ -343,7 +346,7 @@ class RunTerminalWidget(QWidget):
             self.run_finished.emit(exit_code)
 
     def _poll_for_run_id(self) -> None:
-        """Poll the DB to find the run_id for the most recent run."""
+        """Poll the DB to find the run_id and detect run completion."""
         if not self._state_manager or not self._project_path:
             self._run_id_poll_timer.stop()
             return
@@ -352,6 +355,40 @@ class RunTerminalWidget(QWidget):
 
         assert isinstance(self._state_manager, StateManager)
 
+        # If we already have a run_id, check its status for completion
+        if self._last_run_id:
+            record = self._state_manager.get_run(self._last_run_id)
+            if record is None:
+                # Run was deleted externally
+                self._run_id_poll_timer.stop()
+                if self._command_running:
+                    self._set_running_state(False)
+                return
+
+            if record.status in ("completed", "failed", "aborted"):
+                self._run_id_poll_timer.stop()
+                if self._command_running:
+                    exit_code = 0 if record.status == "completed" else 1
+                    self._set_running_state(False)
+                    self._status_label.setText(f"Finished ({record.status})")
+                    self.run_finished.emit(exit_code)
+                else:
+                    self._update_button_states()
+                return
+
+            if record.status == "paused":
+                self._run_id_poll_timer.stop()
+                if self._command_running:
+                    self._set_running_state(False)
+                    self._status_label.setText("Paused")
+                    self.run_paused.emit()
+                self._update_button_states()
+                return
+
+            # Still running — keep polling
+            return
+
+        # No run_id yet — search for a matching active run
         runs = self._state_manager.list_runs()
         for run in runs:
             if (
@@ -359,17 +396,16 @@ class RunTerminalWidget(QWidget):
                 and run.status not in ("completed", "failed", "aborted")
             ):
                 self._last_run_id = run.run_id
-                self._run_id_poll_timer.stop()
                 self._update_button_states()
+                # Keep polling — don't stop timer
                 return
 
-        # Also check if the run just completed (for resume/forget)
+        # Fallback: check if a run just completed (e.g. very fast run)
         for run in runs:
             if run.project_path.rstrip("/\\") == self._project_path.rstrip("/\\"):
                 self._last_run_id = run.run_id
-                self._run_id_poll_timer.stop()
-                # If the run is already done, mark as not running
-                if run.status in ("completed", "failed", "aborted", "paused"):
+                if run.status in ("completed", "failed", "aborted"):
+                    self._run_id_poll_timer.stop()
                     if self._command_running:
                         exit_code = 0 if run.status == "completed" else 1
                         self._set_running_state(False)

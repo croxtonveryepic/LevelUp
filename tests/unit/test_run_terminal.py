@@ -22,9 +22,9 @@ class TestBuildRunCommand:
         cmd = build_run_command(3, "/some/project", "/tmp/state.db")
         assert "-m levelup run" in cmd
 
-    def test_contains_gui_flag(self):
+    def test_does_not_contain_gui_flag(self):
         cmd = build_run_command(1, "/p", "/d")
-        assert "--gui" in cmd
+        assert "--gui" not in cmd
 
     def test_contains_ticket_number(self):
         cmd = build_run_command(42, "/p", "/d")
@@ -53,9 +53,9 @@ class TestBuildResumeCommand:
         cmd = build_resume_command("abc123", "/p", "/d")
         assert "abc123" in cmd
 
-    def test_contains_gui_flag(self):
+    def test_does_not_contain_gui_flag(self):
         cmd = build_resume_command("abc123", "/p", "/d")
-        assert "--gui" in cmd
+        assert "--gui" not in cmd
 
     def test_contains_path(self):
         cmd = build_resume_command("abc123", "/some/project", "/d")
@@ -253,3 +253,101 @@ class TestRunTerminalWidget:
         # Verify the signal exists and can be connected
         received: list[bool] = []
         widget.run_paused.connect(lambda: received.append(True))
+
+    def test_poll_detects_completion(self):
+        """When DB status becomes terminal, widget transitions to finished."""
+        from unittest.mock import MagicMock
+
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+
+        from levelup.gui.run_terminal import RunTerminalWidget
+        from levelup.state.manager import StateManager
+
+        widget = RunTerminalWidget()
+
+        # Set up mock state manager (spec so isinstance check passes)
+        mock_sm = MagicMock(spec=StateManager)
+        mock_record = MagicMock()
+        mock_record.status = "completed"
+        mock_sm.get_run.return_value = mock_record
+        widget.set_state_manager(mock_sm)
+
+        # Simulate a running state with known run_id
+        widget._command_running = True
+        widget._project_path = "/some/project"
+        widget._last_run_id = "test-run-123"
+
+        # Track emitted signals
+        finished_codes: list[int] = []
+        widget.run_finished.connect(lambda code: finished_codes.append(code))
+
+        # Poll should detect completion
+        widget._poll_for_run_id()
+
+        assert widget.is_running is False
+        assert finished_codes == [0]
+        assert "completed" in widget._status_label.text()
+
+    def test_poll_detects_failure(self):
+        """When DB status becomes failed, widget transitions with exit code 1."""
+        from unittest.mock import MagicMock
+
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+
+        from levelup.gui.run_terminal import RunTerminalWidget
+        from levelup.state.manager import StateManager
+
+        widget = RunTerminalWidget()
+
+        mock_sm = MagicMock(spec=StateManager)
+        mock_record = MagicMock()
+        mock_record.status = "failed"
+        mock_sm.get_run.return_value = mock_record
+        widget.set_state_manager(mock_sm)
+
+        widget._command_running = True
+        widget._project_path = "/some/project"
+        widget._last_run_id = "test-run-456"
+
+        finished_codes: list[int] = []
+        widget.run_finished.connect(lambda code: finished_codes.append(code))
+
+        widget._poll_for_run_id()
+
+        assert widget.is_running is False
+        assert finished_codes == [1]
+
+    def test_poll_detects_pause(self):
+        """When DB status becomes paused, widget emits run_paused."""
+        from unittest.mock import MagicMock
+
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+
+        from levelup.gui.run_terminal import RunTerminalWidget
+        from levelup.state.manager import StateManager
+
+        widget = RunTerminalWidget()
+
+        mock_sm = MagicMock(spec=StateManager)
+        mock_record = MagicMock()
+        mock_record.status = "paused"
+        mock_sm.get_run.return_value = mock_record
+        widget.set_state_manager(mock_sm)
+
+        widget._command_running = True
+        widget._project_path = "/some/project"
+        widget._last_run_id = "test-run-789"
+
+        paused: list[bool] = []
+        widget.run_paused.connect(lambda: paused.append(True))
+
+        widget._poll_for_run_id()
+
+        assert widget.is_running is False
+        assert paused == [True]

@@ -326,7 +326,7 @@ class MainWindow(QMainWindow):
 
     def _on_run_pid_changed(self, pid: int, active: bool) -> None:
         """Track PIDs of GUI-spawned pipeline runs."""
-        if active and pid:
+        if active:
             self._active_run_pids.add(pid)
         else:
             # Process finished — remove all PIDs that are no longer alive

@@ -11,6 +11,11 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Leave margin below Windows 32,767 CreateProcessW character limit.
+# When the total command line (including --system-prompt) would exceed this,
+# we embed the system prompt in stdin instead.
+_MAX_CMDLINE_CHARS = 30_000
+
 
 class ClaudeCodeError(Exception):
     """Raised when a `claude -p` subprocess fails."""
@@ -79,8 +84,26 @@ class ClaudeCodeClient:
             "--model", self._model,
         ]
 
+        actual_input = prompt
         if system_prompt:
-            cmd.extend(["--system-prompt", system_prompt])
+            # Estimate command-line length if we were to add --system-prompt.
+            # On Windows, CreateProcessW has a hard 32,767-char limit; when
+            # the CodeAgent embeds full test-file contents in the system prompt
+            # the total can easily exceed that, causing a misleading
+            # FileNotFoundError.  Fall back to embedding in stdin instead.
+            estimated = sum(len(a) for a in cmd) + len(system_prompt) + 50
+            if estimated > _MAX_CMDLINE_CHARS:
+                logger.debug(
+                    "System prompt too large for command line (%d chars), "
+                    "embedding in stdin",
+                    len(system_prompt),
+                )
+                actual_input = (
+                    f"<system-instructions>\n{system_prompt}\n"
+                    f"</system-instructions>\n\n{prompt}"
+                )
+            else:
+                cmd.extend(["--system-prompt", system_prompt])
 
         if allowed_tools:
             cmd.extend(["--allowedTools", ",".join(allowed_tools)])
@@ -90,7 +113,7 @@ class ClaudeCodeClient:
         try:
             proc = subprocess.run(
                 cmd,
-                input=prompt,
+                input=actual_input,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -103,8 +126,15 @@ class ClaudeCodeClient:
                     f"Working directory does not exist: {working_directory}",
                     returncode=-1,
                 )
+            cmd_len = len(subprocess.list2cmdline(cmd))
+            extra = ""
+            if cmd_len > _MAX_CMDLINE_CHARS:
+                extra = (
+                    f"\n  (Command line was {cmd_len:,} chars "
+                    "— may exceed Windows CreateProcessW limit)"
+                )
             raise ClaudeCodeError(
-                f"'{self._claude_executable}' not found.\n"
+                f"'{self._claude_executable}' not found.{extra}\n"
                 "  - Install Claude Code: https://docs.anthropic.com/en/docs/claude-code\n"
                 "  - Or set a custom path in levelup.yaml:  llm: { claude_executable: /path/to/claude }\n"
                 "  - Or use env var: LEVELUP_LLM__CLAUDE_EXECUTABLE=/path/to/claude\n"

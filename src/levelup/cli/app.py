@@ -541,12 +541,35 @@ def rollback(
         temp_orch = Orchestrator(settings=temp_settings)
         branch_name = temp_orch._build_branch_name(convention, ctx)
 
-        current = repo.active_branch.name if not repo.head.is_detached else None
-        if current and current != branch_name:
-            console.print(f"[yellow]Warning: currently on branch '{current}', expected '{branch_name}'[/yellow]")
+        # Clean up worktree if this run used one
+        if ctx.worktree_path:
+            try:
+                if ctx.worktree_path.exists():
+                    repo.git.worktree("remove", str(ctx.worktree_path), "--force")
+                    console.print(f"[dim]Removed worktree: {ctx.worktree_path}[/dim]")
+            except Exception as wt_err:
+                console.print(f"[yellow]Warning: failed to remove worktree: {wt_err}[/yellow]")
 
-        repo.git.reset("--hard", target_sha)
-        console.print(f"[green]Reset to {target_sha[:12]}[/green]")
+        # Rolling back to pre-run state: delete the branch entirely
+        if not to:
+            if branch_name in [h.name for h in repo.heads]:
+                # Ensure we're not on the branch we're about to delete
+                current = repo.active_branch.name if not repo.head.is_detached else None
+                if current == branch_name:
+                    # Detach HEAD or checkout default branch
+                    repo.git.checkout(target_sha)
+                repo.delete_head(branch_name, force=True)
+                console.print(f"[dim]Deleted branch: {branch_name}[/dim]")
+            console.print(f"[green]Rolled back to pre-run state ({target_sha[:12]})[/green]")
+        else:
+            # Rolling back to a step: reset within the branch
+            # Operate on the worktree repo if it existed, else main repo
+            if branch_name in [h.name for h in repo.heads]:
+                current = repo.active_branch.name if not repo.head.is_detached else None
+                if current and current != branch_name:
+                    console.print(f"[yellow]Warning: currently on branch '{current}', expected '{branch_name}'[/yellow]")
+            repo.git.reset("--hard", target_sha)
+            console.print(f"[green]Reset to {target_sha[:12]}[/green]")
 
     except Exception as e:
         print_error(f"Git reset failed: {e}")

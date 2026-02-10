@@ -39,8 +39,8 @@ def _build_filename(ctx: PipelineContext) -> str:
 class RunJournal:
     """Incremental Markdown log written during a pipeline run."""
 
-    def __init__(self, ctx: PipelineContext) -> None:
-        self._dir = ctx.project_path / "levelup"
+    def __init__(self, ctx: PipelineContext, base_path: Path | None = None) -> None:
+        self._dir = (base_path or ctx.project_path) / "levelup"
         self._path = self._dir / _build_filename(ctx)
 
     @property

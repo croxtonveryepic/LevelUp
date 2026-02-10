@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import git as gitmodule
 import pytest
 from typer.testing import CliRunner
 
@@ -38,7 +39,7 @@ def _make_settings(tmp_path: Path) -> LevelUpSettings:
 
 def _make_ctx(tmp_path: Path, **overrides) -> PipelineContext:
     """Build a PipelineContext with sensible defaults, applying overrides."""
-    defaults = dict(
+    defaults: dict = dict(
         task=TaskInput(title="Test task", description="A test"),
         project_path=tmp_path,
         status=PipelineStatus.FAILED,
@@ -262,6 +263,51 @@ class TestOrchestratorResume:
         assert "not found on PATH" in result.error_message
         # current_step preserved even when backend creation fails
         assert result.current_step == "coding"
+
+    @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
+    @patch("levelup.core.orchestrator.Orchestrator._run_detection")
+    def test_resume_recreates_missing_worktree(
+        self, mock_detect, mock_agent, tmp_path
+    ):
+        """resume() re-creates a worktree when the previous one was cleaned up."""
+        # Set up a git repo with a branch
+        repo = gitmodule.Repo.init(tmp_path)
+        repo.config_writer().set_value("user", "name", "Test User").release()
+        repo.config_writer().set_value("user", "email", "test@example.com").release()
+        (tmp_path / "init.txt").write_text("init")
+        repo.index.add(["init.txt"])
+        repo.index.commit("initial commit")
+        pre_sha = repo.head.commit.hexsha
+
+        # Create a branch that would have been created by the original run
+        branch_name = "levelup/testrun123"
+        repo.create_head(branch_name)
+
+        mock_detect.return_value = None
+        mock_agent.side_effect = lambda name, ctx: ctx
+
+        settings = LevelUpSettings(
+            llm=LLMSettings(api_key="test", model="test", backend="claude_code"),
+            project=ProjectSettings(path=tmp_path),
+            pipeline=PipelineSettings(require_checkpoints=False, create_git_branch=True),
+        )
+        orch = Orchestrator(settings=settings)
+
+        ctx = _make_ctx(
+            tmp_path,
+            current_step="coding",
+            status=PipelineStatus.FAILED,
+            run_id="testrun123",
+            pre_run_sha=pre_sha,
+            branch_naming="levelup/{run_id}",
+        )
+
+        result = orch.resume(ctx)
+
+        assert result.status == PipelineStatus.COMPLETED
+        # Worktree should have been created and then cleaned up
+        # The branch should still exist in the main repo
+        assert branch_name in [h.name for h in repo.heads]
 
 
 # ---------------------------------------------------------------------------

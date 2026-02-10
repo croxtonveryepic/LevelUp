@@ -193,3 +193,9 @@ class PipelineContext(BaseModel):
     # Git tracking
     pre_run_sha: str | None = None
     step_commits: dict[str, str] = Field(default_factory=dict)
+    worktree_path: Path | None = None
+
+    @property
+    def effective_path(self) -> Path:
+        """Worktree path if set, otherwise project_path."""
+        return self.worktree_path or self.project_path

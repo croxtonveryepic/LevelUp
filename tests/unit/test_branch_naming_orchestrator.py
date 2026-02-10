@@ -181,10 +181,10 @@ class TestDetectionLoadsBranchNaming:
 
 
 class TestCreateGitBranchWithConvention:
-    """Tests for Orchestrator._create_git_branch() using branch naming convention."""
+    """Tests for Orchestrator._create_git_branch() using branch naming convention (worktree-based)."""
 
     def test_creates_branch_with_levelup_run_id_convention(self, tmp_path):
-        """Creates branch using 'levelup/{run_id}' convention."""
+        """Creates worktree+branch using 'levelup/{run_id}' convention."""
         repo = _init_git_repo(tmp_path)
         settings = _make_settings(tmp_path, create_git_branch=True)
         orch = Orchestrator(settings=settings)
@@ -193,10 +193,14 @@ class TestCreateGitBranchWithConvention:
 
         orch._create_git_branch(tmp_path, ctx)
 
-        assert repo.active_branch.name == "levelup/abc123"
+        # Branch exists in worktree, not as main repo active branch
+        wt_repo = git.Repo(ctx.worktree_path)
+        assert wt_repo.active_branch.name == "levelup/abc123"
+        # Cleanup
+        repo.git.worktree("remove", str(ctx.worktree_path), "--force")
 
     def test_creates_branch_with_feature_task_title_convention(self, tmp_path):
-        """Creates branch using 'feature/{task_title}' convention."""
+        """Creates worktree+branch using 'feature/{task_title}' convention."""
         repo = _init_git_repo(tmp_path)
         settings = _make_settings(tmp_path, create_git_branch=True)
         orch = Orchestrator(settings=settings)
@@ -209,10 +213,12 @@ class TestCreateGitBranchWithConvention:
 
         orch._create_git_branch(tmp_path, ctx)
 
-        assert repo.active_branch.name == "feature/add-user-login"
+        wt_repo = git.Repo(ctx.worktree_path)
+        assert wt_repo.active_branch.name == "feature/add-user-login"
+        repo.git.worktree("remove", str(ctx.worktree_path), "--force")
 
     def test_creates_branch_with_date_convention(self, tmp_path):
-        """Creates branch using convention with {date} placeholder."""
+        """Creates worktree+branch using convention with {date} placeholder."""
         from datetime import datetime
 
         repo = _init_git_repo(tmp_path)
@@ -224,10 +230,12 @@ class TestCreateGitBranchWithConvention:
         orch._create_git_branch(tmp_path, ctx)
 
         today = datetime.now().strftime("%Y%m%d")
-        assert repo.active_branch.name == f"ai/{today}"
+        wt_repo = git.Repo(ctx.worktree_path)
+        assert wt_repo.active_branch.name == f"ai/{today}"
+        repo.git.worktree("remove", str(ctx.worktree_path), "--force")
 
     def test_creates_branch_with_complex_convention(self, tmp_path):
-        """Creates branch using complex convention with multiple placeholders."""
+        """Creates worktree+branch using complex convention with multiple placeholders."""
         from datetime import datetime
 
         repo = _init_git_repo(tmp_path)
@@ -244,7 +252,9 @@ class TestCreateGitBranchWithConvention:
         orch._create_git_branch(tmp_path, ctx)
 
         today = datetime.now().strftime("%Y%m%d")
-        assert repo.active_branch.name == f"dev/{today}/xyz789/fix-bug"
+        wt_repo = git.Repo(ctx.worktree_path)
+        assert wt_repo.active_branch.name == f"dev/{today}/xyz789/fix-bug"
+        repo.git.worktree("remove", str(ctx.worktree_path), "--force")
 
     def test_falls_back_to_default_when_convention_missing(self, tmp_path):
         """Falls back to 'levelup/{run_id}' when convention is None."""
@@ -256,7 +266,9 @@ class TestCreateGitBranchWithConvention:
 
         orch._create_git_branch(tmp_path, ctx)
 
-        assert repo.active_branch.name == "levelup/testrun"
+        wt_repo = git.Repo(ctx.worktree_path)
+        assert wt_repo.active_branch.name == "levelup/testrun"
+        repo.git.worktree("remove", str(ctx.worktree_path), "--force")
 
     def test_sanitizes_task_title_in_branch_name(self, tmp_path):
         """Sanitizes task title when creating branch name."""
@@ -272,13 +284,15 @@ class TestCreateGitBranchWithConvention:
 
         orch._create_git_branch(tmp_path, ctx)
 
-        branch_name = repo.active_branch.name
+        wt_repo = git.Repo(ctx.worktree_path)
+        branch_name = wt_repo.active_branch.name
         assert branch_name.startswith("feature/")
         # Special chars should be sanitized
         assert "(" not in branch_name
         assert ")" not in branch_name
         assert "&" not in branch_name
         assert "!" not in branch_name
+        repo.git.worktree("remove", str(ctx.worktree_path), "--force")
 
     def test_returns_pre_run_sha_with_custom_convention(self, tmp_path):
         """Returns pre_run_sha correctly with custom convention."""
@@ -293,6 +307,7 @@ class TestCreateGitBranchWithConvention:
         orch._create_git_branch(tmp_path, ctx)
 
         assert ctx.pre_run_sha == initial_sha
+        repo.git.worktree("remove", str(ctx.worktree_path), "--force")
 
     def test_noop_when_create_git_branch_false(self, tmp_path):
         """Does nothing when create_git_branch is False."""

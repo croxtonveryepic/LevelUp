@@ -166,9 +166,6 @@ class Orchestrator:
             status=PipelineStatus.RUNNING,
         )
 
-        journal = RunJournal(ctx)
-        journal.write_header(ctx)
-
         # Register run in state DB
         if self._state_manager is not None:
             from levelup.state.manager import StateManager
@@ -177,20 +174,27 @@ class Orchestrator:
             self._state_manager.register_run(ctx)
 
         try:
-            # Create backend and register agents
-            self._backend = self._create_backend(project_path, ctx)
-            self._register_agents(self._backend, project_path)
-
             # Prompt for branch naming convention if needed (before creating branch)
             if self._settings.pipeline.create_git_branch:
                 convention = self._prompt_branch_naming_if_needed(ctx, project_path)
                 ctx.branch_naming = convention
 
-            # Optionally create git branch (pre_run_sha is set inside the method)
+            # Optionally create git worktree + branch (pre_run_sha is set inside)
             if self._settings.pipeline.create_git_branch:
                 self._create_git_branch(project_path, ctx)
 
-            ctx = self._execute_steps(ctx, DEFAULT_PIPELINE, journal, project_path)
+            # Derive the working path: worktree if created, else project_path
+            working_path = ctx.worktree_path or project_path
+
+            # Create journal in the working directory
+            journal = RunJournal(ctx, base_path=working_path)
+            journal.write_header(ctx)
+
+            # Create backend and register agents against the working path
+            self._backend = self._create_backend(working_path, ctx)
+            self._register_agents(self._backend, working_path)
+
+            ctx = self._execute_steps(ctx, DEFAULT_PIPELINE, journal, working_path)
 
             # Pipeline complete
             if ctx.status == PipelineStatus.RUNNING:
@@ -209,10 +213,25 @@ class Orchestrator:
             if not self._headless:
                 print_error(str(e))
 
-        journal.log_outcome(ctx)
-        if ctx.status == PipelineStatus.COMPLETED:
-            self._git_journal_commit(project_path, ctx, journal)
-            ctx.current_step = None
+        working_path = ctx.worktree_path or project_path
+        if "journal" in locals():
+            journal.log_outcome(ctx)
+            if ctx.status == PipelineStatus.COMPLETED:
+                self._git_journal_commit(working_path, ctx, journal)
+                ctx.current_step = None
+                # Print branch info for the user
+                if not self._headless and ctx.branch_naming:
+                    convention = ctx.branch_naming or "levelup/{run_id}"
+                    branch_name = self._build_branch_name(convention, ctx)
+                    self._console.print(
+                        f"\n[bold]Branch '{branch_name}' is ready.[/bold]\n"
+                        f"  git checkout {branch_name}\n"
+                        f"  git merge {branch_name}"
+                    )
+
+        # Cleanup worktree (branch persists in main repo)
+        self._cleanup_worktree(project_path, ctx)
+
         self._persist_state(ctx)
         return ctx
 
@@ -242,32 +261,48 @@ class Orchestrator:
         ctx.status = PipelineStatus.RUNNING
         ctx.error_message = None
 
-        journal = RunJournal(ctx)
-        journal._append([f"\n## Resumed from step: {target_step}", ""])
-
         try:
-            # Create backend and register agents
-            self._backend = self._create_backend(project_path, ctx)
-            self._register_agents(self._backend, project_path)
+            # Re-create worktree if this run used one
+            if ctx.worktree_path and ctx.worktree_path.exists():
+                working_path = ctx.worktree_path
+            elif ctx.pre_run_sha and self._settings.pipeline.create_git_branch:
+                # Re-create worktree from existing branch
+                try:
+                    import git
 
-            # Checkout the run branch if it exists
-            try:
-                import git
+                    repo = git.Repo(project_path)
+                    convention = ctx.branch_naming or "levelup/{run_id}"
+                    branch_name = self._build_branch_name(convention, ctx)
+                    if branch_name in [h.name for h in repo.heads]:
+                        worktree_dir = Path.home() / ".levelup" / "worktrees" / ctx.run_id
+                        worktree_dir.parent.mkdir(parents=True, exist_ok=True)
+                        # Clean up stale worktree directory if present
+                        if worktree_dir.exists():
+                            try:
+                                repo.git.worktree("remove", str(worktree_dir), "--force")
+                            except Exception:
+                                import shutil as _shutil
+                                _shutil.rmtree(worktree_dir, ignore_errors=True)
+                        repo.git.worktree("add", str(worktree_dir), branch_name)
+                        ctx.worktree_path = worktree_dir
+                except Exception as e:
+                    logger.warning("Could not re-create worktree for resume: %s", e)
+                working_path = ctx.worktree_path or project_path
+            else:
+                working_path = project_path
 
-                repo = git.Repo(project_path)
-                # Build branch name using stored convention
-                convention = ctx.branch_naming or "levelup/{run_id}"
-                branch_name = self._build_branch_name(convention, ctx)
-                if branch_name in [h.name for h in repo.heads]:
-                    repo.heads[branch_name].checkout()
-            except Exception as e:
-                logger.warning("Could not checkout run branch: %s", e)
+            journal = RunJournal(ctx, base_path=working_path)
+            journal._append([f"\n## Resumed from step: {target_step}", ""])
+
+            # Create backend and register agents against the working path
+            self._backend = self._create_backend(working_path, ctx)
+            self._register_agents(self._backend, working_path)
 
             # Slice pipeline from target step onward
             start_idx = step_names.index(target_step)
             remaining_steps = DEFAULT_PIPELINE[start_idx:]
 
-            ctx = self._execute_steps(ctx, remaining_steps, journal, project_path)
+            ctx = self._execute_steps(ctx, remaining_steps, journal, working_path)
 
             if ctx.status == PipelineStatus.RUNNING:
                 ctx.status = PipelineStatus.COMPLETED
@@ -285,10 +320,16 @@ class Orchestrator:
             if not self._headless:
                 print_error(str(e))
 
-        journal.log_outcome(ctx)
-        if ctx.status == PipelineStatus.COMPLETED:
-            self._git_journal_commit(project_path, ctx, journal)
-            ctx.current_step = None
+        working_path = ctx.worktree_path or project_path
+        if "journal" in locals():
+            journal.log_outcome(ctx)
+            if ctx.status == PipelineStatus.COMPLETED:
+                self._git_journal_commit(working_path, ctx, journal)
+                ctx.current_step = None
+
+        # Cleanup worktree (branch persists in main repo)
+        self._cleanup_worktree(project_path, ctx)
+
         self._persist_state(ctx)
         return ctx
 
@@ -688,9 +729,10 @@ class Orchestrator:
         return convention
 
     def _create_git_branch(self, project_path: Path, ctx: PipelineContext) -> str | None:
-        """Create a git branch for this run. Returns the pre-branch HEAD SHA.
+        """Create a git worktree with a new branch for this run.
 
-        Also stores the pre_run_sha in the context.
+        Returns the pre-branch HEAD SHA.  Also stores pre_run_sha and
+        worktree_path in the context.
         """
         # Check if branch creation is enabled
         if not self._settings.pipeline.create_git_branch:
@@ -706,10 +748,23 @@ class Orchestrator:
             convention = ctx.branch_naming or "levelup/{run_id}"
             branch_name = self._build_branch_name(convention, ctx)
 
-            repo.create_head(branch_name)
-            repo.heads[branch_name].checkout()
+            # Create a worktree instead of checking out a branch
+            worktree_dir = Path.home() / ".levelup" / "worktrees" / ctx.run_id
+            worktree_dir.parent.mkdir(parents=True, exist_ok=True)
+
+            # Clean up stale worktree directory from a prior failed run
+            if worktree_dir.exists():
+                try:
+                    repo.git.worktree("remove", str(worktree_dir), "--force")
+                except Exception:
+                    import shutil as _shutil
+                    _shutil.rmtree(worktree_dir, ignore_errors=True)
+
+            repo.git.worktree("add", str(worktree_dir), "-b", branch_name)
+            ctx.worktree_path = worktree_dir
+
             if not self._headless:
-                print_success(f"Created branch: {branch_name}")
+                print_success(f"Created branch: {branch_name} (worktree: {worktree_dir})")
 
             # Store pre_run_sha in context
             ctx.pre_run_sha = pre_sha
@@ -719,6 +774,18 @@ class Orchestrator:
             if not self._headless:
                 self._console.print(f"[dim]Git branch creation skipped: {e}[/dim]")
             return None
+
+    def _cleanup_worktree(self, project_path: Path, ctx: PipelineContext) -> None:
+        """Remove the worktree directory. The branch persists in the main repo."""
+        if not ctx.worktree_path or not ctx.worktree_path.exists():
+            return
+        try:
+            import git
+
+            repo = git.Repo(project_path)
+            repo.git.worktree("remove", str(ctx.worktree_path), "--force")
+        except Exception as e:
+            logger.warning("Failed to remove worktree: %s", e)
 
     def _run_instruct(
         self,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import git
 import pytest
@@ -41,13 +42,14 @@ def _make_settings(tmp_path: Path, create_git_branch: bool = True) -> LevelUpSet
     )
 
 
-def _make_context(tmp_path: Path, pre_run_sha: str | None = "abc123") -> PipelineContext:
+def _make_context(tmp_path: Path, pre_run_sha: str | None = "abc123", **kwargs) -> PipelineContext:
     """Build a minimal PipelineContext with controllable pre_run_sha."""
     return PipelineContext(
         task=TaskInput(title="Add widget feature", description="Implement widget"),
         project_path=tmp_path,
         status=PipelineStatus.RUNNING,
         pre_run_sha=pre_run_sha,
+        **kwargs,
     )
 
 
@@ -156,12 +158,12 @@ class TestGitStepCommit:
 
 
 # ---------------------------------------------------------------------------
-# _create_git_branch tests
+# _create_git_branch tests (now creates worktrees)
 # ---------------------------------------------------------------------------
 
 
 class TestCreateGitBranch:
-    """Tests for Orchestrator._create_git_branch()."""
+    """Tests for Orchestrator._create_git_branch() — worktree-based."""
 
     def test_returns_pre_run_sha(self, tmp_path):
         """_create_git_branch returns the SHA of HEAD before branching."""
@@ -171,16 +173,103 @@ class TestCreateGitBranch:
         settings = _make_settings(tmp_path, create_git_branch=True)
         orch = Orchestrator(settings=settings)
 
-        run_id = "abc123def456"
-        returned_sha = orch._create_git_branch(tmp_path, run_id)
+        ctx = _make_context(tmp_path, pre_run_sha=None)
+        returned_sha = orch._create_git_branch(tmp_path, ctx)
 
         assert returned_sha == initial_sha
-        # The repo should now be on the new branch
-        assert repo.active_branch.name == f"levelup/{run_id}"
+        assert ctx.pre_run_sha == initial_sha
+
+    def test_worktree_created_at_expected_path(self, tmp_path):
+        """Worktree is created at ~/.levelup/worktrees/<run_id>/."""
+        repo = _init_git_repo(tmp_path)
+
+        settings = _make_settings(tmp_path, create_git_branch=True)
+        orch = Orchestrator(settings=settings)
+
+        ctx = _make_context(tmp_path, pre_run_sha=None)
+        orch._create_git_branch(tmp_path, ctx)
+
+        expected_path = Path.home() / ".levelup" / "worktrees" / ctx.run_id
+        assert ctx.worktree_path == expected_path
+        assert ctx.worktree_path.exists()
+
+        # Cleanup
+        repo.git.worktree("remove", str(ctx.worktree_path), "--force")
+
+    def test_worktree_branch_matches_convention(self, tmp_path):
+        """The branch in the worktree matches the naming convention."""
+        repo = _init_git_repo(tmp_path)
+
+        settings = _make_settings(tmp_path, create_git_branch=True)
+        orch = Orchestrator(settings=settings)
+
+        ctx = _make_context(tmp_path, pre_run_sha=None)
+        orch._create_git_branch(tmp_path, ctx)
+
+        # The worktree should be on the levelup/<run_id> branch
+        wt_repo = git.Repo(ctx.worktree_path)
+        assert wt_repo.active_branch.name == f"levelup/{ctx.run_id}"
+
+        # Cleanup
+        repo.git.worktree("remove", str(ctx.worktree_path), "--force")
+
+    def test_original_repo_branch_unchanged(self, tmp_path):
+        """After worktree creation, main repo stays on its original branch."""
+        repo = _init_git_repo(tmp_path)
+        original_branch = repo.active_branch.name
+
+        settings = _make_settings(tmp_path, create_git_branch=True)
+        orch = Orchestrator(settings=settings)
+
+        ctx = _make_context(tmp_path, pre_run_sha=None)
+        orch._create_git_branch(tmp_path, ctx)
+
+        # Main repo should NOT have switched branches
+        assert repo.active_branch.name == original_branch
+
+        # Cleanup
+        repo.git.worktree("remove", str(ctx.worktree_path), "--force")
+
+    def test_cleanup_removes_worktree(self, tmp_path):
+        """_cleanup_worktree removes the worktree directory."""
+        repo = _init_git_repo(tmp_path)
+
+        settings = _make_settings(tmp_path, create_git_branch=True)
+        orch = Orchestrator(settings=settings)
+
+        ctx = _make_context(tmp_path, pre_run_sha=None)
+        orch._create_git_branch(tmp_path, ctx)
+
+        assert ctx.worktree_path.exists()
+
+        orch._cleanup_worktree(tmp_path, ctx)
+
+        assert not ctx.worktree_path.exists()
+
+    def test_cleanup_noop_when_no_worktree(self, tmp_path):
+        """_cleanup_worktree does nothing when worktree_path is None."""
+        settings = _make_settings(tmp_path, create_git_branch=True)
+        orch = Orchestrator(settings=settings)
+
+        ctx = _make_context(tmp_path, pre_run_sha=None)
+        # worktree_path is None
+        orch._cleanup_worktree(tmp_path, ctx)  # should not raise
+
+    def test_noop_when_create_git_branch_false(self, tmp_path):
+        """_create_git_branch returns None when create_git_branch is False."""
+        _init_git_repo(tmp_path)
+        settings = _make_settings(tmp_path, create_git_branch=False)
+        orch = Orchestrator(settings=settings)
+
+        ctx = _make_context(tmp_path, pre_run_sha=None)
+        result = orch._create_git_branch(tmp_path, ctx)
+
+        assert result is None
+        assert ctx.worktree_path is None
 
 
 # ---------------------------------------------------------------------------
-# Context fields (pre_run_sha, step_commits)
+# Context fields (pre_run_sha, step_commits, worktree_path)
 # ---------------------------------------------------------------------------
 
 
@@ -192,6 +281,7 @@ class TestContextGitFields:
         ctx = PipelineContext(task=TaskInput(title="t"))
         assert ctx.pre_run_sha is None
         assert ctx.step_commits == {}
+        assert ctx.worktree_path is None
 
     def test_set_and_read(self):
         """Values can be set and read back."""
@@ -216,3 +306,36 @@ class TestContextGitFields:
 
         assert restored.pre_run_sha == "deadbeef1234"
         assert restored.step_commits == {"requirements": "sha1", "planning": "sha2"}
+
+    def test_effective_path_returns_worktree_when_set(self, tmp_path):
+        """effective_path returns worktree_path when it's set."""
+        wt_path = tmp_path / "worktree"
+        ctx = PipelineContext(
+            task=TaskInput(title="t"),
+            project_path=tmp_path,
+            worktree_path=wt_path,
+        )
+        assert ctx.effective_path == wt_path
+
+    def test_effective_path_returns_project_path_when_no_worktree(self, tmp_path):
+        """effective_path falls back to project_path when worktree_path is None."""
+        ctx = PipelineContext(
+            task=TaskInput(title="t"),
+            project_path=tmp_path,
+        )
+        assert ctx.effective_path == tmp_path
+
+    def test_worktree_path_serialization_round_trip(self, tmp_path):
+        """worktree_path survives JSON serialization."""
+        wt_path = tmp_path / "worktree"
+        ctx = PipelineContext(
+            task=TaskInput(title="t"),
+            project_path=tmp_path,
+            worktree_path=wt_path,
+        )
+
+        json_str = ctx.model_dump_json()
+        data = json.loads(json_str)
+        restored = PipelineContext(**data)
+
+        assert restored.worktree_path == wt_path

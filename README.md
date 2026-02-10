@@ -1,6 +1,13 @@
 # LevelUp
 
-AI-Powered TDD Development Tool. LevelUp orchestrates Claude AI agents to perform test-driven development: it detects your project, clarifies requirements, writes tests first, implements code until tests pass, and reviews the result — with user checkpoints along the way.
+LevelUp is an orchestration tool for Claude. Key features:
+
+1. Concurrency: Have agents working on many tickets at once so you're never waiting while Claude works. State is managed through git worktrees.
+2. Unified UI: Ticket status is tracked nicely in one place. You can easily see which tickets need input and get to them in one click (no flipping through terminals).
+3. Observability: Tickets run through a test-driven development (TDD) process. You can verify that Claude is doing the right thing at each step. Reduces "review fatigue" from 3000 line merge requests.
+4. Documentation: Agents dump information about the ticket in a file so context is not lost when the session ends.
+5. Async development: Ticket pipelines can be easily paused and restarted later.
+6. (Planned) Rich keybinding customization.
 
 ## Installation
 
@@ -22,10 +29,10 @@ levelup run "Add a /health endpoint"
 
 **Options:**
 
-| Flag | PowerShell | Description |
-|------|------------|-------------|
-| `--gui` | `-GUI` | Include GUI dashboard (PyQt6) |
-| `--dev` | `-Dev` | Developer install (venv + editable + test tools) |
+| Flag    | PowerShell | Description                                      |
+| ------- | ---------- | ------------------------------------------------ |
+| `--gui` | `-GUI`     | Include GUI dashboard (PyQt6)                    |
+| `--dev` | `-Dev`     | Developer install (venv + editable + test tools) |
 
 ### Updating
 
@@ -99,18 +106,18 @@ levelup run "Add feature" --backend anthropic_sdk
 
 **Options:**
 
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--path PATH` | `-p` | Project directory (default: current dir) |
-| `--model MODEL` | `-m` | Claude model override |
-| `--no-checkpoints` | | Run without pausing for user approval |
-| `--max-iterations N` | | Max test-fix cycles (default: 5) |
-| `--headless` | | Run without terminal; checkpoints via GUI |
-| `--gui` | | GUI mode: DB checkpoints with visible console output |
-| `--db-path PATH` | | Override state DB path (default: `~/.levelup/state.db`) |
-| `--backend NAME` | | Backend: `claude_code` (default) or `anthropic_sdk` |
-| `--ticket-next` | `-T` | Auto-pick next pending ticket from tickets file |
-| `--ticket N` | `-t` | Run a specific ticket by number |
+| Flag                 | Short | Description                                             |
+| -------------------- | ----- | ------------------------------------------------------- |
+| `--path PATH`        | `-p`  | Project directory (default: current dir)                |
+| `--model MODEL`      | `-m`  | Claude model override                                   |
+| `--no-checkpoints`   |       | Run without pausing for user approval                   |
+| `--max-iterations N` |       | Max test-fix cycles (default: 5)                        |
+| `--headless`         |       | Run without terminal; checkpoints via GUI               |
+| `--gui`              |       | GUI mode: DB checkpoints with visible console output    |
+| `--db-path PATH`     |       | Override state DB path (default: `~/.levelup/state.db`) |
+| `--backend NAME`     |       | Backend: `claude_code` (default) or `anthropic_sdk`     |
+| `--ticket-next`      | `-T`  | Auto-pick next pending ticket from tickets file         |
+| `--ticket N`         | `-t`  | Run a specific ticket by number                         |
 
 **Pipeline steps:**
 
@@ -140,6 +147,7 @@ The security agent runs between coding and review to catch vulnerabilities befor
 - **CWE references:** Findings include Common Weakness Enumeration IDs for tracking and remediation
 
 At each checkpoint you can:
+
 - **(a)pprove** — continue to the next step
 - **(r)evise** — provide feedback and re-run the step
 - **(x) reject** — abort and roll back
@@ -157,11 +165,11 @@ levelup recon --backend anthropic_sdk
 
 **Options:**
 
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--path PATH` | `-p` | Project directory (default: current dir) |
-| `--model MODEL` | `-m` | Claude model override |
-| `--backend NAME` | | Backend: `claude_code` (default) or `anthropic_sdk` |
+| Flag             | Short | Description                                         |
+| ---------------- | ----- | --------------------------------------------------- |
+| `--path PATH`    | `-p`  | Project directory (default: current dir)            |
+| `--model MODEL`  | `-m`  | Claude model override                               |
+| `--backend NAME` |       | Backend: `claude_code` (default) or `anthropic_sdk` |
 
 ### `levelup tickets` — Manage ticket backlog
 
@@ -183,12 +191,15 @@ levelup tickets delete 1          # permanently delete ticket #1
 # Tickets
 
 ## Add user authentication
+
 Implement JWT-based auth for the API.
 
 ## [in progress] Fix connection pooling
+
 Connection pool exhausts under load.
 
 ## [done] Set up CI pipeline
+
 Configure GitHub Actions.
 ```
 
@@ -234,6 +245,7 @@ levelup gui --db-path /tmp/my-state.db
 When launched with `--project-path`, the dashboard shows a ticket sidebar. Selecting a ticket opens a detail view with an embedded **Run** button and terminal output pane. The pipeline runs via `levelup run --gui --ticket N` as a subprocess, with output streaming in real-time and checkpoint dialogs auto-popping when the pipeline needs input.
 
 The dashboard:
+
 - Shows all runs (active, waiting, completed, failed) with colored status badges
 - Auto-refreshes every 2 seconds
 - Double-click a "Needs Input" row to open the checkpoint dialog (approve/revise/reject)
@@ -267,13 +279,13 @@ levelup resume <run-id> --model claude-opus-4-6 --backend anthropic_sdk
 
 **Options:**
 
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--from-step STEP` | | Step to resume from (default: where it failed) |
-| `--path PATH` | `-p` | Project directory (default: current dir) |
-| `--model MODEL` | `-m` | Claude model override |
-| `--backend NAME` | | Backend override |
-| `--db-path PATH` | | Override state DB path |
+| Flag               | Short | Description                                    |
+| ------------------ | ----- | ---------------------------------------------- |
+| `--from-step STEP` |       | Step to resume from (default: where it failed) |
+| `--path PATH`      | `-p`  | Project directory (default: current dir)       |
+| `--model MODEL`    | `-m`  | Claude model override                          |
+| `--backend NAME`   |       | Backend override                               |
+| `--db-path PATH`   |       | Override state DB path                         |
 
 ### `levelup rollback` — Roll back a run
 
@@ -289,10 +301,10 @@ levelup rollback <run-id> --to test_writing
 
 **Options:**
 
-| Flag | Description |
-|------|-------------|
-| `--to STEP` | Roll back to this step's commit (default: pre-run state) |
-| `--db-path PATH` | Override state DB path |
+| Flag             | Description                                              |
+| ---------------- | -------------------------------------------------------- |
+| `--to STEP`      | Roll back to this step's commit (default: pre-run state) |
+| `--db-path PATH` | Override state DB path                                   |
 
 ### `levelup config` — Show configuration
 
@@ -325,10 +337,10 @@ levelup self-update --source /path/to/LevelUp
 
 **Options:**
 
-| Flag | Description |
-|------|-------------|
+| Flag            | Description                                          |
+| --------------- | ---------------------------------------------------- |
 | `--source PATH` | Path to LevelUp git clone (overrides saved metadata) |
-| `--gui` | Add GUI support (PyQt6) during update |
+| `--gui`         | Add GUI support (PyQt6) during update                |
 
 ## Configuration
 
@@ -342,23 +354,23 @@ Create `levelup.yaml` (or `.levelup.yaml`) in your project root:
 
 ```yaml
 llm:
-  model: claude-sonnet-4-5-20250929
-  max_tokens: 8192
-  temperature: 0.0
-  backend: claude_code         # "claude_code" (default) or "anthropic_sdk"
-  claude_executable: claude    # path to claude binary (for claude_code backend)
-  api_key: sk-ant-...          # only needed for anthropic_sdk backend
+    model: claude-sonnet-4-5-20250929
+    max_tokens: 8192
+    temperature: 0.0
+    backend: claude_code # "claude_code" (default) or "anthropic_sdk"
+    claude_executable: claude # path to claude binary (for claude_code backend)
+    api_key: sk-ant-... # only needed for anthropic_sdk backend
 
 project:
-  language: python              # override auto-detection
-  framework: fastapi            # override auto-detection
-  test_command: pytest -x       # override auto-detection
-  tickets_file: levelup/tickets.md  # path to tickets markdown file
+    language: python # override auto-detection
+    framework: fastapi # override auto-detection
+    test_command: pytest -x # override auto-detection
+    tickets_file: levelup/tickets.md # path to tickets markdown file
 
 pipeline:
-  max_code_iterations: 5
-  require_checkpoints: true
-  create_git_branch: true
+    max_code_iterations: 5
+    require_checkpoints: true
+    create_git_branch: true
 ```
 
 All fields are optional — only set what you want to override.
@@ -417,6 +429,7 @@ src/levelup/
 LevelUp supports running multiple pipeline instances simultaneously. Each `levelup run` (including `--headless`) registers in a shared SQLite database (`~/.levelup/state.db`). The `levelup gui` dashboard reads this DB to show all runs and handle checkpoints.
 
 **Architecture:**
+
 - Each run is an independent OS process
 - SQLite with WAL mode is the sole coordination mechanism (no sockets)
 - GUI is a separate process that reads/writes the same DB

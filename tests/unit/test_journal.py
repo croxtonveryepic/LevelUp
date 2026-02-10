@@ -23,7 +23,7 @@ from levelup.core.context import (
     TaskInput,
     TestResult,
 )
-from levelup.core.journal import RunJournal, _build_filename, _slugify
+from levelup.core.journal import RunJournal, _build_filename, _sanitize_source_id, _slugify
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +90,23 @@ class TestSlugify:
 # ---------------------------------------------------------------------------
 
 
+class TestSanitizeSourceId:
+    def test_colon_replaced(self):
+        assert _sanitize_source_id("ticket:1") == "ticket-1"
+
+    def test_no_change_for_safe_id(self):
+        assert _sanitize_source_id("PROJ-123") == "PROJ-123"
+
+    def test_multiple_illegal_chars(self):
+        assert _sanitize_source_id('a\\b/c:d*e?"f<g>h|i') == "a-b-c-d-e-f-g-h-i"
+
+    def test_consecutive_illegal_chars_collapsed(self):
+        assert _sanitize_source_id("a::b") == "a-b"
+
+    def test_leading_trailing_illegal_stripped(self):
+        assert _sanitize_source_id(":foo:") == "foo"
+
+
 class TestBuildFilename:
     def test_with_ticket(self, tmp_path: Path):
         ctx = _make_ctx(tmp_path, title="Add auth", source_id="PROJ-123")
@@ -98,6 +115,10 @@ class TestBuildFilename:
     def test_without_ticket(self, tmp_path: Path):
         ctx = _make_ctx(tmp_path, title="Fix bug")
         assert _build_filename(ctx) == "20260206-fix-bug.md"
+
+    def test_with_ticket_colon_sanitized(self, tmp_path: Path):
+        ctx = _make_ctx(tmp_path, title="Light mode", source_id="ticket:1")
+        assert _build_filename(ctx) == "20260206-ticket-1-light-mode.md"
 
 
 # ---------------------------------------------------------------------------

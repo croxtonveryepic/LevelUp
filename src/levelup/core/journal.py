@@ -27,12 +27,18 @@ def _slugify(text: str, max_length: int = 50) -> str:
     return slug or "run-journal"
 
 
+def _sanitize_source_id(source_id: str) -> str:
+    """Replace characters illegal in Windows filenames with dashes."""
+    return re.sub(r'[\\/:*?"<>|]+', "-", source_id).strip("-")
+
+
 def _build_filename(ctx: PipelineContext) -> str:
     """Build the journal filename from context metadata."""
     date = ctx.started_at.strftime("%Y%m%d")
     slug = _slugify(ctx.task.title)
     if ctx.task.source_id:
-        return f"{date}-{ctx.task.source_id}-{slug}.md"
+        safe_id = _sanitize_source_id(ctx.task.source_id)
+        return f"{date}-{safe_id}-{slug}.md"
     return f"{date}-{slug}.md"
 
 

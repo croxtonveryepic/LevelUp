@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 class PipelineStatus(str, enum.Enum):
     PENDING = "pending"
     RUNNING = "running"
-    PAUSED = "paused"
     WAITING_FOR_INPUT = "waiting_for_input"
     COMPLETED = "completed"
     FAILED = "failed"

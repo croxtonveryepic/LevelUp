@@ -75,19 +75,16 @@ class TestPipelineSettings:
         assert s.max_code_iterations == 5
         assert s.require_checkpoints is True
         assert s.create_git_branch is True
-        assert s.auto_commit is False
 
     def test_override(self):
         s = PipelineSettings(
             max_code_iterations=10,
             require_checkpoints=False,
             create_git_branch=False,
-            auto_commit=True,
         )
         assert s.max_code_iterations == 10
         assert s.require_checkpoints is False
         assert s.create_git_branch is False
-        assert s.auto_commit is True
 
 
 class TestLevelUpSettings:
@@ -98,16 +95,12 @@ class TestLevelUpSettings:
         assert isinstance(s.llm, LLMSettings)
         assert isinstance(s.project, ProjectSettings)
         assert isinstance(s.pipeline, PipelineSettings)
-        assert s.ticket_source == "manual"
 
     def test_nested_defaults(self):
         s = LevelUpSettings()
         assert s.llm.api_key == ""
         assert s.pipeline.max_code_iterations == 5
 
-    def test_override_ticket_source(self):
-        s = LevelUpSettings(ticket_source="jira")
-        assert s.ticket_source == "jira"
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +125,7 @@ class TestFindConfigFile:
 
     def test_finds_dot_levelup_yml(self, tmp_path: Path):
         config = tmp_path / ".levelup.yml"
-        config.write_text("ticket_source: jira\n")
+        config.write_text("llm:\n  model: test\n")
         result = find_config_file(tmp_path)
         assert result is not None
         assert result.name == ".levelup.yml"
@@ -282,7 +275,6 @@ class TestLoadSettings:
         assert isinstance(settings, LevelUpSettings)
         assert settings.llm.model == "claude-sonnet-4-5-20250929"
         assert settings.pipeline.max_code_iterations == 5
-        assert settings.ticket_source == "manual"
 
     def test_project_path_set_when_provided(self, tmp_path: Path):
         settings = load_settings(project_path=tmp_path)
@@ -294,14 +286,12 @@ class TestLoadSettings:
             yaml.dump(
                 {
                     "llm": {"model": "custom-model", "max_tokens": 1024},
-                    "ticket_source": "linear",
                 }
             )
         )
         settings = load_settings(project_path=tmp_path)
         assert settings.llm.model == "custom-model"
         assert settings.llm.max_tokens == 1024
-        assert settings.ticket_source == "linear"
 
     def test_overrides_take_precedence_over_file(self, tmp_path: Path):
         config = tmp_path / "levelup.yaml"

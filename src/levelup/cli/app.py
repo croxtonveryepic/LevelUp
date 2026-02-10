@@ -178,8 +178,6 @@ def config(
     console.print(f"  Require checkpoints: {settings.pipeline.require_checkpoints}")
     console.print(f"  Create git branch: {settings.pipeline.create_git_branch}")
 
-    console.print(f"\n[bold]Ticket source:[/bold] {settings.ticket_source}")
-
 
 def _get_gui_install_hint() -> str:
     """Return a context-aware install hint for GUI support."""

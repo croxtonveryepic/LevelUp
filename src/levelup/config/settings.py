@@ -35,7 +35,6 @@ class PipelineSettings(BaseModel):
     max_code_iterations: int = 5
     require_checkpoints: bool = True
     create_git_branch: bool = True
-    auto_commit: bool = False
 
 
 class LevelUpSettings(BaseSettings):
@@ -49,4 +48,3 @@ class LevelUpSettings(BaseSettings):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     project: ProjectSettings = Field(default_factory=ProjectSettings)
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
-    ticket_source: str = "manual"

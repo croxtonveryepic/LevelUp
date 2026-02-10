@@ -321,9 +321,6 @@ pipeline:
   max_code_iterations: 5
   require_checkpoints: true
   create_git_branch: true
-  auto_commit: false
-
-ticket_source: manual
 ```
 
 All fields are optional — only set what you want to override.
@@ -375,7 +372,6 @@ src/levelup/
   config/       Pydantic Settings models, config file loader
   state/        SQLite state store for multi-instance coordination
   gui/          PyQt6 dashboard — main window, checkpoint dialog, styles
-  tickets/      Ticket source plugin system (manual input for MVP)
 ```
 
 ## Multi-Instance Support

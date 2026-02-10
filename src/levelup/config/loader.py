@@ -78,7 +78,6 @@ def load_settings(
         llm=LLMSettings(**llm_data),
         project=ProjectSettings(**project_data),
         pipeline=PipelineSettings(**pipeline_data),
-        ticket_source=file_data.get("ticket_source", "manual"),
     )
 
     return settings

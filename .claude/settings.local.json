@@ -22,7 +22,8 @@
       "Bash(ls:*)",
       "Bash(git checkout:*)",
       "Bash(git merge:*)",
-      "Bash(git branch:*)"
+      "Bash(git branch:*)",
+      "Bash(find:*)"
     ]
   }
 }

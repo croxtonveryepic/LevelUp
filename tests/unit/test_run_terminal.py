@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -351,3 +352,203 @@ class TestRunTerminalWidget:
 
         assert widget.is_running is False
         assert paused == [True]
+
+
+# ---------------------------------------------------------------------------
+# RunTerminalWidget integration tests (mocked terminal)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not _can_import_pyqt6(),
+    reason="PyQt6 not available",
+)
+class TestRunTerminalIntegration:
+    """Integration tests for RunTerminalWidget with mocked TerminalEmulatorWidget."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        from PyQt6.QtWidgets import QApplication
+
+        self._app = QApplication.instance() or QApplication([])
+
+    def _make_widget(self):
+        """Create a RunTerminalWidget with the embedded terminal's PtyBackend mocked."""
+        with patch("levelup.gui.terminal_emulator.PtyBackend"):
+            from levelup.gui.run_terminal import RunTerminalWidget
+
+            widget = RunTerminalWidget()
+        return widget
+
+    # 2a: start_run sends command and sets focus
+    def test_start_run_sends_command(self):
+        widget = self._make_widget()
+
+        with patch.object(widget._terminal, "start_shell"), \
+             patch.object(widget._terminal, "send_command") as mock_send, \
+             patch.object(widget._terminal, "setFocus") as mock_focus:
+
+            widget.start_run(ticket_number=1, project_path="/p", db_path="/d")
+
+            mock_send.assert_called_once()
+            cmd_arg = mock_send.call_args[0][0]
+            assert "-m levelup run" in cmd_arg
+            assert "--ticket 1" in cmd_arg
+            assert "/p" in cmd_arg
+            assert "/d" in cmd_arg
+
+            mock_focus.assert_called_once()
+
+        assert widget._command_running is True
+        assert widget._run_id_poll_timer.isActive() is True
+
+        # Cleanup
+        widget._run_id_poll_timer.stop()
+
+    # 2b: start_run is no-op when already running
+    def test_start_run_noop_when_running(self):
+        widget = self._make_widget()
+        widget._command_running = True
+
+        with patch.object(widget._terminal, "send_command") as mock_send:
+            widget.start_run(ticket_number=1, project_path="/p", db_path="/d")
+            mock_send.assert_not_called()
+
+    # 2c: _on_resume_clicked sends resume command and starts poll timer
+    def test_on_resume_clicked_sends_command(self):
+        widget = self._make_widget()
+        widget._last_run_id = "run-abc"
+        widget._project_path = "/p"
+        widget._db_path = "/d"
+
+        with patch.object(widget._terminal, "start_shell"), \
+             patch.object(widget._terminal, "send_command") as mock_send, \
+             patch.object(widget._terminal, "setFocus") as mock_focus:
+
+            widget._on_resume_clicked()
+
+            mock_send.assert_called_once()
+            cmd_arg = mock_send.call_args[0][0]
+            assert "-m levelup resume" in cmd_arg
+            assert "run-abc" in cmd_arg
+
+            mock_focus.assert_called_once()
+
+        assert widget._command_running is True
+        assert widget._run_id_poll_timer.isActive() is True
+
+        # Cleanup
+        widget._run_id_poll_timer.stop()
+
+    def test_on_resume_clicked_noop_when_running(self):
+        widget = self._make_widget()
+        widget._last_run_id = "run-abc"
+        widget._project_path = "/p"
+        widget._db_path = "/d"
+        widget._command_running = True
+
+        with patch.object(widget._terminal, "send_command") as mock_send:
+            widget._on_resume_clicked()
+            mock_send.assert_not_called()
+
+    def test_on_resume_clicked_noop_without_run_id(self):
+        widget = self._make_widget()
+        widget._project_path = "/p"
+        widget._db_path = "/d"
+        # _last_run_id is None
+
+        with patch.object(widget._terminal, "send_command") as mock_send:
+            widget._on_resume_clicked()
+            mock_send.assert_not_called()
+
+    # 2d: _on_shell_exited stops polling and emits finished
+    def test_on_shell_exited_stops_polling_and_emits(self):
+        widget = self._make_widget()
+        widget._command_running = True
+        widget._shell_started = True
+        widget._run_id_poll_timer.start(1000)
+
+        finished_codes: list[int] = []
+        widget.run_finished.connect(lambda code: finished_codes.append(code))
+
+        widget._on_shell_exited(1)
+
+        assert widget.is_running is False
+        assert widget._run_id_poll_timer.isActive() is False
+        assert finished_codes == [1]
+        assert widget._shell_started is False
+
+    def test_on_shell_exited_zero_code(self):
+        widget = self._make_widget()
+        widget._command_running = True
+        widget._shell_started = True
+
+        finished_codes: list[int] = []
+        widget.run_finished.connect(lambda code: finished_codes.append(code))
+
+        widget._on_shell_exited(0)
+
+        assert widget.is_running is False
+        assert finished_codes == [0]
+
+    def test_on_shell_exited_noop_when_not_running(self):
+        widget = self._make_widget()
+        widget._shell_started = True
+        # _command_running is False
+
+        finished_codes: list[int] = []
+        widget.run_finished.connect(lambda code: finished_codes.append(code))
+
+        widget._on_shell_exited(0)
+
+        # Should not emit run_finished since command wasn't running
+        assert finished_codes == []
+        assert widget._shell_started is False
+
+    # 2e: _poll_for_run_id finds active run and keeps polling
+    def test_poll_finds_active_run(self):
+        from levelup.state.manager import StateManager
+
+        widget = self._make_widget()
+        widget._project_path = "/some/project"
+        widget._command_running = True
+
+        mock_sm = MagicMock(spec=StateManager)
+        mock_run = MagicMock()
+        mock_run.run_id = "discovered-run"
+        mock_run.project_path = "/some/project"
+        mock_run.status = "running"
+        mock_sm.list_runs.return_value = [mock_run]
+        widget.set_state_manager(mock_sm)
+
+        # Start the poll timer so we can verify it stays active
+        widget._run_id_poll_timer.start(1000)
+
+        widget._poll_for_run_id()
+
+        assert widget._last_run_id == "discovered-run"
+        assert widget._run_id_poll_timer.isActive() is True
+
+        # Cleanup
+        widget._run_id_poll_timer.stop()
+
+    # 2f: _poll_for_run_id handles deleted run gracefully
+    def test_poll_handles_deleted_run(self):
+        from levelup.state.manager import StateManager
+
+        widget = self._make_widget()
+        widget._last_run_id = "deleted-run"
+        widget._project_path = "/some/project"
+        widget._command_running = True
+
+        mock_sm = MagicMock(spec=StateManager)
+        mock_sm.get_run.return_value = None  # Run was deleted
+        widget.set_state_manager(mock_sm)
+
+        widget._run_id_poll_timer.start(1000)
+
+        widget._poll_for_run_id()
+
+        # Widget should transition to not-running
+        assert widget.is_running is False
+        assert widget._run_id_poll_timer.isActive() is False

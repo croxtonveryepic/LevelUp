@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from levelup.gui.terminal_emulator import CatppuccinMochaColors, qt_key_to_bytes
+
+
+def _can_import_pyqt6() -> bool:
+    try:
+        import PyQt6  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -275,3 +285,274 @@ class TestTerminalScreen:
             stream.feed(f"Line {i}\r\n")
         # History should have some lines
         assert len(screen.history.top) > 0
+
+
+# ---------------------------------------------------------------------------
+# TerminalEmulatorWidget
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(
+    not _can_import_pyqt6(),
+    reason="PyQt6 not available",
+)
+class TestTerminalEmulatorWidget:
+    """Tests for the TerminalEmulatorWidget with a mocked PtyBackend."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        from PyQt6.QtWidgets import QApplication
+
+        self._app = QApplication.instance() or QApplication([])
+
+    def _make_widget(self):
+        """Create a TerminalEmulatorWidget with PtyBackend mocked out."""
+        with patch("levelup.gui.terminal_emulator.PtyBackend") as MockPty:
+            mock_pty = MagicMock()
+            MockPty.return_value = mock_pty
+            from levelup.gui.terminal_emulator import TerminalEmulatorWidget
+
+            widget = TerminalEmulatorWidget()
+        # The widget._pty is now the mock
+        return widget
+
+    # 1a: Construction & defaults
+    def test_initial_state(self):
+        widget = self._make_widget()
+        assert widget.is_shell_running is False
+        assert widget._cols == 80
+        assert widget._rows == 24
+
+    def test_screen_is_history_screen(self):
+        import pyte
+
+        widget = self._make_widget()
+        assert isinstance(widget._screen, pyte.HistoryScreen)
+        assert widget._screen.columns == 80
+        assert widget._screen.lines == 24
+
+    def test_focus_policy_is_strong_focus(self):
+        from PyQt6.QtCore import Qt
+
+        widget = self._make_widget()
+        assert widget.focusPolicy() == Qt.FocusPolicy.StrongFocus
+
+    # 1b: _on_pty_data feeds pyte screen
+    def test_on_pty_data_feeds_text(self):
+        widget = self._make_widget()
+        widget._on_pty_data(b"Hello World")
+        line = widget._screen.buffer[0]
+        text = "".join(line[i].data for i in range(11))
+        assert text == "Hello World"
+
+    def test_on_pty_data_ansi_color(self):
+        widget = self._make_widget()
+        widget._on_pty_data(b"\x1b[31mRed\x1b[0m")
+        char = widget._screen.buffer[0][0]
+        assert char.data == "R"
+        assert char.fg == "red"
+
+    # 1c: _on_pty_exited
+    def test_on_pty_exited_updates_state_and_emits_signal(self):
+        widget = self._make_widget()
+        widget._shell_running = True
+
+        received: list[int] = []
+        widget.shell_exited.connect(lambda code: received.append(code))
+
+        widget._on_pty_exited(0)
+
+        assert widget.is_shell_running is False
+        assert received == [0]
+
+    def test_on_pty_exited_nonzero_code(self):
+        widget = self._make_widget()
+        widget._shell_running = True
+
+        received: list[int] = []
+        widget.shell_exited.connect(lambda code: received.append(code))
+
+        widget._on_pty_exited(42)
+        assert received == [42]
+
+    # 1d: send_command writes to PTY
+    def test_send_command_writes_to_pty(self):
+        widget = self._make_widget()
+        widget._shell_running = True
+
+        widget.send_command("echo hello")
+        widget._pty.write.assert_called_once_with(b"echo hello\r")
+
+    # 1e: send_interrupt writes Ctrl+C
+    def test_send_interrupt_writes_ctrl_c(self):
+        widget = self._make_widget()
+        widget._shell_running = True
+
+        widget.send_interrupt()
+        widget._pty.write.assert_called_once_with(b"\x03")
+
+    # 1f: no-ops when shell not running
+    def test_send_command_noop_when_shell_not_running(self):
+        widget = self._make_widget()
+        assert widget._shell_running is False
+
+        widget.send_command("test")
+        widget._pty.write.assert_not_called()
+
+    def test_send_interrupt_noop_when_shell_not_running(self):
+        widget = self._make_widget()
+        assert widget._shell_running is False
+
+        widget.send_interrupt()
+        widget._pty.write.assert_not_called()
+
+    # 1g: _cell_in_selection (static method)
+    def test_cell_in_single_row_selection(self):
+        from levelup.gui.terminal_emulator import TerminalEmulatorWidget
+
+        in_sel = TerminalEmulatorWidget._cell_in_selection
+        # Selection from col 0 to col 5 on row 0
+        assert in_sel(0, 0, (0, 0), (5, 0)) is True
+        assert in_sel(3, 0, (0, 0), (5, 0)) is True
+        assert in_sel(5, 0, (0, 0), (5, 0)) is True
+        assert in_sel(6, 0, (0, 0), (5, 0)) is False
+        # Wrong row
+        assert in_sel(3, 1, (0, 0), (5, 0)) is False
+
+    def test_cell_in_multi_row_selection(self):
+        from levelup.gui.terminal_emulator import TerminalEmulatorWidget
+
+        in_sel = TerminalEmulatorWidget._cell_in_selection
+        # Selection from (3, 1) to (2, 3)
+        # Row 1: col >= 3
+        assert in_sel(3, 1, (3, 1), (2, 3)) is True
+        assert in_sel(50, 1, (3, 1), (2, 3)) is True
+        assert in_sel(2, 1, (3, 1), (2, 3)) is False
+        # Row 2: all columns (middle row)
+        assert in_sel(0, 2, (3, 1), (2, 3)) is True
+        assert in_sel(79, 2, (3, 1), (2, 3)) is True
+        # Row 3: col <= 2
+        assert in_sel(0, 3, (3, 1), (2, 3)) is True
+        assert in_sel(2, 3, (3, 1), (2, 3)) is True
+        assert in_sel(3, 3, (3, 1), (2, 3)) is False
+        # Outside selection rows
+        assert in_sel(3, 0, (3, 1), (2, 3)) is False
+        assert in_sel(0, 4, (3, 1), (2, 3)) is False
+
+    def test_cell_in_single_cell_selection(self):
+        from levelup.gui.terminal_emulator import TerminalEmulatorWidget
+
+        in_sel = TerminalEmulatorWidget._cell_in_selection
+        assert in_sel(5, 5, (5, 5), (5, 5)) is True
+        assert in_sel(4, 5, (5, 5), (5, 5)) is False
+        assert in_sel(6, 5, (5, 5), (5, 5)) is False
+
+    # 1h: _normalized_selection ordering
+    def test_normalized_selection_reversed(self):
+        widget = self._make_widget()
+        widget._selection_start = (5, 2)
+        widget._selection_end = (1, 0)
+
+        start, end = widget._normalized_selection()
+        assert start == (1, 0)
+        assert end == (5, 2)
+
+    def test_normalized_selection_already_ordered(self):
+        widget = self._make_widget()
+        widget._selection_start = (1, 0)
+        widget._selection_end = (5, 2)
+
+        start, end = widget._normalized_selection()
+        assert start == (1, 0)
+        assert end == (5, 2)
+
+    def test_normalized_selection_same_point(self):
+        widget = self._make_widget()
+        widget._selection_start = (3, 3)
+        widget._selection_end = (3, 3)
+
+        start, end = widget._normalized_selection()
+        assert start == (3, 3)
+        assert end == (3, 3)
+
+    def test_normalized_selection_none(self):
+        widget = self._make_widget()
+        start, end = widget._normalized_selection()
+        assert start is None
+        assert end is None
+
+    # 1i: _get_selected_text
+    def test_get_selected_text(self):
+        widget = self._make_widget()
+        widget._on_pty_data(b"Hello World\r\nSecond Line")
+
+        # Select "World" on first line (cols 6-10, row 0)
+        widget._selection_start = (6, 0)
+        widget._selection_end = (10, 0)
+
+        text = widget._get_selected_text()
+        assert text == "World"
+
+    def test_get_selected_text_multiline(self):
+        widget = self._make_widget()
+        widget._on_pty_data(b"AAABBB\r\nCCCDDD")
+
+        # Select from col 3 row 0 to col 2 row 1 -> "BBB\nCCC"
+        widget._selection_start = (3, 0)
+        widget._selection_end = (2, 1)
+
+        text = widget._get_selected_text()
+        assert text == "BBB\nCCC"
+
+    def test_get_selected_text_empty_when_no_selection(self):
+        widget = self._make_widget()
+        assert widget._get_selected_text() == ""
+
+    # 1j: _recalculate_grid
+    def test_recalculate_grid_updates_dimensions(self):
+        widget = self._make_widget()
+        cw = widget._cell_width
+        ch = widget._cell_height
+
+        # Resize to a size that gives different cols/rows than the 80x24 default.
+        # Use a generous pixel size and verify the result is in the expected range
+        # (int truncation of float division can lose 1 cell).
+        target_cols = 40
+        target_rows = 10
+        widget.resize(int(cw * target_cols) + 1, int(ch * target_rows) + 1)
+        widget._recalculate_grid()
+
+        assert widget._cols != 80  # Changed from default
+        assert widget._rows != 24
+        assert abs(widget._cols - target_cols) <= 1
+        assert abs(widget._rows - target_rows) <= 1
+
+    def test_recalculate_grid_minimum_dimensions(self):
+        widget = self._make_widget()
+        # Resize to very small — should clamp to 10 cols, 2 rows minimum
+        widget.resize(1, 1)
+        widget._recalculate_grid()
+
+        assert widget._cols >= 10
+        assert widget._rows >= 2
+
+    def test_recalculate_grid_noop_for_zero_size(self):
+        widget = self._make_widget()
+        original_cols = widget._cols
+        original_rows = widget._rows
+
+        widget.resize(0, 0)
+        widget._recalculate_grid()
+
+        # Should not change when size is zero
+        assert widget._cols == original_cols
+        assert widget._rows == original_rows
+
+    # 1k: close_shell
+    def test_close_shell_cleans_up(self):
+        widget = self._make_widget()
+        widget._shell_running = True
+
+        widget.close_shell()
+
+        assert widget.is_shell_running is False
+        widget._pty.close.assert_called_once()

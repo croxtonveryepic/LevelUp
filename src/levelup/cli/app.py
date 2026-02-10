@@ -141,19 +141,43 @@ def run(
         task_input = t.to_task_input()
         console.print(f"[cyan]Ticket #{t.number}:[/cyan] {t.title}")
     elif task:
-        task_input = TaskInput(title=task, description="")
+        from levelup.core.tickets import TicketStatus, add_ticket, set_ticket_status
+
+        t = add_ticket(path, task, "", settings.project.tickets_file)
+        set_ticket_status(path, t.number, TicketStatus.IN_PROGRESS, settings.project.tickets_file)
+        task_input = t.to_task_input()
+        console.print(f"[cyan]Created ticket #{t.number}:[/cyan] {t.title}")
     else:
         title, description = get_task_input()
         if not title:
             print_error("Task title is required.")
             raise typer.Exit(1)
-        task_input = TaskInput(title=title, description=description)
+        from levelup.core.tickets import TicketStatus, add_ticket, set_ticket_status
+
+        t = add_ticket(path, title, description, settings.project.tickets_file)
+        set_ticket_status(path, t.number, TicketStatus.IN_PROGRESS, settings.project.tickets_file)
+        task_input = t.to_task_input()
+        console.print(f"[cyan]Created ticket #{t.number}:[/cyan] {t.title}")
 
     # Create state manager (always, so all runs are visible in GUI)
     state_mgr_kwargs = {}
     if db_path:
         state_mgr_kwargs["db_path"] = db_path
     state_manager = StateManager(**state_mgr_kwargs)
+
+    # Guard: one active run per ticket
+    if task_input.source_id and task_input.source_id.startswith("ticket:"):
+        try:
+            _ticket_num = int(task_input.source_id.split(":")[1])
+            active = state_manager.has_active_run_for_ticket(str(path.resolve()), _ticket_num)
+            if active:
+                print_error(
+                    f"Ticket #{_ticket_num} already has an active run ({active.run_id[:12]}, "
+                    f"status={active.status}). Resume or forget it first."
+                )
+                raise typer.Exit(1)
+        except (IndexError, ValueError):
+            pass
 
     # Run pipeline
     orchestrator = Orchestrator(

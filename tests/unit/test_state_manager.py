@@ -215,6 +215,104 @@ class TestStateManagerPauseRequest:
         assert mgr.is_pause_requested("nonexistent") is False
 
 
+class TestStateManagerRegisterRunTicket:
+    def test_register_run_stores_ticket_number(self, tmp_path):
+        mgr = StateManager(db_path=tmp_path / "test.db")
+        ctx = _make_ctx(project_path=tmp_path)
+        ctx.task = TaskInput(
+            title="Test", description="", source="ticket", source_id="ticket:5"
+        )
+        mgr.register_run(ctx)
+
+        record = mgr.get_run("test123")
+        assert record is not None
+        assert record.ticket_number == 5
+
+    def test_register_run_no_ticket_number_when_manual(self, tmp_path):
+        mgr = StateManager(db_path=tmp_path / "test.db")
+        ctx = _make_ctx(project_path=tmp_path)
+        mgr.register_run(ctx)
+
+        record = mgr.get_run("test123")
+        assert record is not None
+        assert record.ticket_number is None
+
+
+class TestStateManagerGetRunForTicket:
+    def test_returns_most_recent_run(self, tmp_path):
+        mgr = StateManager(db_path=tmp_path / "test.db")
+        project = str(tmp_path)
+
+        # Create two runs for the same ticket
+        ctx1 = _make_ctx(run_id="run1", project_path=tmp_path)
+        ctx1.task = TaskInput(title="T", description="", source="ticket", source_id="ticket:3")
+        mgr.register_run(ctx1)
+
+        ctx2 = _make_ctx(run_id="run2", project_path=tmp_path)
+        ctx2.task = TaskInput(title="T", description="", source="ticket", source_id="ticket:3")
+        mgr.register_run(ctx2)
+
+        result = mgr.get_run_for_ticket(project, 3)
+        assert result is not None
+        assert result.run_id == "run2"
+
+    def test_returns_none_when_no_match(self, tmp_path):
+        mgr = StateManager(db_path=tmp_path / "test.db")
+        assert mgr.get_run_for_ticket(str(tmp_path), 99) is None
+
+    def test_filters_by_project_path(self, tmp_path):
+        mgr = StateManager(db_path=tmp_path / "test.db")
+
+        ctx = _make_ctx(run_id="run1", project_path=tmp_path)
+        ctx.task = TaskInput(title="T", description="", source="ticket", source_id="ticket:1")
+        mgr.register_run(ctx)
+
+        # Different project path should not find the run
+        assert mgr.get_run_for_ticket("/other/project", 1) is None
+
+
+class TestStateManagerHasActiveRunForTicket:
+    def test_returns_active_run(self, tmp_path):
+        mgr = StateManager(db_path=tmp_path / "test.db")
+        project = str(tmp_path)
+
+        ctx = _make_ctx(project_path=tmp_path)
+        ctx.task = TaskInput(title="T", description="", source="ticket", source_id="ticket:2")
+        mgr.register_run(ctx)
+
+        result = mgr.has_active_run_for_ticket(project, 2)
+        assert result is not None
+        assert result.run_id == "test123"
+
+    def test_returns_none_for_completed_run(self, tmp_path):
+        mgr = StateManager(db_path=tmp_path / "test.db")
+        project = str(tmp_path)
+
+        ctx = _make_ctx(project_path=tmp_path)
+        ctx.task = TaskInput(title="T", description="", source="ticket", source_id="ticket:2")
+        mgr.register_run(ctx)
+        ctx.status = PipelineStatus.COMPLETED
+        mgr.update_run(ctx)
+
+        assert mgr.has_active_run_for_ticket(project, 2) is None
+
+    def test_returns_none_for_failed_run(self, tmp_path):
+        mgr = StateManager(db_path=tmp_path / "test.db")
+        project = str(tmp_path)
+
+        ctx = _make_ctx(project_path=tmp_path)
+        ctx.task = TaskInput(title="T", description="", source="ticket", source_id="ticket:2")
+        mgr.register_run(ctx)
+        ctx.status = PipelineStatus.FAILED
+        mgr.update_run(ctx)
+
+        assert mgr.has_active_run_for_ticket(project, 2) is None
+
+    def test_returns_none_when_no_runs(self, tmp_path):
+        mgr = StateManager(db_path=tmp_path / "test.db")
+        assert mgr.has_active_run_for_ticket(str(tmp_path), 1) is None
+
+
 class TestStateManagerDeadRuns:
     def test_mark_dead_runs_cleans_dead_pid(self, tmp_path):
         mgr = StateManager(db_path=tmp_path / "test.db")

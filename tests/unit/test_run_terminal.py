@@ -532,6 +532,59 @@ class TestRunTerminalIntegration:
         # Cleanup
         widget._run_id_poll_timer.stop()
 
+    # 2g: _poll_for_run_id uses ticket_number when available
+    def test_poll_finds_run_by_ticket_number(self):
+        from levelup.state.manager import StateManager
+
+        widget = self._make_widget()
+        widget._project_path = "/some/project"
+        widget._ticket_number = 7
+        widget._command_running = True
+
+        mock_sm = MagicMock(spec=StateManager)
+        mock_record = MagicMock()
+        mock_record.run_id = "ticket-run-abc"
+        mock_record.status = "running"
+        mock_sm.get_run_for_ticket.return_value = mock_record
+        widget.set_state_manager(mock_sm)
+
+        widget._run_id_poll_timer.start(1000)
+        widget._poll_for_run_id()
+
+        # Should have called get_run_for_ticket instead of list_runs
+        mock_sm.get_run_for_ticket.assert_called_once_with("/some/project", 7)
+        mock_sm.list_runs.assert_not_called()
+        assert widget._last_run_id == "ticket-run-abc"
+        assert widget._run_id_poll_timer.isActive() is True
+
+        widget._run_id_poll_timer.stop()
+
+    def test_poll_ticket_detects_completion(self):
+        from levelup.state.manager import StateManager
+
+        widget = self._make_widget()
+        widget._project_path = "/some/project"
+        widget._ticket_number = 5
+        widget._command_running = True
+
+        mock_sm = MagicMock(spec=StateManager)
+        mock_record = MagicMock()
+        mock_record.run_id = "ticket-run-done"
+        mock_record.status = "completed"
+        mock_sm.get_run_for_ticket.return_value = mock_record
+        widget.set_state_manager(mock_sm)
+
+        finished_codes: list[int] = []
+        widget.run_finished.connect(lambda code: finished_codes.append(code))
+
+        widget._run_id_poll_timer.start(1000)
+        widget._poll_for_run_id()
+
+        assert widget._last_run_id == "ticket-run-done"
+        assert widget.is_running is False
+        assert finished_codes == [0]
+        assert widget._run_id_poll_timer.isActive() is False
+
     # 2f: _poll_for_run_id handles deleted run gracefully
     def test_poll_handles_deleted_run(self):
         from levelup.state.manager import StateManager

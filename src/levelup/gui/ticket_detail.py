@@ -221,7 +221,36 @@ class TicketDetailWidget(QWidget):
             self._project_path is not None and not self._terminal.is_running
         )
 
+        # Wire existing run from DB for this ticket
+        self._wire_existing_run(ticket.number)
+
     # -- Internal -----------------------------------------------------------
+
+    def _wire_existing_run(self, ticket_number: int) -> None:
+        """Query the DB for an existing run for this ticket and update terminal state."""
+        if not self._project_path or not self._terminal._state_manager:
+            return
+        from levelup.state.manager import StateManager
+
+        sm = self._terminal._state_manager
+        assert isinstance(sm, StateManager)
+        record = sm.get_run_for_ticket(self._project_path, ticket_number)
+        if record is None:
+            self._terminal._last_run_id = None
+            self._terminal._update_button_states()
+            self._terminal._status_label.setText("Ready")
+            return
+
+        self._terminal._last_run_id = record.run_id
+
+        if record.status in ("completed", "failed", "aborted"):
+            self._terminal._status_label.setText(f"Last run: {record.status}")
+        elif record.status == "paused":
+            self._terminal._status_label.setText("Paused")
+        elif record.status in ("running", "pending", "waiting_for_input"):
+            self._terminal._status_label.setText(f"Active ({record.status})")
+
+        self._terminal._update_button_states()
 
     def _mark_dirty(self) -> None:
         self._dirty = True

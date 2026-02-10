@@ -24,6 +24,7 @@ class RunRecord(BaseModel):
     pid: int | None = None
     total_cost_usd: float = 0.0
     pause_requested: int = 0
+    ticket_number: int | None = None
 
 
 class CheckpointRequestRecord(BaseModel):

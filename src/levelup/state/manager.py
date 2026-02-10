@@ -48,18 +48,34 @@ class StateManager:
     def _conn(self) -> sqlite3.Connection:
         return get_connection(self._db_path)
 
+    @staticmethod
+    def _extract_ticket_number(ctx: object) -> int | None:
+        """Extract ticket number from ctx.task.source_id (format 'ticket:N')."""
+        from levelup.core.context import PipelineContext
+
+        assert isinstance(ctx, PipelineContext)
+        sid = ctx.task.source_id
+        if sid and sid.startswith("ticket:"):
+            try:
+                return int(sid.split(":")[1])
+            except (IndexError, ValueError):
+                pass
+        return None
+
     def register_run(self, ctx: object) -> None:
         """INSERT a new run from a PipelineContext."""
         from levelup.core.context import PipelineContext
 
         assert isinstance(ctx, PipelineContext)
+        ticket_number = self._extract_ticket_number(ctx)
         conn = self._conn()
         try:
             conn.execute(
                 """INSERT INTO runs
                    (run_id, task_title, task_description, project_path, status,
-                    current_step, language, framework, test_runner, started_at, updated_at, pid)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    current_step, language, framework, test_runner, started_at,
+                    updated_at, pid, ticket_number)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     ctx.run_id,
                     ctx.task.title,
@@ -73,6 +89,7 @@ class StateManager:
                     ctx.started_at.isoformat(),
                     _now_iso(),
                     os.getpid(),
+                    ticket_number,
                 ),
             )
             conn.commit()
@@ -148,6 +165,43 @@ class StateManager:
             conn.execute("DELETE FROM checkpoint_requests WHERE run_id = ?", (run_id,))
             conn.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
             conn.commit()
+        finally:
+            conn.close()
+
+    def get_run_for_ticket(
+        self, project_path: str, ticket_number: int
+    ) -> RunRecord | None:
+        """Return the most recent run for a given project + ticket number."""
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                """SELECT * FROM runs
+                   WHERE project_path = ? AND ticket_number = ?
+                   ORDER BY updated_at DESC LIMIT 1""",
+                (project_path, ticket_number),
+            ).fetchone()
+            if row is None:
+                return None
+            return RunRecord(**dict(row))
+        finally:
+            conn.close()
+
+    def has_active_run_for_ticket(
+        self, project_path: str, ticket_number: int
+    ) -> RunRecord | None:
+        """Return a non-completed run for the ticket, or None."""
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                """SELECT * FROM runs
+                   WHERE project_path = ? AND ticket_number = ?
+                     AND status NOT IN ('completed', 'failed', 'aborted')
+                   ORDER BY updated_at DESC LIMIT 1""",
+                (project_path, ticket_number),
+            ).fetchone()
+            if row is None:
+                return None
+            return RunRecord(**dict(row))
         finally:
             conn.close()
 

@@ -241,6 +241,23 @@ class RunTerminalWidget(QWidget):
 
     def _on_run_clicked(self) -> None:
         if self._ticket_number is not None and self._project_path and self._db_path:
+            # Guard: check for existing active run for this ticket
+            if self._state_manager and self._ticket_number:
+                from levelup.state.manager import StateManager
+
+                assert isinstance(self._state_manager, StateManager)
+                active = self._state_manager.has_active_run_for_ticket(
+                    self._project_path, self._ticket_number
+                )
+                if active:
+                    QMessageBox.warning(
+                        self,
+                        "Active Run Exists",
+                        f"Ticket #{self._ticket_number} already has an active run "
+                        f"({active.run_id[:12]}, status={active.status}).\n"
+                        "Resume or forget it first.",
+                    )
+                    return
             self.start_run(self._ticket_number, self._project_path, self._db_path)
 
     def _on_terminate_clicked(self) -> None:
@@ -388,29 +405,48 @@ class RunTerminalWidget(QWidget):
             # Still running — keep polling
             return
 
-        # No run_id yet — search for a matching active run
-        runs = self._state_manager.list_runs()
-        for run in runs:
-            if (
-                run.project_path.rstrip("/\\") == self._project_path.rstrip("/\\")
-                and run.status not in ("completed", "failed", "aborted")
-            ):
-                self._last_run_id = run.run_id
-                self._update_button_states()
-                # Keep polling — don't stop timer
-                return
-
-        # Fallback: check if a run just completed (e.g. very fast run)
-        for run in runs:
-            if run.project_path.rstrip("/\\") == self._project_path.rstrip("/\\"):
-                self._last_run_id = run.run_id
-                if run.status in ("completed", "failed", "aborted"):
+        # No run_id yet — search by ticket_number if available, else by project_path
+        if self._ticket_number is not None:
+            record = self._state_manager.get_run_for_ticket(
+                self._project_path, self._ticket_number
+            )
+            if record is not None:
+                self._last_run_id = record.run_id
+                if record.status in ("completed", "failed", "aborted"):
                     self._run_id_poll_timer.stop()
                     if self._command_running:
-                        exit_code = 0 if run.status == "completed" else 1
+                        exit_code = 0 if record.status == "completed" else 1
                         self._set_running_state(False)
-                        self._status_label.setText(f"Finished ({run.status})")
+                        self._status_label.setText(f"Finished ({record.status})")
                         self.run_finished.emit(exit_code)
                     else:
                         self._update_button_states()
+                else:
+                    self._update_button_states()
                 return
+        else:
+            # Fallback: search by project_path (legacy path)
+            runs = self._state_manager.list_runs()
+            for run in runs:
+                if (
+                    run.project_path.rstrip("/\\") == self._project_path.rstrip("/\\")
+                    and run.status not in ("completed", "failed", "aborted")
+                ):
+                    self._last_run_id = run.run_id
+                    self._update_button_states()
+                    return
+
+            # Fallback: check if a run just completed (e.g. very fast run)
+            for run in runs:
+                if run.project_path.rstrip("/\\") == self._project_path.rstrip("/\\"):
+                    self._last_run_id = run.run_id
+                    if run.status in ("completed", "failed", "aborted"):
+                        self._run_id_poll_timer.stop()
+                        if self._command_running:
+                            exit_code = 0 if run.status == "completed" else 1
+                            self._set_running_state(False)
+                            self._status_label.setText(f"Finished ({run.status})")
+                            self.run_finished.emit(exit_code)
+                        else:
+                            self._update_button_states()
+                    return

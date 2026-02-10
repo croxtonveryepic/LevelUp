@@ -25,6 +25,7 @@ LevelUp is an AI-Powered TDD Development Tool (Python CLI). It orchestrates Clau
 - **Recon command**: `levelup recon` runs a standalone agent that deeply explores a project and writes enriched `levelup/project_context.md`; the detection step preserves this recon data on subsequent `levelup run` calls
 - **Instruct feature**: at any checkpoint, user can type `(i)nstruct` to add a project rule to the target project's CLAUDE.md; the orchestrator reviews branch changes for violations, auto-fixes them, then re-prompts the checkpoint
 - **Tickets**: markdown-based backlog in `levelup/tickets.md` (configurable via `project.tickets_file`). `## Heading` = ticket, status tags `[in progress]`/`[done]`/`[merged]`. CLI: `levelup tickets [list|next|start|done|merged|delete]`. Run flags: `--ticket-next`/`-T`, `--ticket N`/`-t N`. Auto-transitions: pending→in progress on run start, in progress→done on pipeline success.
+- **Every run has a ticket**: bare `levelup run "task"` auto-creates a ticket. DB `runs.ticket_number` links runs to tickets. One active run per ticket is enforced (CLI + GUI guard).
 - Agents use Anthropic tool-use loop (`agents/llm_client.py`)
 - All file tools are sandboxed to the project directory
 - User checkpoints after requirements, test_writing, security, and review steps
@@ -37,3 +38,4 @@ LevelUp is an AI-Powered TDD Development Tool (Python CLI). It orchestrates Clau
 - On Windows, `Path("/some/path")` produces backslashes — normalize with `.replace("\\", "/")` in test assertions
 - Test output parser uses regex (`_extract_number_before`) — don't use naive `split()[0]`
 - Classes named `Test*` (e.g. `TestResult`, `TestRunnerTool`) trigger pytest collection warnings — this is expected
+- DB v4 added `ticket_number` column and `idx_runs_project_ticket` index to runs table

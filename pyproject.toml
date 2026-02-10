@@ -26,6 +26,7 @@ gui = [
     "pyte>=0.8.0",
     "pywinpty>=2.0.0; sys_platform == 'win32'",
     "ptyprocess>=0.7.0; sys_platform != 'win32'",
+    "darkdetect>=0.8.0",
 ]
 dev = [
     "pytest>=7.0.0",
@@ -36,6 +37,7 @@ dev = [
     "pyte>=0.8.0",
     "pywinpty>=2.0.0; sys_platform == 'win32'",
     "ptyprocess>=0.7.0; sys_platform != 'win32'",
+    "darkdetect>=0.8.0",
 ]
 
 [project.scripts]

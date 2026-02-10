@@ -7,7 +7,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget
 
 from levelup.core.tickets import Ticket
-from levelup.gui.resources import TICKET_STATUS_COLORS, TICKET_STATUS_ICONS
+from levelup.gui.resources import TICKET_STATUS_COLORS, TICKET_STATUS_ICONS, get_ticket_status_color
 
 
 class TicketSidebarWidget(QWidget):
@@ -16,9 +16,10 @@ class TicketSidebarWidget(QWidget):
     ticket_selected = pyqtSignal(int)  # emits ticket number
     create_ticket_clicked = pyqtSignal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, theme: str = "dark") -> None:
         super().__init__(parent)
         self._tickets: list[Ticket] = []
+        self._current_theme = theme
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -58,7 +59,7 @@ class TicketSidebarWidget(QWidget):
         for i, ticket in enumerate(tickets):
             icon = TICKET_STATUS_ICONS.get(ticket.status.value, "")
             item = QListWidgetItem(f"{icon}  #{ticket.number} {ticket.title}")
-            color = TICKET_STATUS_COLORS.get(ticket.status.value, "#CDD6F4")
+            color = get_ticket_status_color(ticket.status.value, theme=self._current_theme)
             item.setForeground(QColor(color))
             self._list.addItem(item)
             if ticket.number == current_number:
@@ -68,6 +69,17 @@ class TicketSidebarWidget(QWidget):
             self._list.setCurrentRow(restore_row)
 
         self._list.blockSignals(False)
+
+    def update_theme(self, theme: str) -> None:
+        """Update widget styling for theme change.
+
+        Args:
+            theme: "light" or "dark"
+        """
+        self._current_theme = theme
+        # Refresh the list to update colors
+        tickets = self._tickets.copy()
+        self.set_tickets(tickets)
 
     def clear_selection(self) -> None:
         """Deselect any selected item."""

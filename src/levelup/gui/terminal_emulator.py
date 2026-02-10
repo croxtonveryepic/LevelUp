@@ -75,6 +75,63 @@ class CatppuccinMochaColors:
 
 
 # ---------------------------------------------------------------------------
+# Light color scheme
+# ---------------------------------------------------------------------------
+
+class LightTerminalColors:
+    """Light color scheme for terminal emulator."""
+
+    BG = QColor("#FFFFFF")
+    FG = QColor("#2E3440")
+    CURSOR = QColor("#5E81AC")
+    SELECTION = QColor("#88C0D0")
+
+    _NAMED: dict[str, str] = {
+        "black": "#2E3440",
+        "red": "#BF616A",
+        "green": "#A3BE8C",
+        "yellow": "#EBCB8B",
+        "blue": "#5E81AC",
+        "magenta": "#B48EAD",
+        "cyan": "#88C0D0",
+        "white": "#E5E9F0",
+        "brightblack": "#4C566A",
+        "brightred": "#BF616A",
+        "brightgreen": "#A3BE8C",
+        "brightyellow": "#EBCB8B",
+        "brightblue": "#81A1C1",
+        "brightmagenta": "#B48EAD",
+        "brightcyan": "#8FBCBB",
+        "brightwhite": "#ECEFF4",
+        "brown": "#EBCB8B",
+        "lightgray": "#D8DEE9",
+        "lightgrey": "#D8DEE9",
+        "darkgray": "#4C566A",
+        "darkgrey": "#4C566A",
+    }
+
+    @classmethod
+    def resolve(cls, color: str, is_fg: bool = True) -> QColor:
+        """Resolve a pyte color string to a QColor."""
+        if color == "default" or not color:
+            return cls.FG if is_fg else cls.BG
+        lower = color.lower()
+        if lower in cls._NAMED:
+            return QColor(cls._NAMED[lower])
+        # 6-digit hex (pyte uses this for 256-color and truecolor)
+        if len(color) == 6:
+            try:
+                int(color, 16)
+                return QColor(f"#{color}")
+            except ValueError:
+                pass
+        # Already prefixed with #
+        if color.startswith("#"):
+            return QColor(color)
+        return cls.FG if is_fg else cls.BG
+
+
+# ---------------------------------------------------------------------------
 # VT100 key mapping
 # ---------------------------------------------------------------------------
 
@@ -349,10 +406,17 @@ class TerminalEmulatorWidget(QWidget):
     shell_started = pyqtSignal()
     shell_exited = pyqtSignal(int)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        color_scheme: type[CatppuccinMochaColors] | type[LightTerminalColors] = CatppuccinMochaColors
+    ) -> None:
         super().__init__(parent)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+
+        # Color scheme
+        self._color_scheme = color_scheme
 
         # Font setup
         self._font = QFont("Consolas", 13)
@@ -434,13 +498,21 @@ class TerminalEmulatorWidget(QWidget):
     def is_shell_running(self) -> bool:
         return self._shell_running
 
+    def set_color_scheme(
+        self, color_scheme: type[CatppuccinMochaColors] | type[LightTerminalColors]
+    ) -> None:
+        """Change the color scheme and trigger a repaint."""
+        self._color_scheme = color_scheme
+        self._full_repaint = True
+        self.update()
+
     # -- Qt event handlers --------------------------------------------------
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setFont(self._font)
 
-        colors = CatppuccinMochaColors
+        colors = self._color_scheme
         cw = self._cell_width
         ch = self._cell_height
         ascent = self._font_ascent
@@ -694,3 +766,7 @@ class TerminalEmulatorWidget(QWidget):
             text = clipboard.text()
             if text:
                 self._pty.write(text.encode("utf-8"))
+
+
+# Alias for convenience
+TerminalEmulator = TerminalEmulatorWidget

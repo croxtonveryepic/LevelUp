@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from levelup.core.tickets import Ticket
-from levelup.gui.resources import TICKET_STATUS_COLORS, TICKET_STATUS_ICONS
+from levelup.gui.resources import TICKET_STATUS_COLORS, TICKET_STATUS_ICONS, get_ticket_status_color
 from levelup.gui.run_terminal import RunTerminalWidget
 
 
@@ -30,13 +30,14 @@ class TicketDetailWidget(QWidget):
     ticket_deleted = pyqtSignal(int)           # ticket number
     run_pid_changed = pyqtSignal(int, bool)   # pid, active
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, theme: str = "dark") -> None:
         super().__init__(parent)
         self._ticket: Ticket | None = None
         self._dirty = False
         self._create_mode = False
         self._project_path: str | None = None
         self._db_path: str | None = None
+        self._current_theme = theme
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -62,9 +63,9 @@ class TicketDetailWidget(QWidget):
         form_layout.addLayout(top_bar)
 
         # Title
-        title_label = QLabel("Title")
-        title_label.setStyleSheet("font-size: 12px; color: #A6ADC8; margin-top: 8px;")
-        form_layout.addWidget(title_label)
+        self._title_label = QLabel("Title")
+        self._title_label.setStyleSheet("font-size: 12px; margin-top: 8px;")
+        form_layout.addWidget(self._title_label)
 
         self._title_edit = QLineEdit()
         self._title_edit.textChanged.connect(self._mark_dirty)
@@ -76,9 +77,9 @@ class TicketDetailWidget(QWidget):
         form_layout.addWidget(self._status_label)
 
         # Description
-        desc_label = QLabel("Description")
-        desc_label.setStyleSheet("font-size: 12px; color: #A6ADC8; margin-top: 8px;")
-        form_layout.addWidget(desc_label)
+        self._desc_label = QLabel("Description")
+        self._desc_label.setStyleSheet("font-size: 12px; margin-top: 8px;")
+        form_layout.addWidget(self._desc_label)
 
         self._desc_edit = QPlainTextEdit()
         self._desc_edit.textChanged.connect(self._mark_dirty)
@@ -144,6 +145,27 @@ class TicketDetailWidget(QWidget):
         # Enable run button if a ticket is loaded
         self._terminal.enable_run(self._ticket is not None)
 
+    def update_theme(self, theme: str) -> None:
+        """Update widget styling for theme change.
+
+        Args:
+            theme: "light" or "dark"
+        """
+        self._current_theme = theme
+        # Update label colors
+        label_color = "#4C566A" if theme == "light" else "#A6ADC8"
+        self._title_label.setStyleSheet(f"font-size: 12px; margin-top: 8px; color: {label_color};")
+        self._desc_label.setStyleSheet(f"font-size: 12px; margin-top: 8px; color: {label_color};")
+
+        # Re-render status label if ticket is loaded
+        if self._ticket is not None:
+            icon = TICKET_STATUS_ICONS.get(self._ticket.status.value, "")
+            color = get_ticket_status_color(self._ticket.status.value, theme=theme)
+            self._status_label.setText(f"{icon} {self._ticket.status.value}")
+            self._status_label.setStyleSheet(
+                f"font-size: 13px; margin-top: 4px; color: {color};"
+            )
+
     def set_create_mode(self) -> None:
         """Switch to create-new-ticket mode: clear fields and disable Run."""
         self._create_mode = True
@@ -179,7 +201,7 @@ class TicketDetailWidget(QWidget):
         self._title_edit.blockSignals(False)
 
         icon = TICKET_STATUS_ICONS.get(ticket.status.value, "")
-        color = TICKET_STATUS_COLORS.get(ticket.status.value, "#CDD6F4")
+        color = get_ticket_status_color(ticket.status.value, theme=self._current_theme)
         self._status_label.setText(f"{icon} {ticket.status.value}")
         self._status_label.setStyleSheet(
             f"font-size: 13px; margin-top: 4px; color: {color};"

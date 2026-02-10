@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,6 +39,20 @@ class PipelineSettings(BaseModel):
     create_git_branch: bool = True
 
 
+class GUISettings(BaseModel):
+    """GUI-related configuration."""
+
+    theme: Literal["light", "dark", "system"] = "system"
+
+    @field_validator("theme")
+    @classmethod
+    def validate_theme(cls, v: str) -> str:
+        """Validate theme value."""
+        if v not in ("light", "dark", "system"):
+            raise ValueError(f"theme must be 'light', 'dark', or 'system', got '{v}'")
+        return v
+
+
 class LevelUpSettings(BaseSettings):
     """Root settings with layered config: defaults -> file -> env -> CLI."""
 
@@ -49,3 +64,4 @@ class LevelUpSettings(BaseSettings):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     project: ProjectSettings = Field(default_factory=ProjectSettings)
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
+    gui: GUISettings = Field(default_factory=GUISettings)

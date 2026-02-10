@@ -12,6 +12,7 @@ from levelup.config.settings import (
     LLMSettings,
     PipelineSettings,
     ProjectSettings,
+    GUISettings,
 )
 
 CONFIG_FILENAMES = ["levelup.yaml", "levelup.yml", ".levelup.yaml", ".levelup.yml"]
@@ -70,6 +71,7 @@ def load_settings(
     llm_data = file_data.get("llm", {})
     project_data = file_data.get("project", {})
     pipeline_data = file_data.get("pipeline", {})
+    gui_data = file_data.get("gui", {})
 
     if project_path and "path" not in project_data:
         project_data["path"] = str(project_path)
@@ -78,6 +80,7 @@ def load_settings(
         llm=LLMSettings(**llm_data),
         project=ProjectSettings(**project_data),
         pipeline=PipelineSettings(**pipeline_data),
+        gui=GUISettings(**gui_data),
     )
 
     return settings

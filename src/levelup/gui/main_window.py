@@ -8,7 +8,9 @@ from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QAction, QColor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QHeaderView,
+    QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -21,12 +23,14 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QWidget,
+    QApplication,
 )
 
 from levelup.gui.checkpoint_dialog import CheckpointDialog
 from levelup.gui.resources import STATUS_COLORS, STATUS_LABELS, status_display
 from levelup.gui.ticket_detail import TicketDetailWidget
 from levelup.gui.ticket_sidebar import TicketSidebarWidget
+from levelup.gui.theme_manager import get_current_theme, apply_theme, set_theme_preference, get_theme_preference
 from levelup.state.manager import StateManager
 from levelup.state.models import RunRecord
 
@@ -74,6 +78,27 @@ class MainWindow(QMainWindow):
 
         # Toolbar buttons
         toolbar_layout = QHBoxLayout()
+
+        # Theme switcher
+        theme_label = QLabel("Theme:")
+        toolbar_layout.addWidget(theme_label)
+
+        self._theme_switcher = QComboBox()
+        self._theme_switcher.addItems(["Light", "Dark", "Match System"])
+        self._theme_switcher.setObjectName("themeSwitcher")
+        self._theme_switcher.setToolTip("Select application theme")
+        self._theme_switcher.currentTextChanged.connect(self._on_theme_changed)
+
+        # Set current theme
+        current_pref = get_theme_preference()
+        if current_pref == "light":
+            self._theme_switcher.setCurrentText("Light")
+        elif current_pref == "dark":
+            self._theme_switcher.setCurrentText("Dark")
+        else:
+            self._theme_switcher.setCurrentText("Match System")
+
+        toolbar_layout.addWidget(self._theme_switcher)
         toolbar_layout.addStretch()
 
         refresh_btn = QPushButton("Refresh")
@@ -212,6 +237,25 @@ class MainWindow(QMainWindow):
                     )
                 self._stack.setCurrentIndex(1)
                 return
+
+    def _on_theme_changed(self, theme_text: str) -> None:
+        """Handle theme switcher selection change."""
+        # Map UI text to preference value
+        preference_map = {
+            "Light": "light",
+            "Dark": "dark",
+            "Match System": "system",
+        }
+        preference = preference_map.get(theme_text, "system")
+
+        # Save preference
+        set_theme_preference(preference, project_path=self._project_path)
+
+        # Apply theme
+        actual_theme = get_current_theme(preference)
+        app = QApplication.instance()
+        if app:
+            apply_theme(app, actual_theme)
 
     def _on_ticket_back(self) -> None:
         """Return to the runs table view."""

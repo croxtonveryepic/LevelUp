@@ -151,11 +151,6 @@ QPushButton#backBtn {
 QPushButton#backBtn:hover {
     color: #B4D0FB;
 }
-QPlainTextEdit#terminalOutput {
-    background-color: #11111B;
-    color: #A6E3A1;
-    border: 1px solid #313244;
-}
 QPushButton#runBtn {
     background-color: #2ECC71;
     color: #1E1E2E;

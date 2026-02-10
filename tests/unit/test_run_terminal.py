@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from levelup.gui.run_terminal import build_command
+from levelup.gui.run_terminal import build_run_command
 
 
 def _can_import_pyqt6() -> bool:
@@ -17,41 +17,31 @@ def _can_import_pyqt6() -> bool:
         return False
 
 
-class TestBuildCommand:
-    def test_basic_command(self):
-        args = build_command(
-            ticket_number=3,
-            project_path="/some/project",
-            db_path="/tmp/state.db",
-        )
-        assert args == [
-            "-m", "levelup", "run",
-            "--gui",
-            "--ticket", "3",
-            "--path", "/some/project",
-            "--db-path", "/tmp/state.db",
-        ]
+class TestBuildRunCommand:
+    def test_contains_module_invocation(self):
+        cmd = build_run_command(3, "/some/project", "/tmp/state.db")
+        assert "-m levelup run" in cmd
 
-    def test_ticket_number_is_stringified(self):
-        args = build_command(
-            ticket_number=42,
-            project_path="/p",
-            db_path="/d",
-        )
-        assert "--ticket" in args
-        idx = args.index("--ticket")
-        assert args[idx + 1] == "42"
+    def test_contains_gui_flag(self):
+        cmd = build_run_command(1, "/p", "/d")
+        assert "--gui" in cmd
 
-    def test_gui_flag_present(self):
-        args = build_command(ticket_number=1, project_path="/p", db_path="/d")
-        assert "--gui" in args
+    def test_contains_ticket_number(self):
+        cmd = build_run_command(42, "/p", "/d")
+        assert "--ticket 42" in cmd
 
-    def test_all_required_flags_present(self):
-        args = build_command(ticket_number=1, project_path="/p", db_path="/d")
-        assert "--path" in args
-        assert "--db-path" in args
-        assert "--ticket" in args
-        assert "--gui" in args
+    def test_contains_path(self):
+        cmd = build_run_command(1, "/some/project", "/d")
+        assert "/some/project" in cmd
+
+    def test_contains_db_path(self):
+        cmd = build_run_command(1, "/p", "/tmp/state.db")
+        assert "/tmp/state.db" in cmd
+
+    def test_uses_sys_executable(self):
+        cmd = build_run_command(1, "/p", "/d")
+        exe = sys.executable.replace("\\", "/")
+        assert exe in cmd
 
 
 @pytest.mark.skipif(
@@ -62,7 +52,6 @@ class TestRunTerminalWidget:
     def test_widget_construction(self):
         from PyQt6.QtWidgets import QApplication
 
-        # Ensure QApplication exists
         app = QApplication.instance() or QApplication([])
 
         from levelup.gui.run_terminal import RunTerminalWidget
@@ -108,3 +97,75 @@ class TestRunTerminalWidget:
 
         widget.enable_run(False)
         assert widget._run_btn.isEnabled() is False
+
+    def test_is_running_reflects_command_state(self):
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+
+        from levelup.gui.run_terminal import RunTerminalWidget
+
+        widget = RunTerminalWidget()
+        assert widget.is_running is False
+
+        widget._command_running = True
+        assert widget.is_running is True
+
+    def test_process_pid_when_running(self):
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+
+        from levelup.gui.run_terminal import RunTerminalWidget
+
+        widget = RunTerminalWidget()
+        assert widget.process_pid is None
+
+        widget._command_running = True
+        assert widget.process_pid == 0
+
+    def test_set_context(self):
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+
+        from levelup.gui.run_terminal import RunTerminalWidget
+
+        widget = RunTerminalWidget()
+        widget.set_context("/my/project", "/my/db.db")
+        assert widget._project_path == "/my/project"
+        assert widget._db_path == "/my/db.db"
+
+    def test_notify_run_finished(self):
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+
+        from levelup.gui.run_terminal import RunTerminalWidget
+
+        widget = RunTerminalWidget()
+        received_codes: list[int] = []
+        widget.run_finished.connect(lambda code: received_codes.append(code))
+
+        # Should be no-op when not running
+        widget.notify_run_finished(0)
+        assert len(received_codes) == 0
+
+        # Should emit when running
+        widget._command_running = True
+        widget.notify_run_finished(0)
+        assert received_codes == [0]
+        assert widget.is_running is False
+
+    def test_ticket_number_attribute_exists(self):
+        """ticket_detail.py directly sets _ticket_number on the widget."""
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+
+        from levelup.gui.run_terminal import RunTerminalWidget
+
+        widget = RunTerminalWidget()
+        assert hasattr(widget, "_ticket_number")
+        widget._ticket_number = 42
+        assert widget._ticket_number == 42

@@ -31,7 +31,12 @@
       "Bash(findstr:*)",
       "Bash(uv tool dir:*)",
       "Bash(git push:*)",
-      "Bash(set QT_QPA_PLATFORM=offscreen)"
+      "Bash(set QT_QPA_PLATFORM=offscreen)",
+      "Bash(.install.ps1 -Dev)",
+      "Bash(pwsh:*)",
+      "WebFetch(domain:pyte.readthedocs.io)",
+      "WebFetch(domain:ptyprocess.readthedocs.io)",
+      "Bash(uv pip install:*)"
     ]
   }
 }

@@ -1,46 +1,52 @@
-"""Terminal widget for running LevelUp pipelines from the GUI."""
+"""Terminal widget for running LevelUp pipelines from the GUI.
+
+Uses an interactive PTY-based terminal emulator instead of a read-only
+QPlainTextEdit, so Rich colored output renders correctly and the user
+can type commands directly.
+"""
 
 from __future__ import annotations
 
 import sys
 
-from PyQt6.QtCore import QProcess, QProcessEnvironment, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
-MAX_OUTPUT_LINES = 10_000
+from levelup.gui.terminal_emulator import TerminalEmulatorWidget
 
 
-def build_command(
+def build_run_command(
     ticket_number: int,
     project_path: str,
     db_path: str,
-) -> list[str]:
-    """Build the command-line arguments for a GUI pipeline run."""
-    return [
-        "-m", "levelup", "run",
-        "--gui",
-        "--ticket", str(ticket_number),
-        "--path", project_path,
-        "--db-path", db_path,
-    ]
+) -> str:
+    """Build the shell command string for a GUI pipeline run."""
+    python = sys.executable.replace("\\", "/")
+    return (
+        f'"{python}" -m levelup run'
+        f" --gui"
+        f" --ticket {ticket_number}"
+        f' --path "{project_path}"'
+        f' --db-path "{db_path}"'
+    )
 
 
 class RunTerminalWidget(QWidget):
-    """Embedded terminal that spawns ``levelup run --gui`` via QProcess."""
+    """Embedded interactive terminal for running ``levelup run --gui``."""
 
-    run_started = pyqtSignal(int)   # PID
+    run_started = pyqtSignal(int)   # PID (emitted as 0 — no separate process PID)
     run_finished = pyqtSignal(int)  # exit code
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._process: QProcess | None = None
+        self._command_running = False
+        self._shell_started = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -71,12 +77,10 @@ class RunTerminalWidget(QWidget):
 
         layout.addLayout(header)
 
-        # Output area
-        self._output = QPlainTextEdit()
-        self._output.setObjectName("terminalOutput")
-        self._output.setReadOnly(True)
-        self._output.setMaximumBlockCount(MAX_OUTPUT_LINES)
-        layout.addWidget(self._output)
+        # Terminal emulator
+        self._terminal = TerminalEmulatorWidget()
+        self._terminal.shell_exited.connect(self._on_shell_exited)
+        layout.addWidget(self._terminal)
 
         # Pending run parameters (set via set_context / start_run)
         self._ticket_number: int | None = None
@@ -87,14 +91,11 @@ class RunTerminalWidget(QWidget):
 
     @property
     def is_running(self) -> bool:
-        return self._process is not None and self._process.state() != QProcess.ProcessState.NotRunning
+        return self._command_running
 
     @property
     def process_pid(self) -> int | None:
-        if self._process is not None and self._process.state() != QProcess.ProcessState.NotRunning:
-            pid = self._process.processId()
-            return pid if pid else None
-        return None
+        return 0 if self._command_running else None
 
     def set_context(self, project_path: str, db_path: str) -> None:
         """Store project context so the Run button can be enabled."""
@@ -103,77 +104,75 @@ class RunTerminalWidget(QWidget):
 
     def start_run(self, ticket_number: int, project_path: str, db_path: str) -> None:
         """Start a pipeline run for the given ticket."""
-        if self.is_running:
+        if self._command_running:
             return
 
         self._ticket_number = ticket_number
         self._project_path = project_path
         self._db_path = db_path
 
-        args = build_command(ticket_number, project_path, db_path)
+        # Ensure the shell is started
+        self._ensure_shell()
 
-        self._process = QProcess(self)
-        self._process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-
-        # Set NO_COLOR=1 so Rich outputs plain text
-        env = QProcessEnvironment.systemEnvironment()
-        env.insert("NO_COLOR", "1")
-        self._process.setProcessEnvironment(env)
-
-        self._process.readyReadStandardOutput.connect(self._on_stdout)
-        self._process.finished.connect(self._on_finished)
+        cmd = build_run_command(ticket_number, project_path, db_path)
+        self._terminal.send_command(cmd)
 
         self._set_running_state(True)
-        self._output.appendPlainText(f">>> levelup run --gui --ticket {ticket_number}\n")
-
-        self._process.start(sys.executable, args)
-
-        # Emit PID once started
-        self._process.started.connect(self._emit_started)
+        self.run_started.emit(0)
 
     def enable_run(self, enabled: bool) -> None:
         """Enable/disable the Run button (e.g. when a ticket is loaded)."""
-        if not self.is_running:
+        if not self._command_running:
             self._run_btn.setEnabled(enabled)
+
+    def notify_run_finished(self, exit_code: int = 0) -> None:
+        """Called externally (e.g. by DB poller) when the pipeline run completes."""
+        if not self._command_running:
+            return
+        self._set_running_state(False)
+        status = "completed" if exit_code == 0 else f"exited ({exit_code})"
+        self._status_label.setText(f"Finished ({exit_code})")
+        self.run_finished.emit(exit_code)
 
     # -- Internal -----------------------------------------------------------
 
+    def showEvent(self, event: object) -> None:
+        super().showEvent(event)  # type: ignore[arg-type]
+        self._ensure_shell()
+
+    def _ensure_shell(self) -> None:
+        """Start the shell if it hasn't been started yet."""
+        if self._shell_started:
+            return
+        cwd = self._project_path
+        self._terminal.start_shell(cwd=cwd)
+        self._shell_started = True
+
     def _set_running_state(self, running: bool) -> None:
+        self._command_running = running
         self._run_btn.setEnabled(not running)
         self._stop_btn.setEnabled(running)
         self._status_label.setText("Running..." if running else "Ready")
-
-    def _emit_started(self) -> None:
-        if self._process is not None:
-            pid = self._process.processId()
-            if pid:
-                self.run_started.emit(pid)
 
     def _on_run_clicked(self) -> None:
         if self._ticket_number is not None and self._project_path and self._db_path:
             self.start_run(self._ticket_number, self._project_path, self._db_path)
 
     def _on_stop_clicked(self) -> None:
-        if self._process is None:
-            return
-        self._process.terminate()
-        if not self._process.waitForFinished(3000):
-            self._process.kill()
+        """Send Ctrl+C to the shell to interrupt the running command."""
+        self._terminal.send_interrupt()
+        # Give the process a moment, then mark as not running
+        self._set_running_state(False)
+        self._status_label.setText("Interrupted")
+        self.run_finished.emit(1)
 
     def _on_clear(self) -> None:
-        self._output.clear()
+        """Send clear command to the shell."""
+        self._terminal.send_clear()
 
-    def _on_stdout(self) -> None:
-        if self._process is None:
-            return
-        data = self._process.readAllStandardOutput()
-        if data:
-            text = bytes(data).decode("utf-8", errors="replace")
-            self._output.appendPlainText(text.rstrip("\n"))
-
-    def _on_finished(self, exit_code: int, _exit_status: QProcess.ExitStatus) -> None:
-        self._set_running_state(False)
-        status = "completed" if exit_code == 0 else f"exited ({exit_code})"
-        self._output.appendPlainText(f"\n>>> Pipeline {status}")
-        self._status_label.setText(f"Finished ({exit_code})")
-        self.run_finished.emit(exit_code)
+    def _on_shell_exited(self, exit_code: int) -> None:
+        """Handle the shell itself exiting (not just a command)."""
+        self._shell_started = False
+        if self._command_running:
+            self._set_running_state(False)
+            self.run_finished.emit(exit_code)

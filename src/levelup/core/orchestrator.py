@@ -62,11 +62,13 @@ class Orchestrator:
         settings: LevelUpSettings,
         state_manager: object | None = None,
         headless: bool = False,
+        gui_mode: bool = False,
     ) -> None:
         self._settings = settings
         self._state_manager = state_manager
-        self._headless = headless
-        self._console = Console(quiet=headless)
+        self._use_db_checkpoints = headless or gui_mode
+        self._quiet = headless and not gui_mode
+        self._console = Console(quiet=self._quiet)
         self._agents: dict[str, BaseAgent] = {}
         self._backend: Backend | None = None
 
@@ -199,18 +201,18 @@ class Orchestrator:
             # Pipeline complete
             if ctx.status == PipelineStatus.RUNNING:
                 ctx.status = PipelineStatus.COMPLETED
-                if not self._headless:
+                if not self._quiet:
                     print_pipeline_summary(ctx)
 
         except KeyboardInterrupt:
-            if not self._headless:
+            if not self._quiet:
                 self._console.print("\n[yellow]Pipeline interrupted by user.[/yellow]")
             ctx.status = PipelineStatus.ABORTED
         except Exception as e:
             logger.exception("Pipeline failed: %s", e)
             ctx.status = PipelineStatus.FAILED
             ctx.error_message = str(e)
-            if not self._headless:
+            if not self._quiet:
                 print_error(str(e))
 
         working_path = ctx.worktree_path or project_path
@@ -220,7 +222,7 @@ class Orchestrator:
                 self._git_journal_commit(working_path, ctx, journal)
                 ctx.current_step = None
                 # Print branch info for the user
-                if not self._headless and ctx.branch_naming:
+                if not self._quiet and ctx.branch_naming:
                     convention = ctx.branch_naming or "levelup/{run_id}"
                     branch_name = self._build_branch_name(convention, ctx)
                     self._console.print(
@@ -306,18 +308,18 @@ class Orchestrator:
 
             if ctx.status == PipelineStatus.RUNNING:
                 ctx.status = PipelineStatus.COMPLETED
-                if not self._headless:
+                if not self._quiet:
                     print_pipeline_summary(ctx)
 
         except KeyboardInterrupt:
-            if not self._headless:
+            if not self._quiet:
                 self._console.print("\n[yellow]Pipeline interrupted by user.[/yellow]")
             ctx.status = PipelineStatus.ABORTED
         except Exception as e:
             logger.exception("Pipeline failed: %s", e)
             ctx.status = PipelineStatus.FAILED
             ctx.error_message = str(e)
-            if not self._headless:
+            if not self._quiet:
                 print_error(str(e))
 
         working_path = ctx.worktree_path or project_path
@@ -345,7 +347,7 @@ class Orchestrator:
             ctx.current_step = step.name
             self._persist_state(ctx)
 
-            if not self._headless:
+            if not self._quiet:
                 print_step_header(step.name, step.description)
 
             if step.step_type == StepType.DETECTION:
@@ -364,7 +366,7 @@ class Orchestrator:
 
                 # Security loop-back for major issues
                 if step.name == "security" and ctx.requires_coding_rework:
-                    if not self._headless:
+                    if not self._quiet:
                         self._console.print(
                             "[yellow]Security agent found major issues. "
                             "Re-running coding agent to fix...[/yellow]"
@@ -392,7 +394,7 @@ class Orchestrator:
 
                     # If still broken after one retry, continue to checkpoint
                     if ctx.requires_coding_rework:
-                        if not self._headless:
+                        if not self._quiet:
                             self._console.print(
                                 "[red]Security issues remain after rework. "
                                 "Manual review needed at checkpoint.[/red]"
@@ -411,7 +413,7 @@ class Orchestrator:
                 and self._settings.pipeline.require_checkpoints
             ):
                 while True:
-                    if self._headless and self._state_manager is not None:
+                    if self._use_db_checkpoints and self._state_manager is not None:
                         decision, feedback = self._wait_for_checkpoint_decision(
                             step.name, ctx
                         )
@@ -426,10 +428,10 @@ class Orchestrator:
                     break
 
                 if decision == CheckpointDecision.APPROVE:
-                    if not self._headless:
+                    if not self._quiet:
                         print_success(f"Checkpoint '{step.name}' approved.")
                 elif decision == CheckpointDecision.REVISE:
-                    if not self._headless:
+                    if not self._quiet:
                         self._console.print(
                             f"[yellow]Revising {step.name} with feedback...[/yellow]"
                         )
@@ -439,7 +441,7 @@ class Orchestrator:
                         )
                         self._git_step_commit(project_path, ctx, step.name, revised=True)
                 elif decision == CheckpointDecision.REJECT:
-                    if not self._headless:
+                    if not self._quiet:
                         self._console.print("[red]Pipeline aborted by user.[/red]")
                     ctx.status = PipelineStatus.ABORTED
                     break
@@ -517,7 +519,7 @@ class Orchestrator:
             branch_naming=ctx.branch_naming,
         )
 
-        if not self._headless:
+        if not self._quiet:
             from levelup.cli.display import print_project_info
             from levelup.detection.detector import ProjectInfo
 
@@ -548,7 +550,7 @@ class Orchestrator:
 
         for attempt in range(MAX_AGENT_RETRIES + 1):
             try:
-                if self._headless:
+                if self._quiet:
                     ctx, agent_result = agent.run(ctx)
                 else:
                     with self._console.status(f"[cyan]Running {agent_name} agent..."):
@@ -561,7 +563,7 @@ class Orchestrator:
                     logger.error("Agent %s: unrecoverable error: %s", agent_name, e)
                     ctx.status = PipelineStatus.FAILED
                     ctx.error_message = f"Agent {agent_name} failed: {e}"
-                    if not self._headless:
+                    if not self._quiet:
                         print_error(ctx.error_message)
                     return ctx
                 # Other ClaudeCodeError: fall through to retry logic
@@ -573,7 +575,7 @@ class Orchestrator:
                         MAX_AGENT_RETRIES + 1,
                         e,
                     )
-                    if not self._headless:
+                    if not self._quiet:
                         self._console.print(
                             f"[yellow]Agent {agent_name} failed, retrying "
                             f"({attempt + 1}/{MAX_AGENT_RETRIES})...[/yellow]"
@@ -582,7 +584,7 @@ class Orchestrator:
                     logger.error("Agent %s failed after all retries: %s", agent_name, e)
                     ctx.status = PipelineStatus.FAILED
                     ctx.error_message = f"Agent {agent_name} failed: {e}"
-                    if not self._headless:
+                    if not self._quiet:
                         print_error(ctx.error_message)
             except Exception as e:
                 if attempt < MAX_AGENT_RETRIES:
@@ -593,7 +595,7 @@ class Orchestrator:
                         MAX_AGENT_RETRIES + 1,
                         e,
                     )
-                    if not self._headless:
+                    if not self._quiet:
                         self._console.print(
                             f"[yellow]Agent {agent_name} failed, retrying "
                             f"({attempt + 1}/{MAX_AGENT_RETRIES})...[/yellow]"
@@ -602,7 +604,7 @@ class Orchestrator:
                     logger.error("Agent %s failed after all retries: %s", agent_name, e)
                     ctx.status = PipelineStatus.FAILED
                     ctx.error_message = f"Agent {agent_name} failed: {e}"
-                    if not self._headless:
+                    if not self._quiet:
                         print_error(ctx.error_message)
 
         return ctx
@@ -705,8 +707,8 @@ class Orchestrator:
         if not self._settings.pipeline.create_git_branch:
             return "levelup/{run_id}"
 
-        # If in headless mode, don't prompt
-        if self._headless:
+        # If in headless/gui mode, don't prompt interactively
+        if self._use_db_checkpoints:
             return "levelup/{run_id}"
 
         # Try to load from project_context.md
@@ -763,7 +765,7 @@ class Orchestrator:
             repo.git.worktree("add", str(worktree_dir), "-b", branch_name)
             ctx.worktree_path = worktree_dir
 
-            if not self._headless:
+            if not self._quiet:
                 print_success(f"Created branch: {branch_name} (worktree: {worktree_dir})")
 
             # Store pre_run_sha in context
@@ -771,7 +773,7 @@ class Orchestrator:
             return pre_sha
         except Exception as e:
             logger.warning("Failed to create git branch: %s", e)
-            if not self._headless:
+            if not self._quiet:
                 self._console.print(f"[dim]Git branch creation skipped: {e}[/dim]")
             return None
 
@@ -796,12 +798,12 @@ class Orchestrator:
     ) -> None:
         """Add a project rule to CLAUDE.md and review branch changes for violations."""
         add_instruction(project_path, instruction_text)
-        if not self._headless:
+        if not self._quiet:
             self._console.print(f"[cyan]Added rule:[/cyan] {instruction_text}")
 
         changed_files = self._get_changed_files(ctx, project_path)
         if not changed_files:
-            if not self._headless:
+            if not self._quiet:
                 self._console.print("[dim]No changed files to review for this rule.[/dim]")
             journal.log_instruct(instruction_text)
             self._git_step_commit(project_path, ctx, "instruct")
@@ -815,7 +817,7 @@ class Orchestrator:
 
         review_prompt = build_instruct_review_prompt(instruction_text, changed_files)
         try:
-            if self._headless:
+            if self._quiet:
                 agent_result = self._backend.run_agent(
                     system_prompt=review_prompt,
                     user_prompt=f"Review and fix violations of: {instruction_text}",

@@ -27,6 +27,7 @@ class ProjectSettings(BaseModel):
     language: str | None = None
     framework: str | None = None
     test_command: str | None = None
+    tickets_file: str = "levelup/tickets.md"
 
 
 class PipelineSettings(BaseModel):

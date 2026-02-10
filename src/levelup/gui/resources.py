@@ -35,3 +35,18 @@ def status_display(status: str) -> str:
     icon = STATUS_ICONS.get(status, "")
     label = STATUS_LABELS.get(status, status)
     return f"{icon} {label}"
+
+
+TICKET_STATUS_COLORS: dict[str, str] = {
+    "pending": "#CDD6F4",
+    "in progress": "#E6A817",
+    "done": "#2ECC71",
+    "merged": "#6C7086",
+}
+
+TICKET_STATUS_ICONS: dict[str, str] = {
+    "pending": "\u25CB",       # empty circle
+    "in progress": "\u25B6",   # play arrow
+    "done": "\u2714",          # checkmark
+    "merged": "\u25CF",        # filled circle
+}

@@ -86,6 +86,86 @@ QMessageBox {
     background-color: #1E1E2E;
     color: #CDD6F4;
 }
+QSplitter::handle {
+    background-color: #313244;
+    width: 2px;
+}
+QListWidget {
+    background-color: #181825;
+    color: #CDD6F4;
+    border: 1px solid #313244;
+    outline: none;
+}
+QListWidget::item {
+    padding: 6px 8px;
+    border-bottom: 1px solid #313244;
+}
+QListWidget::item:selected {
+    background-color: #45475A;
+    color: #CDD6F4;
+}
+QListWidget::item:hover {
+    background-color: #313244;
+}
+QLineEdit {
+    background-color: #181825;
+    color: #CDD6F4;
+    border: 1px solid #313244;
+    padding: 6px;
+    font-size: 14px;
+}
+QPushButton#saveBtn {
+    background-color: #2ECC71;
+    color: #1E1E2E;
+}
+QPushButton#saveBtn:hover {
+    background-color: #27AE60;
+}
+QPushButton#saveBtn:disabled {
+    background-color: #45475A;
+    color: #6C7086;
+}
+QPushButton#backBtn {
+    background-color: transparent;
+    border: none;
+    color: #89B4FA;
+    min-width: 40px;
+    padding: 4px 8px;
+}
+QPushButton#backBtn:hover {
+    color: #B4D0FB;
+}
+QPlainTextEdit#terminalOutput {
+    background-color: #11111B;
+    color: #A6E3A1;
+    border: 1px solid #313244;
+}
+QPushButton#runBtn {
+    background-color: #2ECC71;
+    color: #1E1E2E;
+}
+QPushButton#runBtn:hover {
+    background-color: #27AE60;
+}
+QPushButton#runBtn:disabled {
+    background-color: #45475A;
+    color: #6C7086;
+}
+QPushButton#stopBtn {
+    background-color: #E74C3C;
+    color: #FFFFFF;
+}
+QPushButton#stopBtn:hover {
+    background-color: #C0392B;
+}
+QPushButton#stopBtn:disabled {
+    background-color: #45475A;
+    color: #6C7086;
+}
+QLabel#terminalStatusLabel {
+    color: #A6ADC8;
+    font-size: 12px;
+}
 """
 
 MONOSPACE_FONT = "Consolas"

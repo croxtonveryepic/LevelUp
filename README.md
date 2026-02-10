@@ -106,8 +106,11 @@ levelup run "Add feature" --backend anthropic_sdk
 | `--no-checkpoints` | | Run without pausing for user approval |
 | `--max-iterations N` | | Max test-fix cycles (default: 5) |
 | `--headless` | | Run without terminal; checkpoints via GUI |
+| `--gui` | | GUI mode: DB checkpoints with visible console output |
 | `--db-path PATH` | | Override state DB path (default: `~/.levelup/state.db`) |
 | `--backend NAME` | | Backend: `claude_code` (default) or `anthropic_sdk` |
+| `--ticket-next` | `-T` | Auto-pick next pending ticket from tickets file |
+| `--ticket N` | `-t` | Run a specific ticket by number |
 
 **Pipeline steps:**
 
@@ -160,6 +163,36 @@ levelup recon --backend anthropic_sdk
 | `--model MODEL` | `-m` | Claude model override |
 | `--backend NAME` | | Backend: `claude_code` (default) or `anthropic_sdk` |
 
+### `levelup tickets` — Manage ticket backlog
+
+List and manage tasks from a markdown-based ticket file (`levelup/tickets.md`). Tickets are `##` headings with optional status tags: `[in progress]`, `[done]`, `[merged]`. No tag means pending.
+
+```bash
+levelup tickets                   # list all tickets (default)
+levelup tickets list              # same as above
+levelup tickets next              # show first pending ticket
+levelup tickets start 1           # mark ticket #1 as in progress
+levelup tickets done 1            # mark ticket #1 as done
+levelup tickets merged 1          # mark ticket #1 as merged
+```
+
+**Example tickets file** (`levelup/tickets.md`):
+
+```markdown
+# Tickets
+
+## Add user authentication
+Implement JWT-based auth for the API.
+
+## [in progress] Fix connection pooling
+Connection pool exhausts under load.
+
+## [done] Set up CI pipeline
+Configure GitHub Actions.
+```
+
+The `--ticket-next` / `-T` flag on `levelup run` auto-picks the next pending ticket and marks it in progress. On successful pipeline completion, the ticket is automatically marked as done.
+
 ### `levelup detect` — Detect project info
 
 Analyzes a project directory and reports what it found. Useful for verifying detection before running the full pipeline.
@@ -197,12 +230,15 @@ levelup gui
 levelup gui --db-path /tmp/my-state.db
 ```
 
+When launched with `--project-path`, the dashboard shows a ticket sidebar. Selecting a ticket opens a detail view with an embedded **Run** button and terminal output pane. The pipeline runs via `levelup run --gui --ticket N` as a subprocess, with output streaming in real-time and checkpoint dialogs auto-popping when the pipeline needs input.
+
 The dashboard:
 - Shows all runs (active, waiting, completed, failed) with colored status badges
 - Auto-refreshes every 2 seconds
 - Double-click a "Needs Input" row to open the checkpoint dialog (approve/revise/reject)
 - Right-click for details or to remove finished runs
 - "Clean Up" button removes all completed/failed/aborted runs
+- **Run Pipeline** from ticket detail page with integrated terminal output
 
 ### `levelup status` — Show run status in terminal
 
@@ -316,6 +352,7 @@ project:
   language: python              # override auto-detection
   framework: fastapi            # override auto-detection
   test_command: pytest -x       # override auto-detection
+  tickets_file: levelup/tickets.md  # path to tickets markdown file
 
 pipeline:
   max_code_iterations: 5
@@ -371,7 +408,7 @@ src/levelup/
   detection/    Language, framework, and test runner auto-detection
   config/       Pydantic Settings models, config file loader
   state/        SQLite state store for multi-instance coordination
-  gui/          PyQt6 dashboard — main window, checkpoint dialog, styles
+  gui/          PyQt6 dashboard — main window, checkpoint dialog, run terminal, styles
 ```
 
 ## Multi-Instance Support

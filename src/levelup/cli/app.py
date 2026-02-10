@@ -55,11 +55,20 @@ def run(
     headless: bool = typer.Option(
         False, "--headless", help="Run without terminal; checkpoints via GUI"
     ),
+    gui_mode: bool = typer.Option(
+        False, "--gui", help="GUI mode: DB checkpoints with visible output"
+    ),
     db_path: Optional[Path] = typer.Option(
         None, "--db-path", help="Override state DB path (default: ~/.levelup/state.db)"
     ),
     backend: Optional[str] = typer.Option(
         None, "--backend", help="Backend: 'claude_code' (default) or 'anthropic_sdk'"
+    ),
+    ticket_next: bool = typer.Option(
+        False, "--ticket-next", "-T", help="Auto-pick next pending ticket"
+    ),
+    ticket: Optional[int] = typer.Option(
+        None, "--ticket", "-t", help="Run a specific ticket by number"
     ),
 ) -> None:
     """Run the LevelUp TDD pipeline on a task."""
@@ -69,12 +78,12 @@ def run(
     from levelup.core.orchestrator import Orchestrator
     from levelup.state.manager import StateManager
 
-    if not headless:
+    if not headless and not gui_mode:
         print_banner()
 
-    # Headless mode requires a task
-    if headless and not task:
-        print_error("--headless requires a task argument (can't prompt interactively).")
+    # Headless/GUI mode requires a task (can't prompt interactively)
+    if (headless or gui_mode) and not task and not ticket_next and ticket is None:
+        print_error("--headless/--gui requires a task argument or --ticket/--ticket-next.")
         raise typer.Exit(1)
 
     # Build settings overrides from CLI args
@@ -109,7 +118,29 @@ def run(
             settings.llm.api_key = api_key
 
     # Get task
-    if task:
+    if ticket_next:
+        from levelup.core.tickets import TicketStatus, get_next_ticket, set_ticket_status
+
+        t = get_next_ticket(path, settings.project.tickets_file)
+        if not t:
+            print_error("No pending tickets.")
+            raise typer.Exit(1)
+        set_ticket_status(path, t.number, TicketStatus.IN_PROGRESS, settings.project.tickets_file)
+        task_input = t.to_task_input()
+        console.print(f"[cyan]Ticket #{t.number}:[/cyan] {t.title}")
+    elif ticket is not None:
+        from levelup.core.tickets import TicketStatus, read_tickets, set_ticket_status
+
+        tickets = read_tickets(path, settings.project.tickets_file)
+        matching = [tk for tk in tickets if tk.number == ticket]
+        if not matching:
+            print_error(f"Ticket #{ticket} not found.")
+            raise typer.Exit(1)
+        t = matching[0]
+        set_ticket_status(path, t.number, TicketStatus.IN_PROGRESS, settings.project.tickets_file)
+        task_input = t.to_task_input()
+        console.print(f"[cyan]Ticket #{t.number}:[/cyan] {t.title}")
+    elif task:
         task_input = TaskInput(title=task, description="")
     else:
         title, description = get_task_input()
@@ -129,8 +160,20 @@ def run(
         settings=settings,
         state_manager=state_manager,
         headless=headless,
+        gui_mode=gui_mode,
     )
     ctx = orchestrator.run(task_input)
+
+    # Auto-mark ticket as done on successful completion
+    if ctx.status.value == "completed" and ctx.task.source == "ticket" and ctx.task.source_id:
+        from levelup.core.tickets import TicketStatus, set_ticket_status
+
+        try:
+            ticket_num = int(ctx.task.source_id.split(":")[1])
+            set_ticket_status(path, ticket_num, TicketStatus.DONE, settings.project.tickets_file)
+            console.print(f"[green]Ticket #{ticket_num} marked as done.[/green]")
+        except (IndexError, ValueError):
+            pass
 
     if ctx.status.value == "failed":
         print_error(f"Pipeline failed: {ctx.error_message}")
@@ -275,6 +318,9 @@ def gui(
     db_path: Optional[Path] = typer.Option(
         None, "--db-path", help="Override state DB path"
     ),
+    project_path: Optional[Path] = typer.Option(
+        None, "--project-path", "-p", help="Project path (enables ticket sidebar)"
+    ),
 ) -> None:
     """Launch the LevelUp GUI dashboard."""
     try:
@@ -292,7 +338,7 @@ def gui(
                     try:
                         from levelup.gui.app import launch_gui as lg
 
-                        lg(db_path=db_path)
+                        lg(db_path=db_path, project_path=project_path)
                         return
                     except ImportError:
                         print_error(
@@ -309,7 +355,7 @@ def gui(
             print_error(hint)
             raise typer.Exit(1)
 
-    launch_gui(db_path=db_path)
+    launch_gui(db_path=db_path, project_path=project_path)
 
 
 @app.command()
@@ -716,6 +762,81 @@ def instruct(
 
     else:
         print_error(f"Unknown action: {action}. Use add, list, or remove.")
+        raise typer.Exit(1)
+
+
+@app.command()
+def tickets(
+    action: str = typer.Argument("list", help="Action: list, next, start, done, or merged"),
+    ticket_num: Optional[int] = typer.Argument(None, help="Ticket number (for start/done/merged)"),
+    path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
+) -> None:
+    """List and manage tickets from the tickets markdown file."""
+    from rich.table import Table
+
+    from levelup.config.loader import load_settings
+    from levelup.core.tickets import (
+        TicketStatus,
+        get_next_ticket,
+        read_tickets,
+        set_ticket_status,
+    )
+
+    settings = load_settings(project_path=path)
+
+    if action == "list":
+        all_tickets = read_tickets(path, settings.project.tickets_file)
+        if not all_tickets:
+            console.print("[dim]No tickets found.[/dim]")
+            return
+
+        table = Table(title="Tickets")
+        table.add_column("#", style="bold", justify="right")
+        table.add_column("Title")
+        table.add_column("Status")
+
+        status_styles = {
+            TicketStatus.PENDING: "white",
+            TicketStatus.IN_PROGRESS: "yellow",
+            TicketStatus.DONE: "green",
+            TicketStatus.MERGED: "dim",
+        }
+
+        for t in all_tickets:
+            style = status_styles.get(t.status, "")
+            status_display = f"[{style}]{t.status.value}[/{style}]"
+            table.add_row(str(t.number), t.title, status_display)
+
+        console.print(table)
+
+    elif action == "next":
+        t = get_next_ticket(path, settings.project.tickets_file)
+        if t:
+            console.print(f"[cyan]#{t.number}[/cyan] {t.title}")
+            if t.description:
+                console.print(f"[dim]{t.description}[/dim]")
+        else:
+            console.print("[dim]No pending tickets.[/dim]")
+
+    elif action in ("start", "done", "merged"):
+        if ticket_num is None:
+            print_error(f"Ticket number required: levelup tickets {action} <N>")
+            raise typer.Exit(1)
+        status_map = {
+            "start": TicketStatus.IN_PROGRESS,
+            "done": TicketStatus.DONE,
+            "merged": TicketStatus.MERGED,
+        }
+        new_status = status_map[action]
+        try:
+            set_ticket_status(path, ticket_num, new_status, settings.project.tickets_file)
+            console.print(f"[green]Ticket #{ticket_num} → {new_status.value}[/green]")
+        except IndexError as e:
+            print_error(str(e))
+            raise typer.Exit(1)
+
+    else:
+        print_error(f"Unknown action: {action}. Use list, next, start, done, or merged.")
         raise typer.Exit(1)
 
 

@@ -12,7 +12,10 @@ from levelup.gui.styles import DARK_THEME
 from levelup.state.manager import StateManager
 
 
-def launch_gui(db_path: Path | None = None) -> None:
+def launch_gui(
+    db_path: Path | None = None,
+    project_path: Path | None = None,
+) -> None:
     """Create QApplication and show the main window."""
     app = QApplication(sys.argv)
     app.setApplicationName("LevelUp Dashboard")
@@ -23,7 +26,7 @@ def launch_gui(db_path: Path | None = None) -> None:
         mgr_kwargs["db_path"] = db_path
     state_manager = StateManager(**mgr_kwargs)
 
-    window = MainWindow(state_manager)
+    window = MainWindow(state_manager, project_path=project_path)
     window.show()
 
     sys.exit(app.exec())

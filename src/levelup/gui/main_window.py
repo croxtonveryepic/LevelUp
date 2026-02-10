@@ -13,6 +13,8 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QSplitter,
+    QStackedWidget,
     QStatusBar,
     QTableWidget,
     QTableWidgetItem,
@@ -23,6 +25,8 @@ from PyQt6.QtWidgets import (
 
 from levelup.gui.checkpoint_dialog import CheckpointDialog
 from levelup.gui.resources import STATUS_COLORS, STATUS_LABELS, status_display
+from levelup.gui.ticket_detail import TicketDetailWidget
+from levelup.gui.ticket_sidebar import TicketSidebarWidget
 from levelup.state.manager import StateManager
 from levelup.state.models import RunRecord
 
@@ -31,15 +35,34 @@ COLUMNS = ["Run ID", "Task", "Project", "Status", "Step", "Started"]
 
 
 class MainWindow(QMainWindow):
-    """Dashboard window showing all LevelUp runs."""
+    """Dashboard window showing all LevelUp runs and tickets."""
 
-    def __init__(self, state_manager: StateManager) -> None:
+    def __init__(
+        self,
+        state_manager: StateManager,
+        project_path: Path | None = None,
+    ) -> None:
         super().__init__()
         self._state_manager = state_manager
         self._runs: list[RunRecord] = []
+        self._project_path = project_path
+        self._tickets_file: str | None = None
+        self._db_path = str(state_manager._db_path)
+        self._active_run_pids: set[int] = set()
+        self._checkpoint_dialog_open = False
+
+        # Load tickets_file setting if we have a project path
+        if project_path is not None:
+            try:
+                from levelup.config.loader import load_settings
+
+                settings = load_settings(project_path=project_path)
+                self._tickets_file = settings.project.tickets_file
+            except Exception:
+                pass
 
         self.setWindowTitle("LevelUp Dashboard")
-        self.setMinimumSize(900, 500)
+        self.setMinimumSize(1000, 550)
         self._build_ui()
         self._start_refresh_timer()
         self._refresh()
@@ -64,7 +87,20 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(toolbar_layout)
 
-        # Table
+        # Splitter: sidebar | stack
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Left: ticket sidebar
+        self._sidebar = TicketSidebarWidget()
+        self._sidebar.setMinimumWidth(200)
+        self._sidebar.setMaximumWidth(400)
+        self._sidebar.ticket_selected.connect(self._on_ticket_selected)
+        splitter.addWidget(self._sidebar)
+
+        # Right: stacked widget (page 0 = runs table, page 1 = ticket detail)
+        self._stack = QStackedWidget()
+
+        # Page 0: runs table
         self._table = QTableWidget()
         self._table.setColumnCount(len(COLUMNS))
         self._table.setHorizontalHeaderLabels(COLUMNS)
@@ -79,7 +115,21 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
 
-        layout.addWidget(self._table)
+        self._stack.addWidget(self._table)  # index 0
+
+        # Page 1: ticket detail
+        self._detail = TicketDetailWidget()
+        self._detail.back_clicked.connect(self._on_ticket_back)
+        self._detail.ticket_saved.connect(self._on_ticket_saved)
+        self._detail.run_pid_changed.connect(self._on_run_pid_changed)
+        self._stack.addWidget(self._detail)  # index 1
+
+        splitter.addWidget(self._stack)
+
+        # Set initial sizes: ~280px sidebar, rest for stack
+        splitter.setSizes([280, 720])
+
+        layout.addWidget(splitter)
 
         # Status bar
         self._status_bar = QStatusBar()
@@ -91,11 +141,26 @@ class MainWindow(QMainWindow):
         self._timer.start(REFRESH_INTERVAL_MS)
 
     def _refresh(self) -> None:
-        """Reload runs from DB and update the table."""
+        """Reload runs from DB and update the table + ticket list."""
         self._state_manager.mark_dead_runs()
         self._runs = self._state_manager.list_runs()
         self._update_table()
+        self._refresh_tickets()
         self._update_status_bar()
+        self._check_gui_run_checkpoints()
+
+    def _refresh_tickets(self) -> None:
+        """Reload ticket list from disk. Skip if detail widget has unsaved edits."""
+        if self._detail.is_dirty:
+            return
+        if self._project_path is None:
+            return
+
+        from levelup.core.tickets import read_tickets
+
+        tickets = read_tickets(self._project_path, self._tickets_file)
+        self._sidebar.set_tickets(tickets)
+        self._cached_tickets = tickets
 
     def _update_table(self) -> None:
         self._table.setRowCount(len(self._runs))
@@ -117,10 +182,92 @@ class MainWindow(QMainWindow):
     def _update_status_bar(self) -> None:
         active = sum(1 for r in self._runs if r.status in ("running", "pending"))
         awaiting = sum(1 for r in self._runs if r.status == "waiting_for_input")
-        self._status_bar.showMessage(
-            f"{active} active, {awaiting} awaiting input  |  "
-            f"{len(self._runs)} total runs"
-        )
+
+        ticket_count = len(getattr(self, "_cached_tickets", []))
+        parts = [
+            f"{active} active, {awaiting} awaiting input",
+            f"{len(self._runs)} total runs",
+        ]
+        if ticket_count:
+            parts.append(f"{ticket_count} tickets")
+        self._status_bar.showMessage("  |  ".join(parts))
+
+    # -- Ticket slots -------------------------------------------------------
+
+    def _on_ticket_selected(self, number: int) -> None:
+        """Load the selected ticket into the detail widget."""
+        tickets = getattr(self, "_cached_tickets", [])
+        for t in tickets:
+            if t.number == number:
+                self._detail.set_ticket(t)
+                # Pass project context so the terminal can run
+                if self._project_path is not None:
+                    self._detail.set_project_context(
+                        str(self._project_path), self._db_path
+                    )
+                self._stack.setCurrentIndex(1)
+                return
+
+    def _on_ticket_back(self) -> None:
+        """Return to the runs table view."""
+        self._stack.setCurrentIndex(0)
+        self._sidebar.clear_selection()
+
+    def _on_ticket_saved(self, number: int, title: str, description: str) -> None:
+        """Persist ticket edits to the markdown file."""
+        if self._project_path is None:
+            return
+
+        from levelup.core.tickets import update_ticket
+
+        try:
+            update_ticket(
+                self._project_path,
+                number,
+                title=title,
+                description=description,
+                filename=self._tickets_file,
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Failed to save ticket: {e}")
+            return
+
+        self._refresh_tickets()
+        # Reload the ticket in the detail view with updated data
+        tickets = getattr(self, "_cached_tickets", [])
+        for t in tickets:
+            if t.number == number:
+                self._detail.set_ticket(t)
+                break
+
+    # -- Run PID tracking ---------------------------------------------------
+
+    def _on_run_pid_changed(self, pid: int, active: bool) -> None:
+        """Track PIDs of GUI-spawned pipeline runs."""
+        if active and pid:
+            self._active_run_pids.add(pid)
+        else:
+            # Process finished — remove all PIDs that are no longer alive
+            self._active_run_pids.discard(pid)
+
+    def _check_gui_run_checkpoints(self) -> None:
+        """Auto-open checkpoint dialogs for GUI-spawned runs."""
+        if not self._active_run_pids or self._checkpoint_dialog_open:
+            return
+
+        pending = self._state_manager.get_pending_checkpoints()
+        for cp in pending:
+            # Find the matching run to check its PID
+            for run in self._runs:
+                if run.run_id == cp.run_id and run.pid in self._active_run_pids:
+                    self._checkpoint_dialog_open = True
+                    dialog = CheckpointDialog(cp, self._state_manager, parent=self)
+                    dialog.exec()
+                    self._checkpoint_dialog_open = False
+                    self._refresh()
+                    return  # Handle one at a time
+
+    # -- Run slots ----------------------------------------------------------
 
     def _on_double_click(self, index: object) -> None:
         """Open checkpoint dialog if the run is waiting for input."""

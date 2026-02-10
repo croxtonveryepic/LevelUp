@@ -180,7 +180,8 @@ class TestOrchestrator:
     def test_orchestrator_creates_with_headless(self, tmp_path):
         settings = self._make_settings(tmp_path)
         orch = Orchestrator(settings=settings, headless=True)
-        assert orch._headless is True
+        assert orch._quiet is True
+        assert orch._use_db_checkpoints is True
 
     def test_orchestrator_creates_with_state_manager(self, tmp_path):
         from levelup.state.manager import StateManager

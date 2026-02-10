@@ -17,6 +17,9 @@ def launch_gui(
     project_path: Path | None = None,
 ) -> None:
     """Create QApplication and show the main window."""
+    if project_path is None:
+        project_path = Path.cwd()
+
     app = QApplication(sys.argv)
     app.setApplicationName("LevelUp Dashboard")
     app.setStyleSheet(DARK_THEME)

@@ -257,7 +257,9 @@ class PtyBackend(QObject):
 
         self._pty = WinPTY(cols, rows)
         shell = env.get("COMSPEC", "powershell.exe")
-        self._pty.spawn(shell, cwd=cwd, env=env)  # type: ignore[union-attr]
+        # pywinpty expects env as a \0-separated string of KEY=VALUE pairs
+        env_str = "\0".join(f"{k}={v}" for k, v in env.items()) + "\0"
+        self._pty.spawn(shell, cwd=cwd, env=env_str)  # type: ignore[union-attr]
         # Force UTF-8 for PowerShell
         if "powershell" in shell.lower():
             self.write("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\r".encode("utf-8"))

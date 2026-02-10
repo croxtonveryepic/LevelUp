@@ -23,6 +23,7 @@ class RunRecord(BaseModel):
     updated_at: str
     pid: int | None = None
     total_cost_usd: float = 0.0
+    pause_requested: int = 0
 
 
 class CheckpointRequestRecord(BaseModel):

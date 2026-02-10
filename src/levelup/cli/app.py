@@ -395,6 +395,7 @@ def status(
     status_styles = {
         "running": "blue",
         "waiting_for_input": "yellow",
+        "paused": "yellow",
         "completed": "green",
         "failed": "red",
         "aborted": "dim",
@@ -460,7 +461,7 @@ def resume(
         all_runs = state_manager.list_runs()
         resumable = [
             r for r in all_runs
-            if r.status in ("failed", "aborted") and r.context_json
+            if r.status in ("failed", "aborted", "paused") and r.context_json
         ]
         if not resumable:
             console.print("[yellow]No resumable runs found.[/yellow]")
@@ -474,8 +475,8 @@ def resume(
             print_error(f"Run '{run_id}' not found.")
             raise typer.Exit(1)
 
-        if record.status not in ("failed", "aborted"):
-            print_error(f"Run '{run_id}' has status '{record.status}' — only failed or aborted runs can be resumed.")
+        if record.status not in ("failed", "aborted", "paused"):
+            print_error(f"Run '{run_id}' has status '{record.status}' — only failed, aborted, or paused runs can be resumed.")
             raise typer.Exit(1)
 
         if not record.context_json:

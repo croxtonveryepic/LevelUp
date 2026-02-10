@@ -36,6 +36,7 @@ class TestPipelineStatus:
         assert PipelineStatus.PENDING == "pending"
         assert PipelineStatus.RUNNING == "running"
         assert PipelineStatus.WAITING_FOR_INPUT == "waiting_for_input"
+        assert PipelineStatus.PAUSED == "paused"
         assert PipelineStatus.COMPLETED == "completed"
         assert PipelineStatus.FAILED == "failed"
         assert PipelineStatus.ABORTED == "aborted"
@@ -44,7 +45,7 @@ class TestPipelineStatus:
         assert isinstance(PipelineStatus.RUNNING, str)
 
     def test_member_count(self):
-        assert len(PipelineStatus) == 6
+        assert len(PipelineStatus) == 7
 
 
 class TestCheckpointDecision:

@@ -598,10 +598,9 @@ class TestDBMigrationV1ToV2:
         # Run init_db which should apply migration v2
         init_db(db_path)
 
-        # Verify schema version is now 2
+        # Verify schema version is now current (all migrations applied)
         conn = get_connection(db_path)
         version = _get_schema_version(conn)
-        assert version == 2
         assert version == CURRENT_SCHEMA_VERSION
 
         # Verify the total_cost_usd column exists on the runs table

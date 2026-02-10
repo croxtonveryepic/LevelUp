@@ -213,6 +213,43 @@ class StateManager:
         finally:
             conn.close()
 
+    def request_pause(self, run_id: str) -> None:
+        """Set the pause_requested flag for a run."""
+        conn = self._conn()
+        try:
+            conn.execute(
+                "UPDATE runs SET pause_requested = 1, updated_at = ? WHERE run_id = ?",
+                (_now_iso(), run_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def is_pause_requested(self, run_id: str) -> bool:
+        """Check if a pause has been requested for a run."""
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                "SELECT pause_requested FROM runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            if row is None:
+                return False
+            return bool(row["pause_requested"])
+        finally:
+            conn.close()
+
+    def clear_pause_request(self, run_id: str) -> None:
+        """Clear the pause_requested flag for a run."""
+        conn = self._conn()
+        try:
+            conn.execute(
+                "UPDATE runs SET pause_requested = 0, updated_at = ? WHERE run_id = ?",
+                (_now_iso(), run_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def mark_dead_runs(self) -> int:
         """Check PIDs of active runs; mark dead processes as failed. Returns count."""
         conn = self._conn()

@@ -98,7 +98,7 @@ class TestStatusDisplay:
         assert "unknown_status" in result
 
     def test_all_statuses_have_colors(self):
-        expected = {"running", "waiting_for_input", "completed", "failed", "aborted", "pending"}
+        expected = {"running", "waiting_for_input", "paused", "completed", "failed", "aborted", "pending"}
         assert set(STATUS_COLORS.keys()) == expected
 
     def test_all_statuses_have_labels(self):

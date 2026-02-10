@@ -121,11 +121,18 @@ class TicketDetailWidget(QWidget):
     def terminal(self) -> RunTerminalWidget:
         return self._terminal
 
-    def set_project_context(self, project_path: str, db_path: str) -> None:
+    def set_project_context(
+        self,
+        project_path: str,
+        db_path: str,
+        state_manager: object | None = None,
+    ) -> None:
         """Store project context so runs can be launched."""
         self._project_path = project_path
         self._db_path = db_path
         self._terminal.set_context(project_path, db_path)
+        if state_manager is not None:
+            self._terminal.set_state_manager(state_manager)
         # Enable run button if a ticket is loaded
         self._terminal.enable_run(self._ticket is not None)
 

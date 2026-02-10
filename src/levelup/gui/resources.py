@@ -5,6 +5,7 @@ from __future__ import annotations
 STATUS_COLORS: dict[str, str] = {
     "running": "#4A90D9",
     "waiting_for_input": "#E6A817",
+    "paused": "#F5A623",
     "completed": "#2ECC71",
     "failed": "#E74C3C",
     "aborted": "#95A5A6",
@@ -14,6 +15,7 @@ STATUS_COLORS: dict[str, str] = {
 STATUS_LABELS: dict[str, str] = {
     "running": "Running",
     "waiting_for_input": "Needs Input",
+    "paused": "Paused",
     "completed": "Completed",
     "failed": "Failed",
     "aborted": "Aborted",
@@ -23,6 +25,7 @@ STATUS_LABELS: dict[str, str] = {
 STATUS_ICONS: dict[str, str] = {
     "running": "\u25B6",       # play
     "waiting_for_input": "\u26A0",  # warning
+    "paused": "\u23F8",        # pause
     "completed": "\u2714",     # checkmark
     "failed": "\u2718",        # X
     "aborted": "\u25A0",       # stop

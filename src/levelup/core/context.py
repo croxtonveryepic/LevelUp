@@ -17,6 +17,7 @@ class PipelineStatus(str, enum.Enum):
     PENDING = "pending"
     RUNNING = "running"
     WAITING_FOR_INPUT = "waiting_for_input"
+    PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
     ABORTED = "aborted"

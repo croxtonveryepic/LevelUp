@@ -7,18 +7,25 @@ can type commands directly.
 
 from __future__ import annotations
 
+import logging
+import os
 import sys
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
 from levelup.gui.terminal_emulator import TerminalEmulatorWidget
+
+logger = logging.getLogger(__name__)
+
+RESUMABLE_STATUSES = ("failed", "aborted", "paused")
 
 
 def build_run_command(
@@ -37,11 +44,27 @@ def build_run_command(
     )
 
 
+def build_resume_command(
+    run_id: str,
+    project_path: str,
+    db_path: str,
+) -> str:
+    """Build the shell command string for resuming a pipeline run."""
+    python = sys.executable.replace("\\", "/")
+    return (
+        f'"{python}" -m levelup resume {run_id}'
+        f" --gui"
+        f' --path "{project_path}"'
+        f' --db-path "{db_path}"'
+    )
+
+
 class RunTerminalWidget(QWidget):
     """Embedded interactive terminal for running ``levelup run --gui``."""
 
     run_started = pyqtSignal(int)   # PID (emitted as 0 — no separate process PID)
     run_finished = pyqtSignal(int)  # exit code
+    run_paused = pyqtSignal()       # emitted when pause is confirmed via DB
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -65,11 +88,29 @@ class RunTerminalWidget(QWidget):
         self._run_btn.clicked.connect(self._on_run_clicked)
         header.addWidget(self._run_btn)
 
-        self._stop_btn = QPushButton("Stop")
-        self._stop_btn.setObjectName("stopBtn")
-        self._stop_btn.setEnabled(False)
-        self._stop_btn.clicked.connect(self._on_stop_clicked)
-        header.addWidget(self._stop_btn)
+        self._terminate_btn = QPushButton("Terminate")
+        self._terminate_btn.setObjectName("terminateBtn")
+        self._terminate_btn.setEnabled(False)
+        self._terminate_btn.clicked.connect(self._on_terminate_clicked)
+        header.addWidget(self._terminate_btn)
+
+        self._pause_btn = QPushButton("Pause")
+        self._pause_btn.setObjectName("pauseBtn")
+        self._pause_btn.setEnabled(False)
+        self._pause_btn.clicked.connect(self._on_pause_clicked)
+        header.addWidget(self._pause_btn)
+
+        self._resume_btn = QPushButton("Resume")
+        self._resume_btn.setObjectName("resumeBtn")
+        self._resume_btn.setEnabled(False)
+        self._resume_btn.clicked.connect(self._on_resume_clicked)
+        header.addWidget(self._resume_btn)
+
+        self._forget_btn = QPushButton("Forget")
+        self._forget_btn.setObjectName("forgetBtn")
+        self._forget_btn.setEnabled(False)
+        self._forget_btn.clicked.connect(self._on_forget_clicked)
+        header.addWidget(self._forget_btn)
 
         self._clear_btn = QPushButton("Clear")
         self._clear_btn.clicked.connect(self._on_clear)
@@ -87,6 +128,14 @@ class RunTerminalWidget(QWidget):
         self._project_path: str | None = None
         self._db_path: str | None = None
 
+        # Run tracking
+        self._last_run_id: str | None = None
+        self._state_manager: object | None = None  # StateManager instance
+
+        # Timer for polling run_id after starting a run
+        self._run_id_poll_timer = QTimer(self)
+        self._run_id_poll_timer.timeout.connect(self._poll_for_run_id)
+
     # -- Public API ---------------------------------------------------------
 
     @property
@@ -97,10 +146,18 @@ class RunTerminalWidget(QWidget):
     def process_pid(self) -> int | None:
         return 0 if self._command_running else None
 
+    @property
+    def last_run_id(self) -> str | None:
+        return self._last_run_id
+
     def set_context(self, project_path: str, db_path: str) -> None:
         """Store project context so the Run button can be enabled."""
         self._project_path = project_path
         self._db_path = db_path
+
+    def set_state_manager(self, sm: object) -> None:
+        """Store a StateManager reference for pause/resume/forget operations."""
+        self._state_manager = sm
 
     def start_run(self, ticket_number: int, project_path: str, db_path: str) -> None:
         """Start a pipeline run for the given ticket."""
@@ -110,6 +167,7 @@ class RunTerminalWidget(QWidget):
         self._ticket_number = ticket_number
         self._project_path = project_path
         self._db_path = db_path
+        self._last_run_id = None
 
         # Ensure the shell is started
         self._ensure_shell()
@@ -119,6 +177,9 @@ class RunTerminalWidget(QWidget):
 
         self._set_running_state(True)
         self.run_started.emit(0)
+
+        # Start polling for run_id
+        self._run_id_poll_timer.start(1000)
 
     def enable_run(self, enabled: bool) -> None:
         """Enable/disable the Run button (e.g. when a ticket is loaded)."""
@@ -130,7 +191,6 @@ class RunTerminalWidget(QWidget):
         if not self._command_running:
             return
         self._set_running_state(False)
-        status = "completed" if exit_code == 0 else f"exited ({exit_code})"
         self._status_label.setText(f"Finished ({exit_code})")
         self.run_finished.emit(exit_code)
 
@@ -151,20 +211,124 @@ class RunTerminalWidget(QWidget):
     def _set_running_state(self, running: bool) -> None:
         self._command_running = running
         self._run_btn.setEnabled(not running)
-        self._stop_btn.setEnabled(running)
+        self._terminate_btn.setEnabled(running)
+        self._pause_btn.setEnabled(running)
+        self._resume_btn.setEnabled(not running and self._is_resumable())
+        self._forget_btn.setEnabled(not running and self._last_run_id is not None)
         self._status_label.setText("Running..." if running else "Ready")
+
+    def _update_button_states(self) -> None:
+        """Refresh button enabled/disabled states based on current state."""
+        running = self._command_running
+        self._run_btn.setEnabled(
+            not running and self._ticket_number is not None and self._project_path is not None
+        )
+        self._terminate_btn.setEnabled(running)
+        self._pause_btn.setEnabled(running)
+        self._resume_btn.setEnabled(not running and self._is_resumable())
+        self._forget_btn.setEnabled(not running and self._last_run_id is not None)
+
+    def _is_resumable(self) -> bool:
+        """Check if the last run has a resumable status."""
+        if not self._last_run_id or not self._state_manager:
+            return False
+        from levelup.state.manager import StateManager
+
+        assert isinstance(self._state_manager, StateManager)
+        record = self._state_manager.get_run(self._last_run_id)
+        if record is None:
+            return False
+        return record.status in RESUMABLE_STATUSES
 
     def _on_run_clicked(self) -> None:
         if self._ticket_number is not None and self._project_path and self._db_path:
             self.start_run(self._ticket_number, self._project_path, self._db_path)
 
-    def _on_stop_clicked(self) -> None:
-        """Send Ctrl+C to the shell to interrupt the running command."""
+    def _on_terminate_clicked(self) -> None:
+        """Kill the running process and mark as failed."""
+        # Send interrupt first
         self._terminal.send_interrupt()
-        # Give the process a moment, then mark as not running
+
+        # If we have a run_id, mark it as failed in the DB
+        if self._last_run_id and self._state_manager:
+            from levelup.state.manager import StateManager
+
+            assert isinstance(self._state_manager, StateManager)
+            record = self._state_manager.get_run(self._last_run_id)
+            if record and record.pid:
+                try:
+                    if os.name == "nt":
+                        os.system(f"taskkill /F /PID {record.pid} >nul 2>&1")
+                    else:
+                        import signal
+
+                        os.kill(record.pid, signal.SIGKILL)
+                except OSError:
+                    pass
+
+            # Update DB status
+            conn = self._state_manager._conn()
+            try:
+                conn.execute(
+                    "UPDATE runs SET status = 'failed', error_message = 'Terminated by user', updated_at = datetime('now') WHERE run_id = ?",
+                    (self._last_run_id,),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
         self._set_running_state(False)
-        self._status_label.setText("Interrupted")
+        self._status_label.setText("Terminated")
         self.run_finished.emit(1)
+
+    def _on_pause_clicked(self) -> None:
+        """Request a pause via the state DB."""
+        if not self._last_run_id or not self._state_manager:
+            return
+        from levelup.state.manager import StateManager
+
+        assert isinstance(self._state_manager, StateManager)
+        self._state_manager.request_pause(self._last_run_id)
+        self._pause_btn.setEnabled(False)
+        self._status_label.setText("Pausing...")
+
+    def _on_resume_clicked(self) -> None:
+        """Resume the last run via the terminal."""
+        if not self._last_run_id or not self._project_path or not self._db_path:
+            return
+        if self._command_running:
+            return
+
+        self._ensure_shell()
+
+        cmd = build_resume_command(self._last_run_id, self._project_path, self._db_path)
+        self._terminal.send_command(cmd)
+
+        self._set_running_state(True)
+        self.run_started.emit(0)
+
+    def _on_forget_clicked(self) -> None:
+        """Delete the last run from the state DB."""
+        if not self._last_run_id or not self._state_manager:
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Forget Run",
+            f"Delete run '{self._last_run_id[:12]}' from the database?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        from levelup.state.manager import StateManager
+
+        assert isinstance(self._state_manager, StateManager)
+        self._state_manager.delete_run(self._last_run_id)
+        self._last_run_id = None
+        self._update_button_states()
+        self._status_label.setText("Run forgotten")
 
     def _on_clear(self) -> None:
         """Send clear command to the shell."""
@@ -173,6 +337,44 @@ class RunTerminalWidget(QWidget):
     def _on_shell_exited(self, exit_code: int) -> None:
         """Handle the shell itself exiting (not just a command)."""
         self._shell_started = False
+        self._run_id_poll_timer.stop()
         if self._command_running:
             self._set_running_state(False)
             self.run_finished.emit(exit_code)
+
+    def _poll_for_run_id(self) -> None:
+        """Poll the DB to find the run_id for the most recent run."""
+        if not self._state_manager or not self._project_path:
+            self._run_id_poll_timer.stop()
+            return
+
+        from levelup.state.manager import StateManager
+
+        assert isinstance(self._state_manager, StateManager)
+
+        runs = self._state_manager.list_runs()
+        for run in runs:
+            if (
+                run.project_path.rstrip("/\\") == self._project_path.rstrip("/\\")
+                and run.status not in ("completed", "failed", "aborted")
+            ):
+                self._last_run_id = run.run_id
+                self._run_id_poll_timer.stop()
+                self._update_button_states()
+                return
+
+        # Also check if the run just completed (for resume/forget)
+        for run in runs:
+            if run.project_path.rstrip("/\\") == self._project_path.rstrip("/\\"):
+                self._last_run_id = run.run_id
+                self._run_id_poll_timer.stop()
+                # If the run is already done, mark as not running
+                if run.status in ("completed", "failed", "aborted", "paused"):
+                    if self._command_running:
+                        exit_code = 0 if run.status == "completed" else 1
+                        self._set_running_state(False)
+                        self._status_label.setText(f"Finished ({run.status})")
+                        self.run_finished.emit(exit_code)
+                    else:
+                        self._update_button_states()
+                return

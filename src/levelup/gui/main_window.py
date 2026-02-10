@@ -202,10 +202,12 @@ class MainWindow(QMainWindow):
         for t in tickets:
             if t.number == number:
                 self._detail.set_ticket(t)
-                # Pass project context so the terminal can run
+                # Pass project context + state manager so the terminal can run
                 if self._project_path is not None:
                     self._detail.set_project_context(
-                        str(self._project_path), self._db_path
+                        str(self._project_path),
+                        self._db_path,
+                        state_manager=self._state_manager,
                     )
                 self._stack.setCurrentIndex(1)
                 return
@@ -245,7 +247,9 @@ class MainWindow(QMainWindow):
         self._detail.set_ticket(ticket)
         if self._project_path is not None:
             self._detail.set_project_context(
-                str(self._project_path), self._db_path
+                str(self._project_path),
+                self._db_path,
+                state_manager=self._state_manager,
             )
 
     def _on_ticket_saved(self, number: int, title: str, description: str) -> None:
@@ -341,8 +345,13 @@ class MainWindow(QMainWindow):
         view_action.triggered.connect(lambda: self._view_details(run))
         menu.addAction(view_action)
 
-        if run.status in ("completed", "failed", "aborted"):
-            remove_action = QAction("Remove from List", self)
+        if run.status in ("failed", "aborted", "paused"):
+            resume_action = QAction("Resume", self)
+            resume_action.triggered.connect(lambda: self._resume_run(run))
+            menu.addAction(resume_action)
+
+        if run.status in ("completed", "failed", "aborted", "paused"):
+            remove_action = QAction("Forget", self)
             remove_action.triggered.connect(lambda: self._remove_run(run))
             menu.addAction(remove_action)
 
@@ -367,13 +376,33 @@ class MainWindow(QMainWindow):
         )
         QMessageBox.information(self, f"Run {run.run_id[:12]}", msg)
 
+    def _resume_run(self, run: RunRecord) -> None:
+        """Show instructions for resuming a run from the CLI."""
+        project = run.project_path
+        QMessageBox.information(
+            self,
+            "Resume Run",
+            f"To resume this run, use the CLI:\n\n"
+            f"  levelup resume {run.run_id} --path \"{project}\"\n\n"
+            f"Or select the matching ticket and use the Resume button in the terminal.",
+        )
+
     def _remove_run(self, run: RunRecord) -> None:
         """Remove a completed/failed/aborted run from the DB."""
+        reply = QMessageBox.question(
+            self,
+            "Forget Run",
+            f"Delete run '{run.run_id[:12]}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
         self._state_manager.delete_run(run.run_id)
         self._refresh()
 
     def _cleanup_runs(self) -> None:
-        """Remove all completed and failed runs."""
+        """Remove all completed, failed, and aborted runs."""
         to_remove = [r for r in self._runs if r.status in ("completed", "failed", "aborted")]
         if not to_remove:
             QMessageBox.information(self, "Clean Up", "No runs to clean up.")

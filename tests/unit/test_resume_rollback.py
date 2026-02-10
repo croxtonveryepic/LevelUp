@@ -349,7 +349,7 @@ class TestCLIResume:
         result = runner.invoke(app, ["resume", "abc123"])
 
         assert result.exit_code == 1
-        assert "only failed or aborted" in result.output.lower()
+        assert "only failed, aborted, or paused" in result.output.lower()
 
     @patch("levelup.cli.app.print_banner")
     @patch("levelup.state.manager.StateManager")
@@ -369,7 +369,7 @@ class TestCLIResume:
         result = runner.invoke(app, ["resume", "abc123"])
 
         assert result.exit_code == 1
-        assert "only failed or aborted" in result.output.lower()
+        assert "only failed, aborted, or paused" in result.output.lower()
 
 
 # ---------------------------------------------------------------------------

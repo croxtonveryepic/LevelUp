@@ -162,14 +162,47 @@ QPushButton#runBtn:disabled {
     background-color: #45475A;
     color: #6C7086;
 }
-QPushButton#stopBtn {
+QPushButton#terminateBtn {
     background-color: #E74C3C;
     color: #FFFFFF;
 }
-QPushButton#stopBtn:hover {
+QPushButton#terminateBtn:hover {
     background-color: #C0392B;
 }
-QPushButton#stopBtn:disabled {
+QPushButton#terminateBtn:disabled {
+    background-color: #45475A;
+    color: #6C7086;
+}
+QPushButton#pauseBtn {
+    background-color: #F5A623;
+    color: #1E1E2E;
+}
+QPushButton#pauseBtn:hover {
+    background-color: #E6971A;
+}
+QPushButton#pauseBtn:disabled {
+    background-color: #45475A;
+    color: #6C7086;
+}
+QPushButton#resumeBtn {
+    background-color: #4A90D9;
+    color: #FFFFFF;
+}
+QPushButton#resumeBtn:hover {
+    background-color: #3A7BC8;
+}
+QPushButton#resumeBtn:disabled {
+    background-color: #45475A;
+    color: #6C7086;
+}
+QPushButton#forgetBtn {
+    background-color: #6C7086;
+    color: #CDD6F4;
+}
+QPushButton#forgetBtn:hover {
+    background-color: #585B70;
+}
+QPushButton#forgetBtn:disabled {
     background-color: #45475A;
     color: #6C7086;
 }

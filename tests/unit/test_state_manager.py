@@ -188,6 +188,33 @@ class TestStateManagerCheckpoints:
         assert mgr.get_checkpoint_decision("nonexistent", "requirements") is None
 
 
+class TestStateManagerPauseRequest:
+    def test_request_pause(self, tmp_path):
+        mgr = StateManager(db_path=tmp_path / "test.db")
+        ctx = _make_ctx(project_path=tmp_path)
+        mgr.register_run(ctx)
+
+        assert mgr.is_pause_requested("test123") is False
+
+        mgr.request_pause("test123")
+        assert mgr.is_pause_requested("test123") is True
+
+    def test_clear_pause_request(self, tmp_path):
+        mgr = StateManager(db_path=tmp_path / "test.db")
+        ctx = _make_ctx(project_path=tmp_path)
+        mgr.register_run(ctx)
+
+        mgr.request_pause("test123")
+        assert mgr.is_pause_requested("test123") is True
+
+        mgr.clear_pause_request("test123")
+        assert mgr.is_pause_requested("test123") is False
+
+    def test_is_pause_requested_nonexistent_run(self, tmp_path):
+        mgr = StateManager(db_path=tmp_path / "test.db")
+        assert mgr.is_pause_requested("nonexistent") is False
+
+
 class TestStateManagerDeadRuns:
     def test_mark_dead_runs_cleans_dead_pid(self, tmp_path):
         mgr = StateManager(db_path=tmp_path / "test.db")

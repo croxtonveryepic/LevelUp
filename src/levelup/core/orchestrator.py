@@ -54,6 +54,10 @@ MAX_AGENT_RETRIES = 2
 CHECKPOINT_POLL_INTERVAL = 1.0  # seconds
 
 
+class PipelinePaused(Exception):
+    """Raised when a pause is requested and acknowledged."""
+
+
 class Orchestrator:
     """Central pipeline engine that runs the LevelUp TDD pipeline."""
 
@@ -125,6 +129,27 @@ class Orchestrator:
             assert isinstance(self._state_manager, StateManager)
             self._state_manager.update_run(ctx)
 
+    def _check_pause_requested(self, ctx: PipelineContext) -> bool:
+        """Check if a pause has been requested and handle it.
+
+        Returns True if the pipeline should pause (breaks the step loop).
+        """
+        if self._state_manager is None:
+            return False
+
+        from levelup.state.manager import StateManager
+
+        assert isinstance(self._state_manager, StateManager)
+
+        if self._state_manager.is_pause_requested(ctx.run_id):
+            ctx.status = PipelineStatus.PAUSED
+            self._persist_state(ctx)
+            self._state_manager.clear_pause_request(ctx.run_id)
+            if not self._quiet:
+                self._console.print("\n[yellow]Pipeline paused by user.[/yellow]")
+            return True
+        return False
+
     def _wait_for_checkpoint_decision(
         self, step_name: str, ctx: PipelineContext
     ) -> tuple[CheckpointDecision, str]:
@@ -150,6 +175,15 @@ class Orchestrator:
 
         # Poll for decision
         while True:
+            # Check for pause request while waiting at checkpoint
+            if self._state_manager.is_pause_requested(ctx.run_id):
+                ctx.status = PipelineStatus.PAUSED
+                self._persist_state(ctx)
+                self._state_manager.clear_pause_request(ctx.run_id)
+                if not self._quiet:
+                    self._console.print("\n[yellow]Pipeline paused by user.[/yellow]")
+                raise PipelinePaused("Paused at checkpoint")
+
             result = self._state_manager.get_checkpoint_decision(ctx.run_id, step_name)
             if result is not None:
                 decision_str, feedback = result
@@ -204,6 +238,9 @@ class Orchestrator:
                 if not self._quiet:
                     print_pipeline_summary(ctx)
 
+        except PipelinePaused:
+            # Already set to PAUSED status inside _check_pause_requested
+            pass
         except KeyboardInterrupt:
             if not self._quiet:
                 self._console.print("\n[yellow]Pipeline interrupted by user.[/yellow]")
@@ -231,8 +268,9 @@ class Orchestrator:
                         f"  git merge {branch_name}"
                     )
 
-        # Cleanup worktree (branch persists in main repo)
-        self._cleanup_worktree(project_path, ctx)
+        # Cleanup worktree (branch persists in main repo) — but not for paused runs
+        if ctx.status != PipelineStatus.PAUSED:
+            self._cleanup_worktree(project_path, ctx)
 
         self._persist_state(ctx)
         return ctx
@@ -311,6 +349,9 @@ class Orchestrator:
                 if not self._quiet:
                     print_pipeline_summary(ctx)
 
+        except PipelinePaused:
+            # Already set to PAUSED status inside _check_pause_requested
+            pass
         except KeyboardInterrupt:
             if not self._quiet:
                 self._console.print("\n[yellow]Pipeline interrupted by user.[/yellow]")
@@ -329,8 +370,9 @@ class Orchestrator:
                 self._git_journal_commit(working_path, ctx, journal)
                 ctx.current_step = None
 
-        # Cleanup worktree (branch persists in main repo)
-        self._cleanup_worktree(project_path, ctx)
+        # Cleanup worktree (branch persists in main repo) — but not for paused runs
+        if ctx.status != PipelineStatus.PAUSED:
+            self._cleanup_worktree(project_path, ctx)
 
         self._persist_state(ctx)
         return ctx
@@ -344,6 +386,10 @@ class Orchestrator:
     ) -> PipelineContext:
         """Execute a list of pipeline steps. Shared by run() and resume()."""
         for step in steps:
+            # Check for pause request before each step
+            if self._check_pause_requested(ctx):
+                break
+
             ctx.current_step = step.name
             self._persist_state(ctx)
 

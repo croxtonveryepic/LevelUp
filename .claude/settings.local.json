@@ -36,7 +36,8 @@
       "Bash(pwsh:*)",
       "WebFetch(domain:pyte.readthedocs.io)",
       "WebFetch(domain:ptyprocess.readthedocs.io)",
-      "Bash(uv pip install:*)"
+      "Bash(uv pip install:*)",
+      "Bash(C:/Users/jccvae/LevelUp/.venv/Scripts/python.exe -m pytest:*)"
     ]
   }
 }

@@ -123,6 +123,7 @@ class MainWindow(QMainWindow):
         self._detail.back_clicked.connect(self._on_ticket_back)
         self._detail.ticket_saved.connect(self._on_ticket_saved)
         self._detail.ticket_created.connect(self._on_ticket_created)
+        self._detail.ticket_deleted.connect(self._on_ticket_deleted)
         self._detail.run_pid_changed.connect(self._on_run_pid_changed)
         self._stack.addWidget(self._detail)  # index 1
 
@@ -278,6 +279,48 @@ class MainWindow(QMainWindow):
             if t.number == number:
                 self._detail.set_ticket(t)
                 break
+
+    def _on_ticket_deleted(self, number: int) -> None:
+        """Delete a ticket, cleaning up any associated run and worktree."""
+        if self._project_path is None:
+            return
+
+        # Clean up associated run + worktree if one exists
+        run_id = self._detail.terminal.last_run_id
+        if run_id:
+            import shutil
+
+            worktree_path = Path.home() / ".levelup" / "worktrees" / run_id
+            if worktree_path.exists():
+                try:
+                    import git
+
+                    repo = git.Repo(str(self._project_path))
+                    repo.git.worktree("remove", str(worktree_path), "--force")
+                except Exception:
+                    try:
+                        shutil.rmtree(worktree_path)
+                    except Exception:
+                        pass
+
+            try:
+                self._state_manager.delete_run(run_id)
+            except Exception:
+                pass
+
+        # Delete the ticket from the markdown file
+        from levelup.core.tickets import delete_ticket
+
+        try:
+            delete_ticket(self._project_path, number, filename=self._tickets_file)
+        except Exception as e:
+            QMessageBox.critical(self, "Delete Error", f"Failed to delete ticket: {e}")
+            return
+
+        # Navigate back and refresh
+        self._refresh_tickets()
+        self._stack.setCurrentIndex(0)
+        self._sidebar.clear_selection()
 
     # -- Run PID tracking ---------------------------------------------------
 

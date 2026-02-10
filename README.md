@@ -174,6 +174,7 @@ levelup tickets next              # show first pending ticket
 levelup tickets start 1           # mark ticket #1 as in progress
 levelup tickets done 1            # mark ticket #1 as done
 levelup tickets merged 1          # mark ticket #1 as merged
+levelup tickets delete 1          # permanently delete ticket #1
 ```
 
 **Example tickets file** (`levelup/tickets.md`):

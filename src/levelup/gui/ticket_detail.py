@@ -27,6 +27,7 @@ class TicketDetailWidget(QWidget):
     back_clicked = pyqtSignal()
     ticket_saved = pyqtSignal(int, str, str)  # number, title, description
     ticket_created = pyqtSignal(str, str)     # title, description
+    ticket_deleted = pyqtSignal(int)           # ticket number
     run_pid_changed = pyqtSignal(int, bool)   # pid, active
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -85,6 +86,13 @@ class TicketDetailWidget(QWidget):
 
         # Buttons
         btn_layout = QHBoxLayout()
+
+        self._delete_btn = QPushButton("Delete")
+        self._delete_btn.setObjectName("deleteBtn")
+        self._delete_btn.setEnabled(False)
+        self._delete_btn.clicked.connect(self._on_delete)
+        btn_layout.addWidget(self._delete_btn)
+
         btn_layout.addStretch()
 
         self._cancel_btn = QPushButton("Cancel")
@@ -155,6 +163,7 @@ class TicketDetailWidget(QWidget):
 
         self._dirty = False
         self._save_btn.setEnabled(False)
+        self._delete_btn.setEnabled(False)
         self._terminal.enable_run(False)
         self._title_edit.setFocus()
 
@@ -182,6 +191,7 @@ class TicketDetailWidget(QWidget):
 
         self._dirty = False
         self._save_btn.setEnabled(False)
+        self._delete_btn.setEnabled(True)
 
         # Store ticket number for the terminal and enable Run if we have context
         self._terminal._ticket_number = ticket.number
@@ -256,6 +266,39 @@ class TicketDetailWidget(QWidget):
         self.ticket_saved.emit(self._ticket.number, title, description)
         self._dirty = False
         self._save_btn.setEnabled(False)
+
+    def _on_delete(self) -> None:
+        if self._ticket is None:
+            return
+        number = self._ticket.number
+        title = self._ticket.title
+
+        # If a pipeline run is active, warn and terminate first
+        if self._terminal.is_running:
+            reply = QMessageBox.warning(
+                self,
+                "Active Run",
+                f"Ticket #{number} has an active pipeline run.\n"
+                "It will be terminated. Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            self._terminal._on_terminate_clicked()
+
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self,
+            "Delete Ticket",
+            f"Permanently delete ticket #{number}: '{title}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self.ticket_deleted.emit(number)
 
     def _on_run_started(self, pid: int) -> None:
         self.run_pid_changed.emit(pid, True)

@@ -285,6 +285,69 @@ def update_ticket(
     path.write_text("".join(new_lines), encoding="utf-8")
 
 
+def delete_ticket(
+    project_path: Path,
+    ticket_number: int,
+    filename: str | None = None,
+) -> str:
+    """Remove a ticket from the markdown file. Returns the deleted ticket's title.
+
+    Raises ``IndexError`` if the ticket number is out of range.
+    """
+    path = get_tickets_path(project_path, filename)
+    if not path.exists():
+        raise IndexError(f"Tickets file not found: {path}")
+
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+
+    in_code_block = False
+    ticket_count = 0
+    heading_idx: int | None = None
+    next_heading_idx: int | None = None
+
+    for i, line in enumerate(lines):
+        stripped = line.rstrip("\r\n")
+
+        if stripped.lstrip().startswith("```"):
+            in_code_block = not in_code_block
+            continue
+
+        if in_code_block:
+            continue
+
+        if stripped.startswith("## ") and not stripped.startswith("### "):
+            ticket_count += 1
+            if ticket_count == ticket_number:
+                heading_idx = i
+            elif heading_idx is not None and next_heading_idx is None:
+                next_heading_idx = i
+
+    if heading_idx is None:
+        tickets = parse_tickets(text)
+        count = len(tickets)
+        raise IndexError(
+            f"Ticket #{ticket_number} not found (file has {count} ticket(s))"
+        )
+
+    if next_heading_idx is None:
+        next_heading_idx = len(lines)
+
+    # Extract title from heading
+    heading_text = lines[heading_idx].rstrip("\r\n")[3:].strip()
+    m = _STATUS_PATTERN.match(heading_text)
+    if m:
+        bare_title = heading_text[m.end():].strip()
+    else:
+        bare_title = heading_text
+
+    # Remove the ticket lines
+    new_lines = lines[:heading_idx] + lines[next_heading_idx:]
+    path.write_text("".join(new_lines), encoding="utf-8")
+
+    return bare_title
+
+
 def add_ticket(
     project_path: Path,
     title: str,

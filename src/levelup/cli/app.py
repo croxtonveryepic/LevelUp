@@ -768,8 +768,8 @@ def instruct(
 
 @app.command()
 def tickets(
-    action: str = typer.Argument("list", help="Action: list, next, start, done, or merged"),
-    ticket_num: Optional[int] = typer.Argument(None, help="Ticket number (for start/done/merged)"),
+    action: str = typer.Argument("list", help="Action: list, next, start, done, merged, or delete"),
+    ticket_num: Optional[int] = typer.Argument(None, help="Ticket number (for start/done/merged/delete)"),
     path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
 ) -> None:
     """List and manage tickets from the tickets markdown file."""
@@ -778,6 +778,7 @@ def tickets(
     from levelup.config.loader import load_settings
     from levelup.core.tickets import (
         TicketStatus,
+        delete_ticket,
         get_next_ticket,
         read_tickets,
         set_ticket_status,
@@ -836,8 +837,19 @@ def tickets(
             print_error(str(e))
             raise typer.Exit(1)
 
+    elif action == "delete":
+        if ticket_num is None:
+            print_error("Ticket number required: levelup tickets delete <N>")
+            raise typer.Exit(1)
+        try:
+            title = delete_ticket(path, ticket_num, settings.project.tickets_file)
+            console.print(f"[green]Deleted ticket #{ticket_num}: {title}[/green]")
+        except IndexError as e:
+            print_error(str(e))
+            raise typer.Exit(1)
+
     else:
-        print_error(f"Unknown action: {action}. Use list, next, start, done, or merged.")
+        print_error(f"Unknown action: {action}. Use list, next, start, done, merged, or delete.")
         raise typer.Exit(1)
 
 

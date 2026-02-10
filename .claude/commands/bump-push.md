@@ -17,5 +17,3 @@ $ARGUMENTS is an optional commit message. If no argument is given, the commit me
     - Otherwise, use: `bump version to X.Y.Z`
 
 3. Run the /push skill with the determined commit message.
-
-4. Run `.\install.ps1` to reinstall with the new version.

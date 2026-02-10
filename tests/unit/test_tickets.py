@@ -10,6 +10,7 @@ from levelup.core.tickets import (
     Ticket,
     TicketStatus,
     add_ticket,
+    delete_ticket,
     get_next_ticket,
     get_tickets_path,
     parse_tickets,
@@ -503,3 +504,100 @@ class TestAddTicket:
         assert tickets[0].title == "Round trip"
         assert "item 1" in tickets[0].description
         assert "item 2" in tickets[0].description
+
+
+# ---------------------------------------------------------------------------
+# TestDeleteTicket
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteTicket:
+    def _write(self, tmp_path: Path, content: str) -> Path:
+        d = tmp_path / "levelup"
+        d.mkdir(exist_ok=True)
+        p = d / "tickets.md"
+        p.write_text(content, encoding="utf-8")
+        return p
+
+    def test_delete_only_ticket(self, tmp_path: Path):
+        self._write(tmp_path, "## Only task\nSome desc\n")
+        title = delete_ticket(tmp_path, 1)
+        assert title == "Only task"
+        tickets = read_tickets(tmp_path)
+        assert tickets == []
+
+    def test_delete_first_of_multiple(self, tmp_path: Path):
+        self._write(tmp_path, "## First\nA\n\n## Second\nB\n\n## Third\nC\n")
+        title = delete_ticket(tmp_path, 1)
+        assert title == "First"
+        tickets = read_tickets(tmp_path)
+        assert len(tickets) == 2
+        assert tickets[0].title == "Second"
+        assert tickets[0].number == 1  # renumbered
+        assert tickets[1].title == "Third"
+        assert tickets[1].number == 2
+
+    def test_delete_middle(self, tmp_path: Path):
+        self._write(tmp_path, "## First\nA\n\n## Second\nB\n\n## Third\nC\n")
+        title = delete_ticket(tmp_path, 2)
+        assert title == "Second"
+        tickets = read_tickets(tmp_path)
+        assert len(tickets) == 2
+        assert tickets[0].title == "First"
+        assert tickets[1].title == "Third"
+
+    def test_delete_last(self, tmp_path: Path):
+        self._write(tmp_path, "## First\nA\n\n## Second\nB\n\n## Third\nC\n")
+        title = delete_ticket(tmp_path, 3)
+        assert title == "Third"
+        tickets = read_tickets(tmp_path)
+        assert len(tickets) == 2
+        assert tickets[0].title == "First"
+        assert tickets[1].title == "Second"
+
+    def test_delete_with_status_tag_returns_bare_title(self, tmp_path: Path):
+        self._write(tmp_path, "## [in progress] Active task\nDesc\n")
+        title = delete_ticket(tmp_path, 1)
+        assert title == "Active task"
+
+    def test_preserves_other_tickets_content_and_status(self, tmp_path: Path):
+        self._write(
+            tmp_path,
+            "## [done] Alpha\nA desc\n\n## Beta\nB desc\n\n## [merged] Gamma\nG desc\n",
+        )
+        delete_ticket(tmp_path, 2)
+        tickets = read_tickets(tmp_path)
+        assert len(tickets) == 2
+        assert tickets[0].title == "Alpha"
+        assert tickets[0].status == TicketStatus.DONE
+        assert "A desc" in tickets[0].description
+        assert tickets[1].title == "Gamma"
+        assert tickets[1].status == TicketStatus.MERGED
+        assert "G desc" in tickets[1].description
+
+    def test_missing_file_raises(self, tmp_path: Path):
+        with pytest.raises(IndexError, match="not found"):
+            delete_ticket(tmp_path, 1)
+
+    def test_invalid_number_raises(self, tmp_path: Path):
+        self._write(tmp_path, "## Task\n")
+        with pytest.raises(IndexError, match="not found"):
+            delete_ticket(tmp_path, 5)
+
+    def test_code_blocks_not_treated_as_headings(self, tmp_path: Path):
+        self._write(
+            tmp_path,
+            "## Real ticket\nBefore\n```\n## Not a ticket\n```\nAfter\n\n## Second\nDesc\n",
+        )
+        delete_ticket(tmp_path, 1)
+        tickets = read_tickets(tmp_path)
+        assert len(tickets) == 1
+        assert tickets[0].title == "Second"
+
+    def test_custom_filename(self, tmp_path: Path):
+        p = tmp_path / "backlog.md"
+        p.write_text("## Custom task\nDesc\n", encoding="utf-8")
+        title = delete_ticket(tmp_path, 1, filename="backlog.md")
+        assert title == "Custom task"
+        tickets = read_tickets(tmp_path, "backlog.md")
+        assert tickets == []

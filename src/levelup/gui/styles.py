@@ -206,6 +206,17 @@ QPushButton#forgetBtn:disabled {
     background-color: #45475A;
     color: #6C7086;
 }
+QPushButton#deleteBtn {
+    background-color: #E74C3C;
+    color: #FFFFFF;
+}
+QPushButton#deleteBtn:hover {
+    background-color: #C0392B;
+}
+QPushButton#deleteBtn:disabled {
+    background-color: #45475A;
+    color: #6C7086;
+}
 QLabel#terminalStatusLabel {
     color: #A6ADC8;
     font-size: 12px;

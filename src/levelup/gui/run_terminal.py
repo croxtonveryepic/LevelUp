@@ -32,15 +32,26 @@ def build_run_command(
     ticket_number: int,
     project_path: str,
     db_path: str,
+    *,
+    model: str | None = None,
+    effort: str | None = None,
+    skip_planning: bool = False,
 ) -> str:
     """Build the shell command string for a GUI pipeline run."""
     python = sys.executable.replace("\\", "/")
-    return (
+    cmd = (
         f'"{python}" -m levelup run'
         f" --ticket {ticket_number}"
         f' --path "{project_path}"'
         f' --db-path "{db_path}"'
     )
+    if model:
+        cmd += f" --model {model}"
+    if effort:
+        cmd += f" --effort {effort}"
+    if skip_planning:
+        cmd += " --skip-planning"
+    return cmd
 
 
 def build_resume_command(
@@ -126,6 +137,11 @@ class RunTerminalWidget(QWidget):
         self._project_path: str | None = None
         self._db_path: str | None = None
 
+        # Adaptive pipeline settings (per-ticket)
+        self._ticket_model: str | None = None
+        self._ticket_effort: str | None = None
+        self._ticket_skip_planning: bool = False
+
         # Run tracking
         self._last_run_id: str | None = None
         self._state_manager: object | None = None  # StateManager instance
@@ -157,6 +173,18 @@ class RunTerminalWidget(QWidget):
         """Store a StateManager reference for pause/resume/forget operations."""
         self._state_manager = sm
 
+    def set_ticket_settings(
+        self,
+        *,
+        model: str | None = None,
+        effort: str | None = None,
+        skip_planning: bool = False,
+    ) -> None:
+        """Store per-ticket adaptive pipeline settings for the next run."""
+        self._ticket_model = model
+        self._ticket_effort = effort
+        self._ticket_skip_planning = skip_planning
+
     def start_run(self, ticket_number: int, project_path: str, db_path: str) -> None:
         """Start a pipeline run for the given ticket."""
         if self._command_running:
@@ -170,7 +198,12 @@ class RunTerminalWidget(QWidget):
         # Ensure the shell is started
         self._ensure_shell()
 
-        cmd = build_run_command(ticket_number, project_path, db_path)
+        cmd = build_run_command(
+            ticket_number, project_path, db_path,
+            model=self._ticket_model,
+            effort=self._ticket_effort,
+            skip_planning=self._ticket_skip_planning,
+        )
         self._terminal.send_command(cmd)
         self._terminal.setFocus()
 

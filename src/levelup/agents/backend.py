@@ -45,6 +45,8 @@ class Backend(Protocol):
         user_prompt: str,
         allowed_tools: list[str],
         working_directory: str,
+        *,
+        thinking_budget: int | None = None,
     ) -> AgentResult:
         """Run an agent and return its result with usage metrics.
 
@@ -53,6 +55,7 @@ class Backend(Protocol):
             user_prompt: The user prompt / task.
             allowed_tools: List of tool names the agent may use.
             working_directory: Working directory for sandboxing.
+            thinking_budget: Optional extended thinking budget in tokens.
 
         Returns:
             AgentResult with text response and usage metrics.
@@ -63,8 +66,9 @@ class Backend(Protocol):
 class ClaudeCodeBackend:
     """Backend that spawns `claude -p` subprocesses."""
 
-    def __init__(self, client: ClaudeCodeClient) -> None:
+    def __init__(self, client: ClaudeCodeClient, *, thinking_budget: int | None = None) -> None:
         self._client = client
+        self._thinking_budget = thinking_budget
 
     def run_agent(
         self,
@@ -72,12 +76,16 @@ class ClaudeCodeBackend:
         user_prompt: str,
         allowed_tools: list[str],
         working_directory: str,
+        *,
+        thinking_budget: int | None = None,
     ) -> AgentResult:
+        effective = thinking_budget if thinking_budget is not None else self._thinking_budget
         result = self._client.run(
             prompt=user_prompt,
             system_prompt=system_prompt,
             allowed_tools=allowed_tools,
             working_directory=working_directory,
+            thinking_budget=effective,
         )
         return AgentResult(
             text=result.text,
@@ -92,9 +100,10 @@ class ClaudeCodeBackend:
 class AnthropicSDKBackend:
     """Backend that wraps the existing LLMClient + ToolRegistry."""
 
-    def __init__(self, llm_client: LLMClient, tool_registry: ToolRegistry) -> None:
+    def __init__(self, llm_client: LLMClient, tool_registry: ToolRegistry, *, thinking_budget: int | None = None) -> None:
         self._llm_client = llm_client
         self._tool_registry = tool_registry
+        self._thinking_budget = thinking_budget
 
     @property
     def llm_client(self) -> LLMClient:
@@ -110,7 +119,10 @@ class AnthropicSDKBackend:
         user_prompt: str,
         allowed_tools: list[str],
         working_directory: str,
+        *,
+        thinking_budget: int | None = None,
     ) -> AgentResult:
+        effective = thinking_budget if thinking_budget is not None else self._thinking_budget
         # Map Claude Code tool names to LevelUp tool names
         levelup_tools = self._map_tool_names(allowed_tools)
 
@@ -127,6 +139,7 @@ class AnthropicSDKBackend:
             messages=messages,
             tools=tools,
             tool_registry=self._tool_registry,
+            thinking_budget=effective,
         )
         return AgentResult(
             text=loop_result.text,

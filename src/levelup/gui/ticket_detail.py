@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -27,7 +28,7 @@ class TicketDetailWidget(QWidget):
     """Right-hand panel for viewing and editing a single ticket."""
 
     back_clicked = pyqtSignal()
-    ticket_saved = pyqtSignal(int, str, str)  # number, title, description
+    ticket_saved = pyqtSignal(int, str, str, str)  # number, title, description, metadata_json
     ticket_created = pyqtSignal(str, str)     # title, description
     ticket_deleted = pyqtSignal(int)           # ticket number
     run_pid_changed = pyqtSignal(int, bool)   # pid, active
@@ -94,6 +95,32 @@ class TicketDetailWidget(QWidget):
         )
         self.auto_approve_checkbox.stateChanged.connect(self._mark_dirty)
         form_layout.addWidget(self.auto_approve_checkbox)
+
+        # Adaptive pipeline settings row
+        adaptive_layout = QHBoxLayout()
+
+        # Model combo
+        adaptive_layout.addWidget(QLabel("Model:"))
+        self._model_combo = QComboBox()
+        self._model_combo.addItems(["Default", "Sonnet", "Opus"])
+        self._model_combo.currentIndexChanged.connect(self._mark_dirty)
+        adaptive_layout.addWidget(self._model_combo)
+
+        # Effort combo
+        adaptive_layout.addWidget(QLabel("Effort:"))
+        self._effort_combo = QComboBox()
+        self._effort_combo.addItems(["Default", "Low", "Medium", "High"])
+        self._effort_combo.currentIndexChanged.connect(self._mark_dirty)
+        adaptive_layout.addWidget(self._effort_combo)
+
+        # Skip planning checkbox
+        self._skip_planning_checkbox = QCheckBox("Skip planning")
+        self._skip_planning_checkbox.setToolTip("Skip the planning step for this ticket")
+        self._skip_planning_checkbox.stateChanged.connect(self._mark_dirty)
+        adaptive_layout.addWidget(self._skip_planning_checkbox)
+
+        adaptive_layout.addStretch()
+        form_layout.addLayout(adaptive_layout)
 
         # Buttons
         btn_layout = QHBoxLayout()
@@ -245,6 +272,18 @@ class TicketDetailWidget(QWidget):
         self.auto_approve_checkbox.setChecked(False)
         self.auto_approve_checkbox.blockSignals(False)
 
+        self._model_combo.blockSignals(True)
+        self._model_combo.setCurrentIndex(0)
+        self._model_combo.blockSignals(False)
+
+        self._effort_combo.blockSignals(True)
+        self._effort_combo.setCurrentIndex(0)
+        self._effort_combo.blockSignals(False)
+
+        self._skip_planning_checkbox.blockSignals(True)
+        self._skip_planning_checkbox.setChecked(False)
+        self._skip_planning_checkbox.blockSignals(False)
+
         self._dirty = False
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
@@ -282,6 +321,27 @@ class TicketDetailWidget(QWidget):
             self.auto_approve_checkbox.setChecked(False)
         self.auto_approve_checkbox.blockSignals(False)
 
+        # Load model metadata
+        self._model_combo.blockSignals(True)
+        model_val = (ticket.metadata or {}).get("model", "").lower()
+        model_map = {"sonnet": 1, "opus": 2}
+        self._model_combo.setCurrentIndex(model_map.get(model_val, 0))
+        self._model_combo.blockSignals(False)
+
+        # Load effort metadata
+        self._effort_combo.blockSignals(True)
+        effort_val = (ticket.metadata or {}).get("effort", "").lower()
+        effort_map = {"low": 1, "medium": 2, "high": 3}
+        self._effort_combo.setCurrentIndex(effort_map.get(effort_val, 0))
+        self._effort_combo.blockSignals(False)
+
+        # Load skip_planning metadata
+        self._skip_planning_checkbox.blockSignals(True)
+        self._skip_planning_checkbox.setChecked(
+            bool((ticket.metadata or {}).get("skip_planning", False))
+        )
+        self._skip_planning_checkbox.blockSignals(False)
+
         self._dirty = False
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(True)
@@ -291,6 +351,14 @@ class TicketDetailWidget(QWidget):
         assert self._current_terminal is not None
         self._current_terminal.enable_run(
             self._project_path is not None and not self._current_terminal.is_running
+        )
+
+        # Pass adaptive settings to terminal
+        meta = ticket.metadata or {}
+        self._current_terminal.set_ticket_settings(
+            model=meta.get("model"),
+            effort=meta.get("effort"),
+            skip_planning=bool(meta.get("skip_planning", False)),
         )
 
         # Wire existing run from DB for this ticket
@@ -325,6 +393,43 @@ class TicketDetailWidget(QWidget):
             self._current_terminal._status_label.setText(f"Active ({record.status})")
 
         self._current_terminal._update_button_states()
+
+    def _build_metadata(self) -> dict | None:
+        """Build metadata dict from all form controls. Returns None if all defaults."""
+        metadata: dict = {}
+        if self.auto_approve_checkbox.isChecked():
+            metadata["auto_approve"] = True
+        model_idx = self._model_combo.currentIndex()
+        if model_idx == 1:
+            metadata["model"] = "sonnet"
+        elif model_idx == 2:
+            metadata["model"] = "opus"
+        effort_idx = self._effort_combo.currentIndex()
+        if effort_idx == 1:
+            metadata["effort"] = "low"
+        elif effort_idx == 2:
+            metadata["effort"] = "medium"
+        elif effort_idx == 3:
+            metadata["effort"] = "high"
+        if self._skip_planning_checkbox.isChecked():
+            metadata["skip_planning"] = True
+        return metadata if metadata else None
+
+    def _build_save_metadata(self) -> dict | None:
+        """Build metadata for saving, merging form values with existing ticket metadata.
+
+        Preserves non-form metadata keys (e.g. 'priority') from the existing ticket
+        while applying current form control values.
+        """
+        form_keys = {"auto_approve", "model", "effort", "skip_planning"}
+        # Start from existing non-form metadata
+        base: dict = {}
+        if self._ticket and self._ticket.metadata:
+            base = {k: v for k, v in self._ticket.metadata.items() if k not in form_keys}
+        # Overlay form-controlled values
+        form = self._build_metadata() or {}
+        base.update(form)
+        return base if base else None
 
     def _mark_dirty(self) -> None:
         self._dirty = True
@@ -386,9 +491,12 @@ class TicketDetailWidget(QWidget):
             return
         if self._ticket is None:
             return
+        import json
         title = self._title_edit.text().replace("\n", " ").strip()
         description = self._desc_edit.toPlainText()
-        self.ticket_saved.emit(self._ticket.number, title, description)
+        metadata = self._build_save_metadata()
+        metadata_json = json.dumps(metadata) if metadata else ""
+        self.ticket_saved.emit(self._ticket.number, title, description, metadata_json)
         self._dirty = False
         self._save_btn.setEnabled(False)
 
@@ -457,17 +565,12 @@ class TicketDetailWidget(QWidget):
             from levelup.core.tickets import add_ticket
             title = self._title_edit.text().replace("\n", " ").strip()
             description = self._desc_edit.toPlainText()
-            metadata = None
-            if self.auto_approve_checkbox.isChecked():
-                metadata = {"auto_approve": True}
+            metadata = self._build_metadata()
             add_ticket(Path(self._project_path), title, description, metadata=metadata)
         elif self._ticket is not None:
             title = self._title_edit.text().replace("\n", " ").strip()
             description = self._desc_edit.toPlainText()
-
-            # Build metadata
-            metadata = self._ticket.metadata.copy() if self._ticket.metadata else {}
-            metadata["auto_approve"] = self.auto_approve_checkbox.isChecked()
+            metadata = self._build_save_metadata()
 
             update_ticket(
                 Path(self._project_path),

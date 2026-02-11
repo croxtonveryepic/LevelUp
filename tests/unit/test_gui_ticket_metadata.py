@@ -49,6 +49,7 @@ class TestTicketDetailWidgetMetadata:
         ticket = add_ticket(tmp_path, "Test task", "Description")
 
         widget = TicketDetailWidget(project_path=tmp_path)
+        widget.show()
         widget.load_ticket(ticket)
 
         # Checkbox should be visible

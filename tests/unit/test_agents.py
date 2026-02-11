@@ -414,6 +414,7 @@ class TestClaudeCodeBackend:
             system_prompt="sys",
             allowed_tools=["Read"],
             working_directory="/tmp",
+            thinking_budget=None,
         )
 
 

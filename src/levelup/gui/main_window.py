@@ -356,12 +356,15 @@ class MainWindow(QMainWindow):
                 state_manager=self._state_manager,
             )
 
-    def _on_ticket_saved(self, number: int, title: str, description: str) -> None:
+    def _on_ticket_saved(self, number: int, title: str, description: str, metadata_json: str = "") -> None:
         """Persist ticket edits to the markdown file."""
         if self._project_path is None:
             return
 
+        import json
         from levelup.core.tickets import update_ticket
+
+        metadata = json.loads(metadata_json) if metadata_json else None
 
         try:
             update_ticket(
@@ -369,6 +372,7 @@ class MainWindow(QMainWindow):
                 number,
                 title=title,
                 description=description,
+                metadata=metadata,
                 filename=self._tickets_file,
             )
         except Exception as e:

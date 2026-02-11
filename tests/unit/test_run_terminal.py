@@ -45,6 +45,32 @@ class TestBuildRunCommand:
         assert exe in cmd
 
 
+class TestBuildRunCommandAdaptive:
+    def test_model_flag(self):
+        cmd = build_run_command(1, "/p", "/d", model="opus")
+        assert "--model opus" in cmd
+
+    def test_effort_flag(self):
+        cmd = build_run_command(1, "/p", "/d", effort="medium")
+        assert "--effort medium" in cmd
+
+    def test_skip_planning_flag(self):
+        cmd = build_run_command(1, "/p", "/d", skip_planning=True)
+        assert "--skip-planning" in cmd
+
+    def test_no_flags_by_default(self):
+        cmd = build_run_command(1, "/p", "/d")
+        assert "--model" not in cmd
+        assert "--effort" not in cmd
+        assert "--skip-planning" not in cmd
+
+    def test_all_adaptive_flags(self):
+        cmd = build_run_command(1, "/p", "/d", model="sonnet", effort="high", skip_planning=True)
+        assert "--model sonnet" in cmd
+        assert "--effort high" in cmd
+        assert "--skip-planning" in cmd
+
+
 class TestBuildResumeCommand:
     def test_contains_module_invocation(self):
         cmd = build_resume_command("abc123", "/some/project", "/tmp/state.db")
@@ -198,6 +224,32 @@ class TestRunTerminalWidget:
         mock_sm = object()
         widget.set_state_manager(mock_sm)
         assert widget._state_manager is mock_sm
+
+    def test_set_ticket_settings(self):
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+
+        from levelup.gui.run_terminal import RunTerminalWidget
+
+        widget = RunTerminalWidget()
+        widget.set_ticket_settings(model="opus", effort="high", skip_planning=True)
+        assert widget._ticket_model == "opus"
+        assert widget._ticket_effort == "high"
+        assert widget._ticket_skip_planning is True
+
+    def test_set_ticket_settings_defaults(self):
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+
+        from levelup.gui.run_terminal import RunTerminalWidget
+
+        widget = RunTerminalWidget()
+        widget.set_ticket_settings()
+        assert widget._ticket_model is None
+        assert widget._ticket_effort is None
+        assert widget._ticket_skip_planning is False
 
     def test_notify_run_finished(self):
         from PyQt6.QtWidgets import QApplication

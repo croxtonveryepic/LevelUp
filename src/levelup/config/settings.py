@@ -54,6 +54,18 @@ class GUISettings(BaseModel):
         return v
 
 
+MODEL_SHORT_NAMES: dict[str, str] = {
+    "sonnet": "claude-sonnet-4-5-20250929",
+    "opus": "claude-opus-4-6",
+}
+
+EFFORT_THINKING_BUDGETS: dict[str, int] = {
+    "low": 4096,
+    "medium": 16384,
+    "high": 32768,
+}
+
+
 class LevelUpSettings(BaseSettings):
     """Root settings with layered config: defaults -> file -> env -> CLI."""
 

@@ -109,7 +109,7 @@ class TestOrchestrator:
 
         assert ctx.status == PipelineStatus.COMPLETED
         assert mock_detect.called
-        assert mock_agent.call_count == 6  # 6 agent steps (requirements, planning, test_writer, coder, security, reviewer)
+        assert mock_agent.call_count == 7  # 7 agent steps (requirements, planning, test_writer, test_verifier, coder, security, reviewer)
 
     @patch("shutil.which", return_value="/usr/bin/claude")
     @patch("levelup.core.orchestrator.subprocess.run")
@@ -427,6 +427,105 @@ class TestOrchestrator:
         )
         files = orch._get_changed_files(ctx, tmp_path)
         assert set(files) == {"src/a.py", "src/b.py", "tests/test_a.py"}
+
+    def test_read_ticket_settings_empty_when_no_ticket(self, tmp_path):
+        """_read_ticket_settings returns {} when ctx has no ticket source."""
+        settings = self._make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+
+        ctx = PipelineContext(
+            task=TaskInput(title="Test"),
+            project_path=tmp_path,
+        )
+        result = orch._read_ticket_settings(ctx)
+        assert result == {}
+
+    def test_read_ticket_settings_returns_metadata(self, tmp_path):
+        """_read_ticket_settings reads model/effort/skip_planning from ticket metadata."""
+        from levelup.core.tickets import add_ticket, update_ticket
+
+        settings = self._make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+
+        # Create a ticket with adaptive metadata
+        ticket = add_ticket(tmp_path, "Test ticket", "desc", filename=settings.project.tickets_file)
+        update_ticket(
+            tmp_path, ticket.number,
+            metadata={"model": "opus", "effort": "high", "skip_planning": True},
+            filename=settings.project.tickets_file,
+        )
+
+        ctx = PipelineContext(
+            task=TaskInput(
+                title="Test ticket",
+                source="ticket",
+                source_id=f"ticket:{ticket.number}",
+            ),
+            project_path=tmp_path,
+        )
+        result = orch._read_ticket_settings(ctx)
+        assert result["model"] == "opus"
+        assert result["effort"] == "high"
+        assert result["skip_planning"] is True
+
+    def test_cli_params_stored_on_orchestrator(self, tmp_path):
+        """CLI adaptive params are stored on the orchestrator."""
+        settings = self._make_settings(tmp_path)
+        orch = Orchestrator(
+            settings=settings,
+            cli_model_override=True,
+            cli_effort="medium",
+            cli_skip_planning=True,
+        )
+        assert orch._cli_model_override is True
+        assert orch._cli_effort == "medium"
+        assert orch._cli_skip_planning is True
+
+    @patch("shutil.which", return_value="/usr/bin/claude")
+    @patch("levelup.core.orchestrator.subprocess.run")
+    @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
+    @patch("levelup.core.orchestrator.Orchestrator._run_detection")
+    def test_skip_planning_removes_planning_step(
+        self, mock_detect, mock_agent, mock_subprocess, mock_which, tmp_path
+    ):
+        """When cli_skip_planning=True, planning step is excluded from pipeline."""
+        settings = self._make_settings(tmp_path)
+        orch = Orchestrator(settings=settings, cli_skip_planning=True)
+
+        mock_detect.return_value = None
+        agent_names_called: list[str] = []
+
+        def track_agent(name, ctx):
+            agent_names_called.append(name)
+            return ctx
+
+        mock_agent.side_effect = track_agent
+
+        task = TaskInput(title="Test task")
+        ctx = orch.run(task)
+
+        assert ctx.status == PipelineStatus.COMPLETED
+        assert "planning" not in agent_names_called
+
+    @patch("shutil.which", return_value="/usr/bin/claude")
+    @patch("levelup.core.orchestrator.subprocess.run")
+    def test_create_backend_with_model_override(self, mock_subprocess, mock_which, tmp_path):
+        """_create_backend uses model_override when provided."""
+        from levelup.agents.backend import ClaudeCodeBackend
+        settings = self._make_settings(tmp_path, backend="claude_code")
+        orch = Orchestrator(settings=settings)
+        backend = orch._create_backend(tmp_path, model_override="claude-opus-4-6")
+        assert isinstance(backend, ClaudeCodeBackend)
+        assert backend._client._model == "claude-opus-4-6"
+
+    @patch("shutil.which", return_value="/usr/bin/claude")
+    @patch("levelup.core.orchestrator.subprocess.run")
+    def test_create_backend_with_thinking_budget(self, mock_subprocess, mock_which, tmp_path):
+        """_create_backend passes thinking_budget to backend constructor."""
+        settings = self._make_settings(tmp_path, backend="claude_code")
+        orch = Orchestrator(settings=settings)
+        backend = orch._create_backend(tmp_path, thinking_budget=16384)
+        assert backend._thinking_budget == 16384
 
 
 class TestGitJournalCommit:

@@ -80,6 +80,7 @@ class LLMClient:
         tools: list[dict[str, Any]],
         tool_registry: ToolRegistry,
         on_tool_call: Any | None = None,
+        thinking_budget: int | None = None,
     ) -> ToolLoopResult:
         """Run a tool-use conversation loop until the model produces a final text response.
 
@@ -98,14 +99,22 @@ class LLMClient:
         total_output_tokens = 0
         num_turns = 0
 
+        # Build base kwargs for the API call
+        base_kwargs: dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": self._max_tokens,
+            "temperature": self._temperature,
+            "system": system,
+            "tools": tools,
+        }
+        if thinking_budget is not None:
+            base_kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+            base_kwargs["temperature"] = 1.0  # Required by Anthropic API for extended thinking
+
         for _iteration in range(MAX_TOOL_ITERATIONS):
             response = self._client.messages.create(
-                model=self._model,
-                max_tokens=self._max_tokens,
-                temperature=self._temperature,
-                system=system,
+                **base_kwargs,
                 messages=conversation,
-                tools=tools,
             )
             num_turns += 1
 

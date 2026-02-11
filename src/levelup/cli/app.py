@@ -71,6 +71,12 @@ def run(
     ticket: Optional[int] = typer.Option(
         None, "--ticket", "-t", help="Run a specific ticket by number"
     ),
+    skip_planning: bool = typer.Option(
+        False, "--skip-planning", help="Skip the planning step"
+    ),
+    effort: Optional[str] = typer.Option(
+        None, "--effort", "-e", help="Thinking effort: low, medium, high"
+    ),
 ) -> None:
     """Run the LevelUp TDD pipeline on a task."""
     from levelup.cli.prompts import get_task_input
@@ -79,8 +85,15 @@ def run(
     from levelup.core.orchestrator import Orchestrator
     from levelup.state.manager import StateManager
 
+    from levelup.config.settings import EFFORT_THINKING_BUDGETS, MODEL_SHORT_NAMES
+
     if not headless and not gui_mode:
         print_banner()
+
+    # Validate effort early
+    if effort and effort.lower() not in EFFORT_THINKING_BUDGETS:
+        print_error(f"Invalid effort: {effort}. Use low, medium, or high.")
+        raise typer.Exit(1)
 
     # Headless/GUI mode requires a task (can't prompt interactively)
     if (headless or gui_mode) and not task and not ticket_next and ticket is None:
@@ -90,7 +103,8 @@ def run(
     # Build settings overrides from CLI args
     overrides: dict = {}
     if model:
-        overrides.setdefault("llm", {})["model"] = model
+        resolved = MODEL_SHORT_NAMES.get(model.lower(), model)
+        overrides.setdefault("llm", {})["model"] = resolved
     if max_iterations:
         overrides.setdefault("pipeline", {})["max_code_iterations"] = max_iterations
     if no_checkpoints:
@@ -188,6 +202,9 @@ def run(
         state_manager=state_manager,
         headless=headless,
         gui_mode=gui_mode,
+        cli_model_override=model is not None,
+        cli_effort=effort,
+        cli_skip_planning=skip_planning,
     )
     ctx = orchestrator.run(task_input)
 

@@ -195,6 +195,32 @@ class TestClaudeCodeClient:
         assert "anthropic_sdk" in msg
 
     @patch("levelup.agents.claude_code_client.subprocess.run")
+    def test_thinking_budget_flag(self, mock_run: MagicMock):
+        mock_run.return_value = self._make_completed_process(
+            stdout=self._success_json()
+        )
+
+        client = ClaudeCodeClient()
+        client.run(prompt="hello", thinking_budget=16384)
+
+        cmd = mock_run.call_args.args[0]
+        assert "--thinking-budget" in cmd
+        idx = cmd.index("--thinking-budget")
+        assert cmd[idx + 1] == "16384"
+
+    @patch("levelup.agents.claude_code_client.subprocess.run")
+    def test_no_thinking_budget_omits_flag(self, mock_run: MagicMock):
+        mock_run.return_value = self._make_completed_process(
+            stdout=self._success_json()
+        )
+
+        client = ClaudeCodeClient()
+        client.run(prompt="hello")
+
+        cmd = mock_run.call_args.args[0]
+        assert "--thinking-budget" not in cmd
+
+    @patch("levelup.agents.claude_code_client.subprocess.run")
     def test_no_system_prompt_omits_flag(self, mock_run: MagicMock):
         mock_run.return_value = self._make_completed_process(
             stdout=self._success_json()

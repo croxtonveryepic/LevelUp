@@ -216,6 +216,7 @@ class TestClaudeCodeBackendCostFields:
             system_prompt="system",
             allowed_tools=["Bash", "Read"],
             working_directory="/project",
+            thinking_budget=None,
         )
 
 

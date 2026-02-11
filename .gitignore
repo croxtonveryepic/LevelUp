@@ -17,4 +17,3 @@ htmlcov/
 .coverage
 *.log
 nul
-levelup/tickets.md

@@ -28,7 +28,7 @@ from levelup.cli.display import (
     print_step_header,
     print_success,
 )
-from levelup.config.settings import LevelUpSettings
+from levelup.config.settings import EFFORT_THINKING_BUDGETS, MODEL_SHORT_NAMES, LevelUpSettings
 from levelup.core.checkpoint import build_checkpoint_display_data, run_checkpoint
 from levelup.core.context import (
     CheckpointDecision,
@@ -68,6 +68,9 @@ class Orchestrator:
         state_manager: object | None = None,
         headless: bool = False,
         gui_mode: bool = False,
+        cli_model_override: bool = False,
+        cli_effort: str | None = None,
+        cli_skip_planning: bool = False,
     ) -> None:
         self._settings = settings
         self._state_manager = state_manager
@@ -76,6 +79,9 @@ class Orchestrator:
         self._console = Console(quiet=self._quiet)
         self._agents: dict[str, BaseAgent] = {}
         self._backend: Backend | None = None
+        self._cli_model_override = cli_model_override
+        self._cli_effort = cli_effort
+        self._cli_skip_planning = cli_skip_planning
 
     def _should_auto_approve(self, ctx: PipelineContext) -> bool:
         """Determine if checkpoints should be auto-approved for this run.
@@ -102,7 +108,42 @@ class Orchestrator:
         # Fall back to project-level setting
         return self._settings.pipeline.auto_approve
 
-    def _create_backend(self, project_path: Path, ctx: PipelineContext | None = None) -> Backend:
+    def _read_ticket_settings(self, ctx: PipelineContext) -> dict:
+        """Read adaptive pipeline settings from ticket metadata.
+
+        Returns dict with optional keys: model, effort, skip_planning.
+        """
+        if ctx.task.source == "ticket" and ctx.task.source_id:
+            try:
+                ticket_num = int(ctx.task.source_id.split(":")[1])
+                from levelup.core.tickets import read_tickets
+
+                project_path = self._settings.project.path
+                tickets = read_tickets(project_path, self._settings.project.tickets_file)
+                for ticket in tickets:
+                    if ticket.number == ticket_num:
+                        if ticket.metadata:
+                            result: dict = {}
+                            if "model" in ticket.metadata:
+                                result["model"] = ticket.metadata["model"]
+                            if "effort" in ticket.metadata:
+                                result["effort"] = ticket.metadata["effort"]
+                            if "skip_planning" in ticket.metadata:
+                                result["skip_planning"] = ticket.metadata["skip_planning"]
+                            return result
+                        break
+            except (ValueError, IndexError, Exception):
+                pass
+        return {}
+
+    def _create_backend(
+        self,
+        project_path: Path,
+        ctx: PipelineContext | None = None,
+        *,
+        model_override: str | None = None,
+        thinking_budget: int | None = None,
+    ) -> Backend:
         """Create the appropriate backend based on settings."""
         if self._settings.llm.backend == "claude_code":
             exe = self._settings.llm.claude_executable
@@ -130,22 +171,24 @@ class Orchestrator:
                     f"  - Or use env var: LEVELUP_LLM__CLAUDE_EXECUTABLE=/path/to/claude\n"
                     f"  - Or switch backend: llm: {{ backend: anthropic_sdk }}"
                 )
+            effective_model = model_override or self._settings.llm.model
             client = ClaudeCodeClient(
-                model=self._settings.llm.model,
+                model=effective_model,
                 claude_executable=resolved,
             )
-            return ClaudeCodeBackend(client)
+            return ClaudeCodeBackend(client, thinking_budget=thinking_budget)
         else:
             # anthropic_sdk backend
+            effective_model = model_override or self._settings.llm.model
             llm_client = LLMClient(
                 api_key=self._settings.llm.api_key,
                 auth_token=self._settings.llm.auth_token,
-                model=self._settings.llm.model,
+                model=effective_model,
                 max_tokens=self._settings.llm.max_tokens,
                 temperature=self._settings.llm.temperature,
             )
             tool_registry = self._create_tool_registry(project_path, ctx)
-            return AnthropicSDKBackend(llm_client, tool_registry)
+            return AnthropicSDKBackend(llm_client, tool_registry, thinking_budget=thinking_budget)
 
     def _persist_state(self, ctx: PipelineContext) -> None:
         """Persist current pipeline state to the DB if a state manager is present."""
@@ -252,11 +295,35 @@ class Orchestrator:
             journal = RunJournal(ctx, base_path=working_path)
             journal.write_header(ctx)
 
-            # Create backend and register agents against the working path
-            self._backend = self._create_backend(working_path, ctx)
+            # Read ticket-level adaptive settings
+            ticket_settings = self._read_ticket_settings(ctx)
+
+            # Resolve model: CLI flag (already in settings.llm.model) > ticket metadata > default
+            model_to_use = self._settings.llm.model
+            if not self._cli_model_override and "model" in ticket_settings:
+                short = str(ticket_settings["model"]).lower()
+                model_to_use = MODEL_SHORT_NAMES.get(short, short)
+
+            # Resolve effort: CLI > ticket metadata > none
+            effort_str = self._cli_effort or ticket_settings.get("effort")
+            thinking_budget = EFFORT_THINKING_BUDGETS.get(str(effort_str).lower()) if effort_str else None
+
+            # Resolve skip_planning: CLI > ticket metadata > false
+            skip_planning = self._cli_skip_planning or bool(ticket_settings.get("skip_planning", False))
+
+            # Create backend with resolved settings
+            self._backend = self._create_backend(
+                working_path, ctx,
+                model_override=model_to_use, thinking_budget=thinking_budget,
+            )
             self._register_agents(self._backend, working_path)
 
-            ctx = self._execute_steps(ctx, DEFAULT_PIPELINE, journal, working_path)
+            # Build pipeline, optionally filtering out planning step
+            pipeline = list(DEFAULT_PIPELINE)
+            if skip_planning:
+                pipeline = [s for s in pipeline if s.name != "planning"]
+
+            ctx = self._execute_steps(ctx, pipeline, journal, working_path)
 
             # Pipeline complete
             if ctx.status == PipelineStatus.RUNNING:

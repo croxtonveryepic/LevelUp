@@ -61,6 +61,7 @@ class ClaudeCodeClient:
         allowed_tools: list[str] | None = None,
         working_directory: str | None = None,
         timeout: int = 600,
+        thinking_budget: int | None = None,
     ) -> ClaudeCodeResult:
         """Run a `claude -p` subprocess and return the parsed result.
 
@@ -83,6 +84,9 @@ class ClaudeCodeClient:
             "--output-format", "json",
             "--model", self._model,
         ]
+
+        if thinking_budget is not None:
+            cmd.extend(["--thinking-budget", str(thinking_budget)])
 
         actual_input = prompt
         if system_prompt:

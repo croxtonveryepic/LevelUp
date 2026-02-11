@@ -83,11 +83,14 @@ levelup run
 # Point at a different project
 levelup run "Add pagination" --path /path/to/project
 
-# Use a specific Claude model
-levelup run "Fix the login bug" --model claude-opus-4-6
+# Use a specific Claude model (full ID or short name: sonnet, opus)
+levelup run "Fix the login bug" --model opus
 
 # Skip user checkpoints (fully automated)
 levelup run "Add input validation" --no-checkpoints
+
+# Adaptive pipeline: skip planning, set thinking effort
+levelup run "Quick fix" --skip-planning --effort medium
 
 # Limit how many code-fix iterations the agent can attempt
 levelup run "Refactor auth module" --max-iterations 3
@@ -118,6 +121,8 @@ levelup run "Add feature" --backend anthropic_sdk
 | `--backend NAME`     |       | Backend: `claude_code` (default) or `anthropic_sdk`     |
 | `--ticket-next`      | `-T`  | Auto-pick next pending ticket from tickets file         |
 | `--ticket N`         | `-t`  | Run a specific ticket by number                         |
+| `--skip-planning`    |       | Skip the planning step                                  |
+| `--effort LEVEL`     | `-e`  | Thinking effort: `low`, `medium`, or `high`             |
 
 **Pipeline steps:**
 
@@ -145,6 +150,18 @@ The security agent runs between coding and review to catch vulnerabilities befor
 - **One retry limit:** If issues remain after one automatic retry, the pipeline continues to the checkpoint for manual review
 - **OWASP Top 10 coverage:** Checks for injection attacks, authentication flaws, crypto weaknesses, input validation gaps, and insecure configurations
 - **CWE references:** Findings include Common Weakness Enumeration IDs for tracking and remediation
+
+**Adaptive pipeline settings:**
+
+Per-ticket controls let you tune the pipeline for each task. These can be set via CLI flags or ticket metadata (in the GUI ticket detail panel):
+
+| Setting | CLI Flag | Ticket Metadata | Values |
+|---------|----------|-----------------|--------|
+| Model | `--model` | `model` | `sonnet`, `opus`, or full model ID |
+| Effort | `--effort` | `effort` | `low` (4K tokens), `medium` (16K), `high` (32K) |
+| Skip planning | `--skip-planning` | `skip_planning` | boolean |
+
+**Precedence:** CLI flags > ticket metadata > config defaults. Without any overrides, the pipeline uses the default model with no extended thinking and runs all steps.
 
 At each checkpoint you can:
 

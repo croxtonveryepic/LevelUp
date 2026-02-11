@@ -197,7 +197,6 @@ class RunTerminalWidget(QWidget):
 
     def showEvent(self, event: object) -> None:
         super().showEvent(event)  # type: ignore[arg-type]
-        self._ensure_shell()
 
     def _ensure_shell(self) -> None:
         """Start the shell if it hasn't been started yet."""

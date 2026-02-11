@@ -73,14 +73,47 @@
 - **Main Window** (`gui/main_window.py`): Dashboard with runs table and ticket management
 - **Theme Manager** (`gui/theme_manager.py`): Handles theme preferences (light/dark/system) and applies stylesheets
 - **Terminal Emulator** (`gui/terminal_emulator.py`): VT100 terminal using pyte, supports both `CatppuccinMochaColors` (dark) and `LightTerminalColors` (light) schemes
-- **Ticket Detail** (`gui/ticket_detail.py`): Detail view with embedded RunTerminalWidget per ticket
-- **Run Terminal** (`gui/run_terminal.py`): Wrapper around TerminalEmulatorWidget for running pipeline commands
+- **Key Components**:
+    - `ticket_sidebar.py`: Displays ticket list with status indicators
+    - `ticket_detail.py`: Detail view with ticket form and embedded terminal
+    - `run_terminal.py`: Wrapper around TerminalEmulatorWidget for running pipeline commands
+    - `resources.py`: Defines status-to-color/icon mappings for both dark and light themes
+    - `styles.py`: QSS stylesheets for dark and light themes
+
+### Ticket System
+
+- **Location**: `src/levelup/core/tickets.py`
+- **Storage**: Markdown-based in `levelup/tickets.md` (configurable via `project.tickets_file`)
+- **Format**:
+    - Level-2 headings (`##`) represent tickets
+    - Description text appears after the heading
+    - Optional YAML metadata in HTML comments: `<!--metadata ... -->`
+    - Status tags in heading: `[in progress]`, `[done]`, `[merged]`
+- **Ticket Model** (`Ticket` class):
+    - `number`: int (1-based ordinal position in file)
+    - `title`: str (heading text without status tag)
+    - `description`: str (body text below heading, currently plain text)
+    - `status`: TicketStatus enum
+    - `metadata`: dict[str, Any] | None (from YAML block)
+- **Ticket Statuses**:
+    - `PENDING` (default, no status tag in markdown)
+    - `IN_PROGRESS` (tagged with `[in progress]`)
+    - `DONE` (tagged with `[done]`)
+    - `MERGED` (tagged with `[merged]`)
+- **CLI Commands**: `levelup tickets [list|next|start|done|merged|delete]`
+- **Run Integration**: Runs link to tickets via `runs.ticket_number` column in SQLite DB
+- **Branch Name Storage**: After pipeline completion, branch name stored as `branch_name` in ticket metadata
+- **Status Transitions**: CLI automatically transitions pending→in progress on run start, in progress→done on pipeline success
+- **Metadata Filtering**: Run options (model, effort, skip_planning) are filtered from ticket metadata by `_filter_run_options()`
 
 ### Ticket Detail Widget Structure
 
 - Located at `src/levelup/gui/ticket_detail.py`
 - Vertical splitter layout: ticket form (top) | terminal (bottom)
-- **Current ticket form fields** (lines 92-124):
+- **Current ticket form fields** (lines 69-98):
+    - Title: `QLineEdit` (line 74)
+    - Status label: read-only display (line 79)
+    - Description: `QPlainTextEdit` - **plain text editor** (line 88)
     - Auto-approve checkbox (line 93)
     - Model combo: Default/Sonnet/Opus (line 105)
     - Effort combo: Default/Low/Medium/High (line 112)
@@ -89,6 +122,24 @@
 - Fields populate from ticket.metadata when ticket loads via `set_ticket()` (line 303)
 - Terminal receives settings via `set_ticket_settings()` call (line 367)
 - **Button layout**: Located in form section, includes Delete/Cancel/Save buttons (lines 100-120)
+
+### Ticket Data Flow
+
+1. **GUI → Storage**:
+   - User edits description in `QPlainTextEdit` (line 88 of `ticket_detail.py`)
+   - On save, `_on_save()` emits `ticket_saved` signal with plain text (line 431)
+   - `MainWindow` handles signal and calls `update_ticket()` in `core/tickets.py`
+   - `update_ticket()` writes description as plain text to markdown file (line 377)
+
+2. **Storage → GUI**:
+   - `parse_tickets()` reads markdown file and extracts description text (line 67 of `tickets.py`)
+   - Description lines accumulated in `description_lines` list (line 75)
+   - Joined as plain string and stored in `Ticket.description` (line 82-86)
+   - `TicketDetailWidget.set_ticket()` loads description into `QPlainTextEdit` (line 283)
+
+3. **CLI Access**:
+   - Agents receive ticket via `Ticket.to_task_input()` (line 42 of `tickets.py`)
+   - Converts to `TaskInput` with description as string field (line 48)
 
 ### Run Terminal Widget Structure
 
@@ -116,17 +167,10 @@
     5. CLI spawns pipeline with flags: `levelup run --ticket N --model X --effort Y --skip-planning`
 
 - **CLI → Orchestrator**:
-    1. CLI `run()` function accepts `--model`, `--effort`, `--skip-planning` flags (cli/app.py lines 50, 77, 74)
-    2. Orchestrator reads ticket metadata via `_read_ticket_settings()` (orchestrator.py line 111)
+    1. CLI `run()` function accepts `--model`, `--effort`, `--skip-planning` flags
+    2. Orchestrator reads ticket metadata via `_read_ticket_settings()`
     3. Precedence: CLI flags > ticket metadata > config defaults
-    4. Auto-approve handled separately via `_should_auto_approve()` (orchestrator.py line 89)
-
-### Auto-Approve Special Case
-
-- Currently stored in ticket metadata like other settings
-- Used by orchestrator to skip checkpoint prompts
-- **Not** a run-level setting (applies to all runs of a ticket)
-- Should remain as ticket-level metadata, not moved to run options
+    4. Auto-approve handled separately via `_should_auto_approve()`
 
 ### Theme System
 
@@ -184,40 +228,6 @@
 - **Skip planning resolution** (line 312): CLI > ticket metadata > false
 - Settings passed to `_create_backend()` (line 315) with model_override and thinking_budget
 
-### Testing Patterns
-
-- Unit tests use pytest with PyQt6 fixtures
-- Mock state manager using `MagicMock(spec=StateManager)`
-- Mock terminal emulator with `patch("levelup.gui.terminal_emulator.PtyBackend")`
-- Test files follow pattern: `test_<component>.py` or `test_<component>_<feature>.py`
-- Button state tests verify enabled/disabled states after state transitions
-- Metadata tests verify round-trip serialization and preservation of non-form fields
-- Integration tests use temporary directories (`tmp_path` fixture) for file operations
-
-### Key Conventions
-
-- Windows paths: Use `.replace("\\", "/")` in test assertions
-- Test classes named `Test*` trigger pytest collection warnings (expected)
-- SQLite WAL mode for multi-process access
-- Git worktrees for concurrent runs at `~/.levelup/worktrees/<run_id>/`
-- Parent widgets pass theme to child widgets during construction
-- Theme updates propagate via `update_theme(theme)` method
-
-### Ticket System
-
-- **Location**: `src/levelup/core/tickets.py`
-- **Ticket Statuses**:
-    - `PENDING` (default, no status tag in markdown)
-    - `IN_PROGRESS` (tagged with `[in progress]`)
-    - `DONE` (tagged with `[done]`)
-    - `MERGED` (tagged with `[merged]`)
-- **Storage**: Markdown-based in `levelup/tickets.md` (configurable)
-- **Format**: Level-2 headings (`##`) represent tickets
-- **Metadata**: YAML blocks in HTML comments (`<!--metadata ... -->`) store additional data
-- **Branch Name Storage**: After pipeline completion, branch name stored as `branch_name` in ticket metadata
-- **Status Transitions**: CLI automatically transitions pending→in progress on run start, in progress→done on pipeline success
-- **Metadata Filtering**: Run options (model, effort, skip_planning) are filtered from ticket metadata by `_filter_run_options()`
-
 ### Theming System
 
 - **Themes**: Dark (default) and Light
@@ -233,9 +243,9 @@
 
 - **Color Mapping** (`src/levelup/gui/resources.py`):
     - Dark theme pending tickets: `#CDD6F4` (light lavender)
-    - Light theme pending tickets: `#2E3440` (dark blue-gray matching main text color) - **WCAG AA COMPLIANT**
+    - Light theme pending tickets: `#2E3440` (dark blue-gray) - WCAG AA compliant
     - Tickets without active runs inherit their status color
-    - "In progress" tickets can show dynamic colors based on run status:
+    - "In progress" tickets show dynamic colors based on run status:
         - Blue (`#4A90D9` dark, `#3498DB` light) when run is "running"
         - Yellow-orange (`#E6A817` dark, `#F39C12` light) when run is "waiting_for_input"
     - Merged tickets: `#6C7086` (dark gray, dark theme), `#95A5A6` (medium gray, light theme)
@@ -254,8 +264,15 @@
     - Passes run_status_map to `TicketSidebarWidget.set_tickets()`
     - Sidebar stores run_status_map internally for theme switching
 
-### Testing
+### Testing Patterns
 
+- Unit tests use pytest with PyQt6 fixtures
+- Mock state manager using `MagicMock(spec=StateManager)`
+- Mock terminal emulator with `patch("levelup.gui.terminal_emulator.PtyBackend")`
+- Test files follow pattern: `test_<component>.py` or `test_<component>_<feature>.py`
+- Button state tests verify enabled/disabled states after state transitions
+- Metadata tests verify round-trip serialization and preservation of non-form fields
+- Integration tests use temporary directories (`tmp_path` fixture) for file operations
 - **Test Location**: `tests/unit/test_ticket_sidebar_run_status_colors.py`
 - **Coverage**: 40+ tests covering color logic for various ticket/run status combinations
 - **Test Runner**: pytest with PyQt6 integration
@@ -268,6 +285,15 @@
     - Theme switching with preserved run status
     - Multiple runs for same ticket
     - Selection preservation during updates
+
+### Key Conventions
+
+- Windows paths: Use `.replace("\\", "/")` in test assertions
+- Test classes named `Test*` trigger pytest collection warnings (expected)
+- SQLite WAL mode for multi-process access
+- Git worktrees for concurrent runs at `~/.levelup/worktrees/<run_id>/`
+- Parent widgets pass theme to child widgets during construction
+- Theme updates propagate via `update_theme(theme)` method
 
 ### Existing Merge Skills
 
@@ -312,3 +338,14 @@
     - Clicking spawns MergeAgent with terminal output displayed
     - On success, calls `set_ticket_status(TicketStatus.MERGED)`
     - Status update triggers ticket sidebar refresh
+
+### Image/Asset Handling
+
+- **Current State**: No existing image handling infrastructure
+- **Markdown Storage**: Tickets stored in plain markdown files (`levelup/tickets.md`)
+- **Description Field**: Currently plain text only (no images, no rich text)
+- **Asset Directory**: Project has one screenshot (`gui-initial.png`) but no dedicated assets folder
+- **Potential Storage Locations**:
+    - `levelup/assets/` or `levelup/ticket-assets/` - new directory for ticket images
+    - Base64 encoding in markdown (standard markdown approach)
+    - External file references with relative paths in markdown

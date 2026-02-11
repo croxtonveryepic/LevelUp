@@ -11,3 +11,10 @@ Users should be able to paste images into ticket descriptions to highlight the i
 ## Step: detect  (21:02:16)
 
 See `levelup/project_context.md` for project details.
+## Step: requirements  (21:04:33)
+
+**Summary:** Enable users to paste images into ticket descriptions to visually document issues
+- 6 requirement(s)
+- 6 assumption(s)
+- 8 out-of-scope item(s)
+- **Usage:** 135.1s

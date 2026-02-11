@@ -91,7 +91,7 @@ branch_name: levelup/bug-can-t-tab-out-of-ticket-description-box
 -->
 User complains that the ticket description box inserts tab characters when tab is pressed, instead of the expected behavior of moving the focus onto the save button. Also confirm that shift-tab returns to the title box, enter submits (saves), and shift-enter inserts a newline.
 
-## [done] Bug: auto-approve checkpoints checkbox
+## [merged] Bug: auto-approve checkpoints checkbox
 <!--metadata
 branch_name: levelup/bug-auto-approve-checkpoints-checkbox
 -->
@@ -114,7 +114,7 @@ Failed to remove worktree: Cmd('git') failed due to: exit code(255)
 
 ## Bug: Cost breakdown does not show cost or token use
 
-## [done] Feature: Ticket descriptions should accept pasted images
+## [merged] Feature: Ticket descriptions should accept pasted images
 <!--metadata
 branch_name: levelup/feature-ticket-descriptions-should-accept-pasted-i
 -->
@@ -131,3 +131,9 @@ When scrolled up in an integrated terminal, highlighting text and copying it to 
 branch_name: levelup/feature-merge-branch-from-within-gui
 -->
 When a pipeline is completed and a feature branch is ready to be reviewed and merged, naturally, users will want to merge their branch into master. Create an agent to handle merging a feature branch. The agent should always rebase the feature branch onto master first; it is expected that this may cause merge conflicts on project_context.md, the agent should make reasonable adjustments work through these merge conflicts. In the UI, there should be a button on the ticket page to kick off the merge agent. When it completes successfully, the ticket status should be moved from done to merged.
+
+## [merged] Hide merged features by default
+<!--metadata
+branch_name: levelup/hide-merged-features-by-default
+-->
+Hide merged tickets from the sidebar list. Create a separate page for completed tickets.

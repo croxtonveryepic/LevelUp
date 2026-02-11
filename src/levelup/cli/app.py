@@ -1073,6 +1073,152 @@ def recon(
 
 
 @app.command()
+def merge(
+    ticket: Optional[int] = typer.Option(None, "--ticket", "-t", help="Ticket number (looks up branch from metadata)"),
+    branch: Optional[str] = typer.Option(None, "--branch", "-b", help="Branch name to merge directly"),
+    path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Claude model to use"),
+    backend_opt: Optional[str] = typer.Option(None, "--backend", help="Backend: claude_code or anthropic_sdk"),
+) -> None:
+    """Merge a feature branch into master using the MergeAgent."""
+    from rich.table import Table
+
+    from levelup.agents.backend import ClaudeCodeBackend
+    from levelup.agents.claude_code_client import ClaudeCodeClient
+    from levelup.agents.merge import MergeAgent
+    from levelup.config.loader import load_settings
+
+    print_banner()
+
+    # Validate: exactly one of --ticket or --branch must be provided
+    if ticket is None and branch is None:
+        print_error("Provide either --ticket or --branch.")
+        raise typer.Exit(1)
+    if ticket is not None and branch is not None:
+        print_error("Provide only one of --ticket or --branch, not both.")
+        raise typer.Exit(1)
+
+    # Build settings with CLI overrides
+    overrides: dict = {}
+    if model:
+        from levelup.config.settings import MODEL_SHORT_NAMES
+
+        resolved = MODEL_SHORT_NAMES.get(model.lower(), model)
+        overrides.setdefault("llm", {})["model"] = resolved
+    if backend_opt:
+        overrides.setdefault("llm", {})["backend"] = backend_opt
+
+    settings = load_settings(project_path=path, overrides=overrides)
+    settings.project.path = path.resolve()
+
+    # Resolve branch name
+    ticket_number: int | None = None
+    branch_name: str
+
+    if ticket is not None:
+        from levelup.core.tickets import read_tickets
+
+        tickets_list = read_tickets(path, settings.project.tickets_file)
+        matching = [tk for tk in tickets_list if tk.number == ticket]
+        if not matching:
+            print_error(f"Ticket #{ticket} not found.")
+            raise typer.Exit(1)
+        t = matching[0]
+        if not t.metadata or not t.metadata.get("branch_name", "").strip():
+            print_error(f"Ticket #{ticket} has no branch_name metadata.")
+            raise typer.Exit(1)
+        branch_name = t.metadata["branch_name"]
+        ticket_number = ticket
+        console.print(f"[cyan]Ticket #{ticket}:[/cyan] {t.title}")
+        console.print(f"[dim]Branch: {branch_name}[/dim]")
+    else:
+        assert branch is not None
+        branch_name = branch
+
+    # Create backend
+    if settings.llm.backend == "claude_code":
+        client = ClaudeCodeClient(
+            model=settings.llm.model,
+            claude_executable=settings.llm.claude_executable,
+        )
+        be = ClaudeCodeBackend(client)
+    else:
+        from levelup.agents.backend import AnthropicSDKBackend
+        from levelup.agents.llm_client import LLMClient
+        from levelup.tools.base import ToolRegistry
+        from levelup.tools.file_read import FileReadTool
+        from levelup.tools.file_search import FileSearchTool
+        from levelup.tools.file_write import FileWriteTool
+
+        api_key = settings.llm.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        auth_token = None
+        if not api_key:
+            from levelup.config.auth import get_claude_code_api_key
+
+            claude_code_token = get_claude_code_api_key()
+            if claude_code_token:
+                auth_token = claude_code_token
+            else:
+                print_error(
+                    "No API key found. Set ANTHROPIC_API_KEY env var or add to config file."
+                )
+                raise typer.Exit(1)
+
+        llm_client = LLMClient(
+            api_key=api_key or settings.llm.api_key,
+            auth_token=auth_token or settings.llm.auth_token,
+            model=settings.llm.model,
+            max_tokens=settings.llm.max_tokens,
+            temperature=settings.llm.temperature,
+        )
+        registry = ToolRegistry()
+        registry.register(FileReadTool(path.resolve()))
+        registry.register(FileWriteTool(path.resolve()))
+        registry.register(FileSearchTool(path.resolve()))
+        be = AnthropicSDKBackend(llm_client, registry)
+
+    # Run merge agent
+    agent = MergeAgent(be, path.resolve())
+
+    with console.status("[cyan]Running merge agent..."):
+        result = agent.run(branch_name=branch_name)
+
+    # Display usage
+    table = Table(title="Merge Usage")
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+    table.add_row("Cost", f"${result.cost_usd:.4f}")
+    table.add_row("Input tokens", f"{result.input_tokens:,}")
+    table.add_row("Output tokens", f"{result.output_tokens:,}")
+    table.add_row("Duration", f"{result.duration_ms / 1000:.1f}s")
+    table.add_row("Turns", str(result.num_turns))
+    console.print(table)
+
+    # Print agent output
+    if result.text:
+        console.print(f"\n{result.text}")
+
+    # Check success
+    success = result.text and (
+        "success" in result.text.lower() or "completed" in result.text.lower()
+    )
+
+    if success:
+        if ticket_number is not None:
+            from levelup.core.tickets import TicketStatus, set_ticket_status
+
+            try:
+                set_ticket_status(path, ticket_number, TicketStatus.MERGED, settings.project.tickets_file)
+                console.print(f"[green]Ticket #{ticket_number} marked as merged.[/green]")
+            except Exception as e:
+                console.print(f"[yellow]Warning: failed to update ticket status: {e}[/yellow]")
+        console.print("[bold green]Merge complete.[/bold green]")
+    else:
+        print_error("Merge did not complete successfully.")
+        raise typer.Exit(1)
+
+
+@app.command()
 def version() -> None:
     """Show the installed LevelUp version."""
     console.print(get_version_string())

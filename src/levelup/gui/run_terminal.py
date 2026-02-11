@@ -24,8 +24,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from levelup.agents.merge import MergeAgent
-from levelup.core.tickets import TicketStatus, set_ticket_status
+from levelup.core.tickets import TicketStatus
 from levelup.gui.terminal_emulator import (
     TerminalEmulatorWidget,
     CatppuccinMochaColors,
@@ -74,6 +73,16 @@ def build_resume_command(
         f'"{python}" -m levelup resume {run_id}'
         f' --path "{project_path}"'
         f' --db-path "{db_path}"'
+    )
+
+
+def build_merge_command(ticket_number: int, project_path: str) -> str:
+    """Build the shell command string for merging a ticket's branch."""
+    python = sys.executable.replace("\\", "/")
+    return (
+        f'"{python}" -m levelup merge'
+        f" --ticket {ticket_number}"
+        f' --path "{project_path}"'
     )
 
 
@@ -186,6 +195,11 @@ class RunTerminalWidget(QWidget):
         # Timer for polling run_id after starting a run
         self._run_id_poll_timer = QTimer(self)
         self._run_id_poll_timer.timeout.connect(self._poll_for_run_id)
+
+        # Timer for polling merge completion (ticket status -> MERGED)
+        self._merge_poll_timer = QTimer(self)
+        self._merge_poll_timer.timeout.connect(self._poll_merge_completion)
+        self._merge_poll_count = 0
 
     # -- Public API ---------------------------------------------------------
 
@@ -502,6 +516,7 @@ class RunTerminalWidget(QWidget):
         """Handle the shell itself exiting (not just a command)."""
         self._shell_started = False
         self._run_id_poll_timer.stop()
+        self._merge_poll_timer.stop()
         if self._command_running:
             self._set_running_state(False)
             self.run_finished.emit(exit_code)
@@ -596,8 +611,8 @@ class RunTerminalWidget(QWidget):
                     return
 
     def _on_merge_clicked(self) -> None:
-        """Handle merge button click."""
-        if not self._current_ticket or not self._project_path or not self._db_path:
+        """Handle merge button click — runs ``levelup merge`` in the terminal."""
+        if not self._current_ticket or not self._project_path:
             return
 
         if self._command_running:
@@ -611,52 +626,49 @@ class RunTerminalWidget(QWidget):
         if not branch_name or not branch_name.strip():
             return
 
-        # Set running state and update status
+        if not hasattr(self._current_ticket, 'number'):
+            return
+
+        self._ensure_shell()
+
+        cmd = build_merge_command(self._current_ticket.number, self._project_path)
+        self._terminal.send_command(cmd)
+        self._terminal.setFocus()
+
         self._set_running_state(True)
         self._status_label.setText("Merging...")
 
-        # Execute merge (synchronous for now)
-        self._execute_merge(branch_name)
+        # Start polling for merge completion (ticket status → MERGED)
+        self._merge_poll_count = 0
+        self._merge_poll_timer.start(2000)
 
-    def _execute_merge(self, branch_name: str) -> None:
-        """Execute the merge operation using MergeAgent."""
+    def _poll_merge_completion(self) -> None:
+        """Poll ticket file to detect when the merge CLI marks the ticket as MERGED."""
+        self._merge_poll_count += 1
+
+        # Timeout after ~60s (30 polls × 2s)
+        if self._merge_poll_count >= 30:
+            self._merge_poll_timer.stop()
+            if self._command_running:
+                self._set_running_state(False)
+                self._status_label.setText("Merge timed out")
+            return
+
+        if not self._current_ticket or not self._project_path:
+            self._merge_poll_timer.stop()
+            return
+
         try:
-            # Create backend
-            backend = self._create_backend()
+            from levelup.core.tickets import read_tickets
 
-            # Create and run MergeAgent
-            agent = MergeAgent(backend, Path(self._project_path))
-            result = agent.run(branch_name=branch_name)
-
-            # Display result in terminal
-            if self._terminal:
-                self._terminal.send_command(f"echo '{result.text}'")
-
-            # Check if merge was successful
-            if result.text and ("success" in result.text.lower() or "completed" in result.text.lower()):
-                # Update ticket status to MERGED
-                if self._current_ticket and hasattr(self._current_ticket, 'number'):
-                    try:
-                        set_ticket_status(Path(self._project_path), self._current_ticket.number, TicketStatus.MERGED)
-                        self._status_label.setText("Merge completed")
-                        self.merge_finished.emit()
-                    except Exception as e:
-                        logger.error(f"Failed to update ticket status: {e}")
-                        self._status_label.setText(f"Merge completed (status update failed)")
-            else:
-                self._status_label.setText("Merge failed")
-        finally:
-            # Always restore button state
-            self._set_running_state(False)
-
-    def _create_backend(self) -> object:
-        """Create a backend instance for running agents."""
-        from levelup.agents.backend import ClaudeCodeBackend
-        from levelup.agents.claude_code_client import ClaudeCodeClient
-        from levelup.config.loader import load_settings
-
-        settings = load_settings(Path(self._project_path) if self._project_path else None)
-        client = ClaudeCodeClient(
-            claude_executable=settings.llm.claude_executable,
-        )
-        return ClaudeCodeBackend(client)
+            ticket_num = self._current_ticket.number
+            tickets_list = read_tickets(Path(self._project_path))
+            for tk in tickets_list:
+                if tk.number == ticket_num and tk.status == TicketStatus.MERGED:
+                    self._merge_poll_timer.stop()
+                    self._set_running_state(False)
+                    self._status_label.setText("Merge completed")
+                    self.merge_finished.emit()
+                    return
+        except Exception:
+            pass

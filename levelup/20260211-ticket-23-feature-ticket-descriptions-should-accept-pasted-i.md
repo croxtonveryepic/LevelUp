@@ -55,3 +55,19 @@ Step `test_verification` completed.
 
 Step `security` completed.
 - **Usage:** 78.6s
+### Checkpoint: security
+
+- **Decision:** auto-approved
+## Step: review  (21:27:01)
+
+Found 10 issue(s):
+- [CRITICAL] `src/levelup/gui/markdown_converter.py`: The implementation is not actually used in the codebase. ImageTextEdit has its own duplicate conversion logic (_markdown_to_html and _html_to_markdown methods in image_text_edit.py), making this module dead code.
+- [ERROR] `src/levelup/gui/markdown_converter.py`: Security filter blocks 'file:' scheme but line 64 generates 'file:///' URLs. This creates an inconsistency where markdown_to_html blocks external file: URIs but generates them itself.
+- [WARNING] `src/levelup/gui/markdown_converter.py`: Regex pattern uses non-greedy matching which is good, but the pattern '\[([^\]]*?)\]' could still be vulnerable to catastrophic backtracking with certain inputs like repeated brackets.
+- [WARNING] `src/levelup/gui/markdown_converter.py`: Path comparison logic has potential issues. Lines 152-157 manually manipulate path strings with string operations instead of using Path methods, which could fail with edge cases (Windows UNC paths, symlinks, etc.).
+- [WARNING] `src/levelup/gui/markdown_converter.py`: Size limit check (1MB for markdown, 5MB for HTML) occurs after HTML escaping, meaning a 900KB input becomes >1MB after escaping and gets silently truncated without warning.
+- [INFO] `src/levelup/gui/markdown_converter.py`: Using html_module.escape(quote=True) on line 42 but the quote parameter doesn't exist in Python's html.escape(). This will raise TypeError.
+- [INFO] `src/levelup/gui/markdown_converter.py`: Condition checks 'if html_text and not html_text.startswith('<')' which could incorrectly wrap already-processed HTML that starts with text before the first tag.
+- [INFO] `src/levelup/gui/markdown_converter.py`: When input exceeds 5MB limit, the function returns html[:1000000] which is raw HTML, not markdown. This violates the function contract and could break callers expecting markdown format.
+- [INFO] `src/levelup/gui/markdown_converter.py`: Path traversal check is good, but it only checks the final resolved path. An attacker could still use symlinks within the project directory to access files outside it.
+- [INFO] `src/levelup/gui/markdown_converter.py`: urlparse is imported but never used in the module.

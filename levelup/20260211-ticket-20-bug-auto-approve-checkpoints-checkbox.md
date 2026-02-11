@@ -51,3 +51,15 @@ Wrote 1 file(s):
 
 Step `security` completed.
 - **Usage:** 71.6s
+### Checkpoint: security
+
+- **Decision:** auto-approved
+## Step: review  (21:00:11)
+
+Found 6 issue(s):
+- [CRITICAL] `src/levelup/gui/ticket_detail.py`: _build_metadata() only saves auto_approve when True, not when False. This means if a user unchecks the box to override a project default of True, the False value won't be saved to metadata, and the project default will still apply on next load.
+- [WARNING] `tests/unit/test_gui_auto_approve_defaults.py`: Weak test assertion: `assert final_call_count - initial_call_count <= 1` could pass even if load_settings is called many times, as long as it's called once during initialization. The test should verify exactly 1 call during init and 0 additional calls during ticket loads.
+- [WARNING] `tests/unit/test_gui_auto_approve_defaults.py`: Test has a bare except clause that accepts any exception as valid behavior. This makes the test ineffective - it should either assert the checkbox value OR expect a specific exception type, not accept both outcomes.
+- [INFO] `src/levelup/gui/ticket_detail.py`: The distinction between _build_metadata() (returns None for defaults) and _build_save_metadata() (preserves existing metadata) could be clearer. The _build_metadata() method is used in save_ticket() test helper but not in _on_save().
+- [INFO] `src/levelup/gui/ticket_detail.py`: Bare except clause catches all exceptions when loading settings. While this is intentional for graceful degradation, it could hide bugs in the load_settings() function.
+- [INFO] `src/levelup/gui/ticket_detail.py`: Settings are loaded every time _load_project_settings() is called (both in __init__ and set_project_context). If the same project path is set multiple times, settings will be reloaded unnecessarily.

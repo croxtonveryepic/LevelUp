@@ -11,3 +11,10 @@ Hide merged tickets from the sidebar list. Create a separate page for completed 
 ## Step: detect  (23:15:28)
 
 See `levelup/project_context.md` for project details.
+## Step: requirements  (23:16:55)
+
+**Summary:** Add status-based filtering to ticket sidebar with default hiding of merged tickets and a separate completed tickets page
+- 4 requirement(s)
+- 6 assumption(s)
+- 7 out-of-scope item(s)
+- **Usage:** 84.9s

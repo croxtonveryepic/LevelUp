@@ -67,3 +67,9 @@ Found 6 issue(s):
 - [INFO] `src/levelup/gui/main_window.py`: Token formatting logic is duplicated between _update_table and _view_details
 - [INFO] `src/levelup/state/db.py`: CURRENT_SCHEMA_VERSION constant could have a docstring explaining the versioning scheme
 - [INFO] `src/levelup/core/journal.py`: Journal logs total tokens but doesn't break down into input/output like the GUI does
+### Checkpoint: review
+
+- **Decision:** approve
+## Outcome
+
+- **Status:** completed

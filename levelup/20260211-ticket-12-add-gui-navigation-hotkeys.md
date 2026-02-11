@@ -11,3 +11,10 @@ Since LevelUp is a tool for developers, many will expect there to be hotkeys to 
 ## Step: detect  (20:36:33)
 
 See `levelup/project_context.md` for project details.
+## Step: requirements  (20:38:40)
+
+**Summary:** Add keyboard navigation hotkeys to the LevelUp GUI dashboard with customizable keybindings
+- 10 requirement(s)
+- 6 assumption(s)
+- 7 out-of-scope item(s)
+- **Usage:** 125.7s

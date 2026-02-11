@@ -140,15 +140,23 @@
 
 - **Framework**: PyQt6-based desktop GUI
 - **Location**: `src/levelup/gui/`
-- **Main Window** (`gui/main_window.py`): Dashboard with runs table and ticket management
+- **Main Window** (`gui/main_window.py`):
+    - Dashboard with runs table and ticket management
+    - QStackedWidget with 3 pages: runs table (index 0), ticket detail (index 1), documentation (index 2)
+    - Ticket sidebar on left, main content on right
+    - Auto-refresh timer (REFRESH_INTERVAL_MS = 2000ms)
+    - Tracks GUI-spawned run PIDs for checkpoint dialog auto-opening
+    - No existing keyboard shortcuts implemented (only mouse navigation)
 - **Theme Manager** (`gui/theme_manager.py`): Handles theme preferences (light/dark/system) and applies stylesheets
 - **Terminal Emulator** (`gui/terminal_emulator.py`): VT100 terminal using pyte, supports both `CatppuccinMochaColors` (dark) and `LightTerminalColors` (light) schemes
 - **Key Components**:
     - `main_window.py`: Main application window that coordinates GUI components
-    - `ticket_sidebar.py`: Displays ticket list with status indicators
+    - `ticket_sidebar.py`: Displays ticket list with status indicators and color coding
     - `ticket_detail.py`: Detail view with ticket form (title, description, auto-approve, status label) and embedded RunTerminalWidget
     - `run_terminal.py`: Wrapper around TerminalEmulatorWidget for running pipeline commands
     - `terminal_emulator.py`: VT100 terminal using pyte library with scrollback support
+    - `docs_widget.py`: Documentation viewer for markdown files
+    - `checkpoint_dialog.py`: Modal dialog for checkpoint interactions
     - `theme_manager.py`: Handles theme preferences (light/dark/system) and applies stylesheets
     - `resources.py`: Defines status-to-color/icon mappings for both dark and light themes
     - `styles.py`: QSS stylesheets for dark and light themes
@@ -427,17 +435,21 @@
 - Parent widgets pass theme to child widgets during construction
 - Theme updates propagate via `update_theme(theme)` method
 
-## Codebase Insights
+### Navigation Flow
 
-### GUI Architecture
-
-- **Framework**: PyQt6-based desktop GUI
-- **Location**: `src/levelup/gui/`
-- **Key Components**:
-    - `ticket_sidebar.py`: Displays ticket list with status indicators
-    - `resources.py`: Defines status-to-color/icon mappings for both dark and light themes
-    - `styles.py`: QSS stylesheets for dark and light themes
-    - `main_window.py`: Main application window that coordinates GUI components
+- **Runs table view** (page 0): Default view showing all runs
+    - Double-click run → opens checkpoint dialog if status is "waiting_for_input"
+    - Right-click → context menu with View Details/Resume/Forget options
+- **Ticket detail view** (page 1): Selected ticket with embedded terminal
+    - Back button → returns to runs table (page 0)
+    - Ticket sidebar selection triggers `_on_ticket_selected()` → switches to detail view
+- **Documentation view** (page 2): Markdown file viewer
+    - Docs button → switches to documentation
+    - Back button → returns to runs table (page 0)
+- **Ticket sidebar**: Lists all tickets from project
+    - Click ticket → opens ticket detail view
+    - Plus button → creates new ticket
+- **Currently no keyboard shortcuts exist for navigation**
 
 ### Ticket System
 
@@ -450,19 +462,26 @@
 - **Storage**: Markdown-based in `levelup/tickets.md` (configurable)
 - **Format**: Level-2 headings (`##`) represent tickets
 
-### Theming System
+### State Management
 
-- **Themes**: Dark (default) and Light
-- **Theme Colors**:
-    - **Dark Theme**:
-        - Background: `#1E1E2E`, `#181825` (list items)
-        - Text: `#CDD6F4`
-    - **Light Theme**:
-        - Background: `#F5F5F5`, `#FFFFFF` (list items)
-        - Text: `#2E3440`
+- **Location**: `src/levelup/state/`
+- **Run Statuses**: "running", "waiting_for_input", "pending", "failed", "aborted", "paused", "completed"
+- **StateManager** provides methods:
+    - `list_runs()` - returns list of RunRecord objects
+    - `get_pending_checkpoints()` - returns checkpoints needing user input
+    - `mark_dead_runs()` - updates status of runs with dead PIDs
+- **Run filtering**: Can identify runs by status, project, ticket number
 
-### Ticket Sidebar Color Logic
+### Configuration System
 
+- **Location**: `src/levelup/config/settings.py`
+- **Settings Classes**:
+    - `LevelUpSettings` - root settings container
+    - `LLMSettings` - LLM configuration
+    - `ProjectSettings` - project-specific settings
+    - `PipelineSettings` - pipeline behavior
+    - `GUISettings` - GUI preferences (theme)
+- **No existing hotkey/keybinding configuration**
 - **Color Mapping** (`src/levelup/gui/resources.py`):
     - Dark theme colors in `TICKET_STATUS_COLORS` dict
     - Light theme colors in `_LIGHT_TICKET_STATUS_COLORS` dict
@@ -525,8 +544,23 @@
     - Keyboard handling example: `src/levelup/gui/terminal_emulator.py` (has `keyPressEvent` for special key handling)
     - Checkpoint dialog: `src/levelup/gui/checkpoint_dialog.py` (also uses `QPlainTextEdit` for feedback input)
 
+### Theme System
+
+- Theme preferences: "light", "dark", "system" (default)
+- `get_current_theme()` resolves preference to actual theme ("light" or "dark")
+- `apply_theme(app, theme)` applies stylesheet and notifies listeners via `theme_changed()`
+- Widgets implement `update_theme(theme)` method to respond to theme changes
+- Terminal color schemes are applied via `terminal.set_color_scheme(scheme_class)`
+- Application theme is initialized in `gui/app.py` via `apply_theme(app, actual_theme)` before creating MainWindow
+- MainWindow initializes with `self._current_theme = get_current_theme()` and passes theme to child widgets
+>>>>>>> 7c02951 (levelup(requirements): Add GUI navigation hotkeys)
+
 ### Testing Patterns
 
+- **Test Location**: Unit tests in `tests/unit/`, integration tests in `tests/integration/`
+- **PyQt6 Tests**: Use `_can_import_pyqt6()` check and `@pytest.mark.skipif` decorator
+- **QApplication**: Tests create QApplication instance via `_ensure_qapp()` helper or `QApplication.instance() or QApplication([])`
+- **Mocking**: Use `unittest.mock.patch` for GUI components and state managers
 - Unit tests use pytest with PyQt6 fixtures
 - Mock state manager using `MagicMock(spec=StateManager)`
 - Mock terminal emulator with `patch("levelup.gui.terminal_emulator.PtyBackend")`
@@ -541,6 +575,19 @@
 - Terminal rendering tests located at `tests/unit/test_terminal_scrollback_rendering.py` (rendering details)
 - Terminal copy/selection tests use mock clipboard and simulate mouse/keyboard events
 - Test helper `_fill_history()` in scrollback tests writes lines to push content into history buffer
+- **Specific Test Files**:
+    - `tests/unit/test_ticket_sidebar_run_status_colors.py` - 40+ tests covering color logic
+- **Test Runner**: pytest with PyQt6 integration
+- **Test Dependencies**: Tests use PyQt6 and are skipped if not available
+- **Color Assertion Pattern**: Tests assert exact hex color values (e.g., `assert color == "#CDD6F4"`)
+- **Ticket Parsing Tests**: Cover all statuses, case-insensitivity, edge cases
+- **GUI Tests**: Verify widget initialization, theme updates, button states, metadata persistence
+- **Edge Cases Covered**:
+    - Invalid statuses/themes
+    - None/empty run status values
+    - Theme switching with preserved run status
+    - Multiple runs for same ticket
+    - Selection preservation during updates
 
 ### Ticket Sidebar Widget Structure
 
@@ -580,40 +627,11 @@
     - Connect `back_clicked` signal to handler that sets index back to 0
     - Add navigation method to switch to new page (clear sidebar selection, set index)
 
-### Testing Patterns
-
-- **Test Location**: Unit tests in `tests/unit/`, integration tests in `tests/integration/`
-- **PyQt6 Tests**: Use `_can_import_pyqt6()` check and `@pytest.mark.skipif` decorator
-- **QApplication**: Tests create QApplication instance via `_ensure_qapp()` helper
-- **Mocking**: Use `unittest.mock.patch` for GUI components and state managers
-- Unit tests use pytest with PyQt6 fixtures
-- Mock state manager using `MagicMock(spec=StateManager)`
-- Mock terminal emulator with `patch("levelup.gui.terminal_emulator.PtyBackend")`
-- Test files follow pattern: `test_<component>.py` or `test_<component>_<feature>.py`
-- Button state tests verify enabled/disabled states after state transitions
-- Metadata tests verify round-trip serialization and preservation of non-form fields
-- Integration tests use temporary directories (`tmp_path` fixture) for file operations
-- Tests for project settings use `load_settings(project_path=tmp_path)` pattern
-- Config files created as `tmp_path / "levelup.yaml"` with YAML content
-- Auto-approve tests in `test_gui_ticket_metadata.py` verify checkbox behavior
-- **Specific Test Files**:
-    - `tests/unit/test_ticket_sidebar_run_status_colors.py` - 40+ tests covering color logic
-- **Test Runner**: pytest with PyQt6 integration
-- **Test Dependencies**: Tests use PyQt6 and are skipped if not available
-- **Color Assertion Pattern**: Tests assert exact hex color values (e.g., `assert color == "#CDD6F4"`)
-- **Ticket Parsing Tests**: Cover all statuses, case-insensitivity, edge cases
-- **GUI Tests**: Verify widget initialization, theme updates, button states, metadata persistence
-- **Edge Cases Covered**:
-    - Invalid statuses/themes
-    - None/empty run status values
-    - Theme switching with preserved run status
-    - Multiple runs for same ticket
-    - Selection preservation during updates
 
 ### Key Conventions
 
 - Windows paths: Use `.replace("\\", "/")` in test assertions
-- Test classes named `Test*` trigger pytest collection warnings (expected)
+- Test classes named `Test*` (e.g. `TestResult`, `TestRunnerTool`) trigger pytest collection warnings (expected)
 - SQLite WAL mode for multi-process access
 - Git worktrees for concurrent runs at `~/.levelup/worktrees/<run_id>/`
 - Parent widgets pass theme to child widgets during construction

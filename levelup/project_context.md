@@ -349,3 +349,38 @@
     - `levelup/assets/` or `levelup/ticket-assets/` - new directory for ticket images
     - Base64 encoding in markdown (standard markdown approach)
     - External file references with relative paths in markdown
+
+### PyQt6 Rich Text Support
+
+- **QTextEdit vs QPlainTextEdit**:
+    - `QPlainTextEdit`: Plain text only, no formatting, no images (currently used)
+    - `QTextEdit`: Supports rich text HTML, images, formatting
+- **Image Handling in QTextEdit**:
+    - Images can be embedded via HTML `<img>` tags with local file paths or data URIs
+    - `insertFromMimeData()` handles clipboard paste operations
+    - `toHtml()` / `setHtml()` for HTML↔widget conversion
+    - `toPlainText()` / `setPlainText()` for plain text access
+    - `document().addResource()` to manage embedded images
+- **Markdown Conversion**:
+    - Project uses `mistune>=3.0.0` for markdown→HTML (see `docs_widget.py`)
+    - Need bidirectional conversion: HTML (QTextEdit) ↔ Markdown (storage)
+    - Markdown image syntax: `![alt text](path/to/image.png)`
+
+### Ticket Deletion and Cleanup Patterns
+
+- **Deletion Flow** (see `main_window.py:_on_ticket_deleted()`):
+    1. Clean up associated run and git worktree if exists
+    2. Call `delete_ticket()` from `core/tickets.py` to remove from markdown file
+    3. Refresh ticket list and navigate back to main view
+- **Asset Cleanup**: Currently no asset cleanup logic (will need to add for images)
+- **Path Resolution**: Project path passed to widgets via `set_project_context()`
+- **File Operations**: All ticket file operations use `Path.read_text()` / `Path.write_text()`
+
+### Markdown Parsing and Serialization
+
+- **Parser**: Custom parser in `tickets.py` (not using mistune for parsing)
+- **Description Storage**: Currently stored as plain text string in `Ticket.description`
+- **Metadata Storage**: YAML in HTML comments (`<!--metadata ... -->`)
+- **Code Block Handling**: Parser tracks fenced code blocks to avoid false ticket detection
+- **Line Ending Preservation**: Parser preserves original line endings (CRLF/LF)
+- **Update Pattern**: Read entire file, modify relevant sections, write back atomically

@@ -26,6 +26,7 @@ class CatppuccinMochaColors:
     FG = QColor("#CDD6F4")
     CURSOR = QColor("#F5E0DC")
     SELECTION = QColor("#45475A")
+    BOLD = QColor("#F5E0DC")  # Brighter FG for bold text
 
     _NAMED: dict[str, str] = {
         "black": "#45475A",
@@ -85,6 +86,7 @@ class LightTerminalColors:
     FG = QColor("#2E3440")
     CURSOR = QColor("#5E81AC")
     SELECTION = QColor("#88C0D0")
+    BOLD = QColor("#1A1D23")  # Darker FG for bold text on light background
 
     _NAMED: dict[str, str] = {
         "black": "#2E3440",
@@ -564,7 +566,7 @@ class TerminalEmulatorWidget(QWidget):
 
                 # Bold brightens fg
                 if char.bold and fg == colors.FG:
-                    fg = QColor("#F5E0DC")
+                    fg = colors.BOLD
 
                 # Selection highlight
                 if sel_start is not None and sel_end is not None:

@@ -1,4 +1,4 @@
 gui:
-  theme: dark
+  theme: system
 pipeline:
   auto_approve: true

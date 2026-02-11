@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
 
 from levelup.gui.checkpoint_dialog import CheckpointDialog
 from levelup.gui.docs_widget import DocsWidget
-from levelup.gui.resources import STATUS_COLORS, STATUS_LABELS, status_display
+from levelup.gui.resources import STATUS_COLORS, STATUS_LABELS, get_status_color, status_display
 from levelup.gui.ticket_detail import TicketDetailWidget
 from levelup.gui.ticket_sidebar import TicketSidebarWidget
 from levelup.gui.theme_manager import get_current_theme, apply_theme, set_theme_preference, get_theme_preference
@@ -65,6 +65,8 @@ class MainWindow(QMainWindow):
                 self._tickets_file = settings.project.tickets_file
             except Exception:
                 pass
+
+        self._current_theme = get_current_theme()
 
         self.setWindowTitle("LevelUp Dashboard")
         self.setMinimumSize(1000, 550)
@@ -115,7 +117,7 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # Left: ticket sidebar
-        self._sidebar = TicketSidebarWidget()
+        self._sidebar = TicketSidebarWidget(theme=self._current_theme)
         self._sidebar.setMinimumWidth(200)
         self._sidebar.setMaximumWidth(400)
         self._sidebar.ticket_selected.connect(self._on_ticket_selected)
@@ -143,7 +145,7 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._table)  # index 0
 
         # Page 1: ticket detail
-        self._detail = TicketDetailWidget()
+        self._detail = TicketDetailWidget(theme=self._current_theme)
         self._detail.back_clicked.connect(self._on_ticket_back)
         self._detail.ticket_saved.connect(self._on_ticket_saved)
         self._detail.ticket_created.connect(self._on_ticket_created)
@@ -152,7 +154,7 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._detail)  # index 1
 
         # Page 2: documentation viewer
-        self._docs = DocsWidget()
+        self._docs = DocsWidget(theme=self._current_theme)
         self._docs.back_clicked.connect(self._on_docs_back)
         self._stack.addWidget(self._docs)  # index 2
 
@@ -212,7 +214,7 @@ class MainWindow(QMainWindow):
 
             # Status cell with color
             status_item = QTableWidgetItem(status_display(run.status))
-            color = STATUS_COLORS.get(run.status, "#CDD6F4")
+            color = get_status_color(run.status, theme=self._current_theme)
             status_item.setForeground(QColor(color))
             self._table.setItem(row, 3, status_item)
 
@@ -280,11 +282,19 @@ class MainWindow(QMainWindow):
             if app:
                 apply_theme(app, actual_theme)
 
+            # Track current theme for status color lookups
+            self._current_theme = actual_theme
+
             # Update button appearance
             self._update_theme_button()
 
-            # Update docs HTML theme
+            # Propagate theme to all child widgets
+            self._sidebar.update_theme(actual_theme)
+            self._detail.update_theme(actual_theme)
             self._docs.update_theme(actual_theme)
+
+            # Re-render the runs table with correct status colors
+            self._update_table()
         except Exception:
             # Handle errors gracefully - theme may fail to save or apply
             # but we shouldn't crash the app

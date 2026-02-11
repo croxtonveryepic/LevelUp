@@ -21,7 +21,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from levelup.gui.terminal_emulator import TerminalEmulatorWidget
+from levelup.gui.terminal_emulator import (
+    TerminalEmulatorWidget,
+    CatppuccinMochaColors,
+    LightTerminalColors,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +79,7 @@ class RunTerminalWidget(QWidget):
     run_finished = pyqtSignal(int)  # exit code
     run_paused = pyqtSignal()       # emitted when pause is confirmed via DB
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, theme: str = "dark") -> None:
         super().__init__(parent)
         self._command_running = False
         self._shell_started = False
@@ -127,8 +131,12 @@ class RunTerminalWidget(QWidget):
 
         layout.addLayout(header)
 
-        # Terminal emulator
-        self._terminal = TerminalEmulatorWidget()
+        # Terminal emulator - select color scheme based on theme
+        # Normalize theme parameter (case-insensitive, strip whitespace)
+        normalized_theme = (theme or "dark").strip().lower()
+        color_scheme = LightTerminalColors if normalized_theme == "light" else CatppuccinMochaColors
+
+        self._terminal = TerminalEmulatorWidget(color_scheme=color_scheme)
         self._terminal.shell_exited.connect(self._on_shell_exited)
         layout.addWidget(self._terminal)
 

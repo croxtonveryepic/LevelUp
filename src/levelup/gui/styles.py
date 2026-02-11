@@ -60,6 +60,13 @@ QPushButton#rejectBtn {
 QPushButton#rejectBtn:hover {
     background-color: #C0392B;
 }
+QPushButton#instructBtn {
+    background-color: #89B4FA;
+    color: #1E1E2E;
+}
+QPushButton#instructBtn:hover {
+    background-color: #74A8F7;
+}
 QTextEdit, QPlainTextEdit {
     background-color: #181825;
     color: #CDD6F4;
@@ -69,6 +76,56 @@ QTextEdit, QPlainTextEdit {
 }
 QLabel {
     color: #CDD6F4;
+}
+QCheckBox {
+    color: #CDD6F4;
+    spacing: 6px;
+}
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #585B70;
+    border-radius: 3px;
+    background-color: #181825;
+}
+QCheckBox::indicator:checked {
+    background-color: #89B4FA;
+    border-color: #89B4FA;
+}
+QCheckBox::indicator:hover {
+    border-color: #89B4FA;
+}
+QScrollBar:vertical {
+    background: #181825;
+    width: 10px;
+    border: none;
+}
+QScrollBar::handle:vertical {
+    background: #45475A;
+    min-height: 20px;
+    border-radius: 5px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #585B70;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+QScrollBar:horizontal {
+    background: #181825;
+    height: 10px;
+    border: none;
+}
+QScrollBar::handle:horizontal {
+    background: #45475A;
+    min-width: 20px;
+    border-radius: 5px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: #585B70;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
 }
 QStatusBar {
     background-color: #181825;
@@ -334,6 +391,13 @@ QPushButton#rejectBtn {
 QPushButton#rejectBtn:hover {
     background-color: #C0392B;
 }
+QPushButton#instructBtn {
+    background-color: #5E81AC;
+    color: #FFFFFF;
+}
+QPushButton#instructBtn:hover {
+    background-color: #4C6E96;
+}
 QTextEdit, QPlainTextEdit {
     background-color: #FFFFFF;
     color: #2E3440;
@@ -343,6 +407,56 @@ QTextEdit, QPlainTextEdit {
 }
 QLabel {
     color: #2E3440;
+}
+QCheckBox {
+    color: #2E3440;
+    spacing: 6px;
+}
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #D8DEE9;
+    border-radius: 3px;
+    background-color: #FFFFFF;
+}
+QCheckBox::indicator:checked {
+    background-color: #5E81AC;
+    border-color: #5E81AC;
+}
+QCheckBox::indicator:hover {
+    border-color: #5E81AC;
+}
+QScrollBar:vertical {
+    background: #F5F5F5;
+    width: 10px;
+    border: none;
+}
+QScrollBar::handle:vertical {
+    background: #C0C8D8;
+    min-height: 20px;
+    border-radius: 5px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #A0A8B8;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+QScrollBar:horizontal {
+    background: #F5F5F5;
+    height: 10px;
+    border: none;
+}
+QScrollBar::handle:horizontal {
+    background: #C0C8D8;
+    min-width: 20px;
+    border-radius: 5px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: #A0A8B8;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
 }
 QStatusBar {
     background-color: #ECEFF4;
@@ -375,7 +489,7 @@ QListWidget::item {
     border-bottom: 1px solid #E5E9F0;
 }
 QListWidget::item:selected {
-    background-color: #88C0D0;
+    background-color: #D8E8F0;
     color: #2E3440;
 }
 QListWidget::item:hover {

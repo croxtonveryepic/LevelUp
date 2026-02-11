@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 from levelup.core.tickets import Ticket
 from levelup.gui.resources import TICKET_STATUS_COLORS, TICKET_STATUS_ICONS, get_ticket_status_color
 from levelup.gui.run_terminal import RunTerminalWidget
+from levelup.gui.terminal_emulator import CatppuccinMochaColors, LightTerminalColors
 
 
 class TicketDetailWidget(QWidget):
@@ -172,7 +173,9 @@ class TicketDetailWidget(QWidget):
         """Return an existing terminal for *ticket_number*, or create one."""
         if ticket_number in self._terminals:
             return self._terminals[ticket_number]
-        terminal = RunTerminalWidget()
+        # Pass current theme to RunTerminalWidget constructor
+        current_theme = getattr(self, "_current_theme", "dark")
+        terminal = RunTerminalWidget(theme=current_theme)
         terminal.run_started.connect(self._on_run_started)
         terminal.run_finished.connect(self._on_run_finished)
         if self._project_path and self._db_path:
@@ -250,6 +253,11 @@ class TicketDetailWidget(QWidget):
             self._status_label.setStyleSheet(
                 f"font-size: 13px; margin-top: 4px; color: {color};"
             )
+
+        # Switch terminal color schemes
+        scheme = LightTerminalColors if theme == "light" else CatppuccinMochaColors
+        for terminal in self._terminals.values():
+            terminal._terminal.set_color_scheme(scheme)
 
     def set_create_mode(self) -> None:
         """Switch to create-new-ticket mode: clear fields and disable Run."""

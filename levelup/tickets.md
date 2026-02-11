@@ -87,7 +87,7 @@ Resume or forget it first.
 
 After a ticket is completed, the name of the newly-created branch should be recorded beneath the ticket.
 
-## Create command to change branch naming convention
+## [in progress] Create command to change branch naming convention
 
 We already have a function to prompt a user for a branch naming convention. Let's add a command that lets them do this ahead of time, or to run it later to change the naming convention.
 
@@ -108,3 +108,19 @@ Review branch from within levelup gui
 
 ## Merge ticket from within UI
 ...then mark ticket as archived (put it in a different file) so it doesn't show on the sidebar
+
+## [done] Bug: Tickets hard to read in light mode
+<!--metadata
+branch_name: levelup/task-title-in-kebab-case
+-->
+The title for tickets on the sidebar, when in the un-run state, is hard to read in light mode (gray on white background)
+
+## [done] Bug: Integrated terminal always dark
+<!--metadata
+model: sonnet
+branch_name: levelup/task-title-in-kebab-case
+-->
+Integrated terminal always has a light theme, even when the application theme is light.
+
+## [in progress] Ticket form has fields that should be run options
+Tickets have options for auto-approve checkpoints, model choice, effort level, and whether to use planning. Really, these options are better suited to be associated with a run. Move the options down (to the left of the run button) and wire them up to be submitted when run is clicked. Lock these options while a run exists for the ticket.

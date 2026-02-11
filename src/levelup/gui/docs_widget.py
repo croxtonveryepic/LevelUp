@@ -72,11 +72,11 @@ class DocsWidget(QWidget):
 
     back_clicked = pyqtSignal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, theme: str = "dark", parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._project_path: Path | None = None
         self._files: list[Path] = []
-        self._theme = "dark"
+        self._theme = theme
 
         self._build_ui()
 

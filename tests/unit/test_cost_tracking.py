@@ -689,6 +689,76 @@ class TestStateManagerCostPersistence:
 
 
 # ------------------------------------------------------------------ #
+# 9b. StateManager persists token counts from step_usage
+# ------------------------------------------------------------------ #
+
+
+class TestStateManagerTokenPersistence:
+    """StateManager should persist input_tokens and output_tokens from step_usage."""
+
+    def test_update_run_persists_tokens_from_step_usage(self, tmp_path: Path):
+        db_path = tmp_path / "test.db"
+        mgr = StateManager(db_path=db_path)
+
+        ctx = PipelineContext(task=TaskInput(title="token test"))
+        mgr.register_run(ctx)
+
+        # Add step usage with token counts
+        ctx.step_usage["requirements"] = StepUsage(
+            input_tokens=100, output_tokens=50, cost_usd=0.01
+        )
+        ctx.step_usage["planning"] = StepUsage(
+            input_tokens=200, output_tokens=75, cost_usd=0.02
+        )
+        ctx.total_cost_usd = 0.03
+        ctx.status = PipelineStatus.RUNNING
+        mgr.update_run(ctx)
+
+        record = mgr.get_run(ctx.run_id)
+        assert record is not None
+        assert record.input_tokens == 300  # 100 + 200
+        assert record.output_tokens == 125  # 50 + 75
+
+    def test_tokens_default_to_zero(self, tmp_path: Path):
+        db_path = tmp_path / "test_zero.db"
+        mgr = StateManager(db_path=db_path)
+
+        ctx = PipelineContext(task=TaskInput(title="no tokens"))
+        mgr.register_run(ctx)
+
+        record = mgr.get_run(ctx.run_id)
+        assert record is not None
+        assert record.input_tokens == 0
+        assert record.output_tokens == 0
+
+    def test_tokens_updated_as_steps_accumulate(self, tmp_path: Path):
+        db_path = tmp_path / "test_accumulate.db"
+        mgr = StateManager(db_path=db_path)
+
+        ctx = PipelineContext(task=TaskInput(title="accumulate"))
+        mgr.register_run(ctx)
+
+        # First update: requirements step
+        ctx.step_usage["requirements"] = StepUsage(input_tokens=100, output_tokens=50)
+        ctx.status = PipelineStatus.RUNNING
+        mgr.update_run(ctx)
+
+        record = mgr.get_run(ctx.run_id)
+        assert record is not None
+        assert record.input_tokens == 100
+        assert record.output_tokens == 50
+
+        # Second update: planning step added
+        ctx.step_usage["planning"] = StepUsage(input_tokens=200, output_tokens=75)
+        mgr.update_run(ctx)
+
+        record = mgr.get_run(ctx.run_id)
+        assert record is not None
+        assert record.input_tokens == 300  # 100 + 200
+        assert record.output_tokens == 125  # 50 + 75
+
+
+# ------------------------------------------------------------------ #
 # 10. Journal includes cost in step and outcome logs
 # ------------------------------------------------------------------ #
 

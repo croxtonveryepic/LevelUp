@@ -35,7 +35,7 @@ from levelup.state.manager import StateManager
 from levelup.state.models import RunRecord
 
 REFRESH_INTERVAL_MS = 2000
-COLUMNS = ["Run ID", "Task", "Project", "Status", "Step", "Started"]
+COLUMNS = ["Run ID", "Task", "Project", "Status", "Tokens", "Step", "Started"]
 
 
 class MainWindow(QMainWindow):
@@ -204,8 +204,16 @@ class MainWindow(QMainWindow):
             status_item.setForeground(QColor(color))
             self._table.setItem(row, 3, status_item)
 
-            self._table.setItem(row, 4, QTableWidgetItem(run.current_step or ""))
-            self._table.setItem(row, 5, QTableWidgetItem(run.started_at[:19]))
+            # Tokens cell - format as "total (in / out)" or "N/A" if no tokens
+            total_tokens = run.input_tokens + run.output_tokens
+            if total_tokens > 0:
+                tokens_text = f"{total_tokens:,} ({run.input_tokens:,} / {run.output_tokens:,})"
+            else:
+                tokens_text = "N/A"
+            self._table.setItem(row, 4, QTableWidgetItem(tokens_text))
+
+            self._table.setItem(row, 5, QTableWidgetItem(run.current_step or ""))
+            self._table.setItem(row, 6, QTableWidgetItem(run.started_at[:19]))
 
     def _update_status_bar(self) -> None:
         active = sum(1 for r in self._runs if r.status in ("running", "pending"))
@@ -447,6 +455,13 @@ class MainWindow(QMainWindow):
 
     def _view_details(self, run: RunRecord) -> None:
         """Show run details in a message box."""
+        # Format token information
+        total_tokens = run.input_tokens + run.output_tokens
+        if total_tokens > 0:
+            tokens_info = f"{total_tokens:,} ({run.input_tokens:,} in / {run.output_tokens:,} out)"
+        else:
+            tokens_info = "N/A"
+
         msg = (
             f"Run ID: {run.run_id}\n"
             f"Task: {run.task_title}\n"
@@ -457,6 +472,8 @@ class MainWindow(QMainWindow):
             f"Language: {run.language or 'N/A'}\n"
             f"Framework: {run.framework or 'N/A'}\n"
             f"Test Runner: {run.test_runner or 'N/A'}\n"
+            f"Tokens: {tokens_info}\n"
+            f"Cost: ${run.total_cost_usd:.4f}\n"
             f"Error: {run.error_message or 'None'}\n"
             f"Started: {run.started_at}\n"
             f"Updated: {run.updated_at}\n"

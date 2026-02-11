@@ -102,13 +102,18 @@ class StateManager:
 
         assert isinstance(ctx, PipelineContext)
         context_json = ctx.model_dump_json()
+
+        # Calculate total tokens from step_usage
+        total_input_tokens = sum(usage.input_tokens for usage in ctx.step_usage.values())
+        total_output_tokens = sum(usage.output_tokens for usage in ctx.step_usage.values())
+
         conn = self._conn()
         try:
             conn.execute(
                 """UPDATE runs SET
                        status = ?, current_step = ?, language = ?, framework = ?,
                        test_runner = ?, error_message = ?, context_json = ?,
-                       total_cost_usd = ?, updated_at = ?
+                       total_cost_usd = ?, input_tokens = ?, output_tokens = ?, updated_at = ?
                    WHERE run_id = ?""",
                 (
                     ctx.status.value,
@@ -119,6 +124,8 @@ class StateManager:
                     ctx.error_message,
                     context_json,
                     ctx.total_cost_usd,
+                    total_input_tokens,
+                    total_output_tokens,
                     _now_iso(),
                     ctx.run_id,
                 ),

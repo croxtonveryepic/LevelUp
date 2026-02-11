@@ -176,7 +176,7 @@ class TestSchemaVersioning:
 
 class TestMigrationV4:
     def test_current_schema_version_is_4(self):
-        assert CURRENT_SCHEMA_VERSION == 4
+        assert CURRENT_SCHEMA_VERSION == 5
 
     def test_migration_adds_ticket_number_column(self, tmp_path):
         db_path = tmp_path / "test.db"
@@ -199,7 +199,7 @@ class TestMigrationV4:
         assert "idx_runs_project_ticket" in index_names
 
     def test_upgrade_from_v3_to_v4(self, tmp_path):
-        """Simulate a v3 DB and verify migration to v4."""
+        """Simulate a v3 DB and verify migration to v5."""
         db_path = tmp_path / "test.db"
         # Create a DB at v3 by initializing with old schema
         from levelup.state.db import SCHEMA_SQL, MIGRATIONS
@@ -217,13 +217,15 @@ class TestMigrationV4:
         assert version == 3
         conn.close()
 
-        # Now run init_db which should migrate to v4
+        # Now run init_db which should migrate to v5
         init_db(db_path)
 
         conn = get_connection(db_path)
         version = _get_schema_version(conn)
-        assert version == 4
+        assert version == 5
         info = conn.execute("PRAGMA table_info(runs)").fetchall()
         col_names = [row["name"] for row in info]
         conn.close()
         assert "ticket_number" in col_names
+        assert "input_tokens" in col_names
+        assert "output_tokens" in col_names

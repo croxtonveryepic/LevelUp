@@ -290,8 +290,10 @@ class Orchestrator:
                     branch_name = self._build_branch_name(convention, ctx)
                     self._console.print(
                         f"\n[bold]Branch '{branch_name}' is ready.[/bold]\n"
-                        f"  git checkout {branch_name}\n"
-                        f"  git merge {branch_name}"
+                        f"To push to remote:\n"
+                        f"  git push origin {branch_name}\n"
+                        f"Or to merge into main:\n"
+                        f"  git checkout main && git merge {branch_name}"
                     )
 
         # Cleanup worktree (branch persists in main repo) — but not for paused runs
@@ -395,6 +397,17 @@ class Orchestrator:
             if ctx.status == PipelineStatus.COMPLETED:
                 self._git_journal_commit(working_path, ctx, journal)
                 ctx.current_step = None
+                # Print branch info for the user
+                if not self._quiet and ctx.branch_naming:
+                    convention = ctx.branch_naming or "levelup/{run_id}"
+                    branch_name = self._build_branch_name(convention, ctx)
+                    self._console.print(
+                        f"\n[bold]Branch '{branch_name}' is ready.[/bold]\n"
+                        f"To push to remote:\n"
+                        f"  git push origin {branch_name}\n"
+                        f"Or to merge into main:\n"
+                        f"  git checkout main && git merge {branch_name}"
+                    )
 
         # Cleanup worktree (branch persists in main repo) — but not for paused runs
         if ctx.status != PipelineStatus.PAUSED:
@@ -414,6 +427,9 @@ class Orchestrator:
         for step in steps:
             # Check for pause request before each step
             if self._check_pause_requested(ctx):
+                # Ensure status is set to PAUSED if not already
+                if ctx.status != PipelineStatus.PAUSED:
+                    ctx.status = PipelineStatus.PAUSED
                 break
 
             ctx.current_step = step.name

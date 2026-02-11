@@ -209,6 +209,54 @@
     - One active run per ticket enforced via `StateManager.has_active_run_for_ticket()`
 - **State DB**: `runs.ticket_number` column links runs to tickets (added in DB v4)
 
+### Git Worktree Workflow
+
+- LevelUp uses git worktrees for concurrent pipeline execution
+- Each pipeline run creates:
+    - A new branch (e.g., `levelup/{run_id}`) in the main repository
+    - A worktree directory at `~/.levelup/worktrees/{run_id}`
+- On pipeline completion:
+    - The worktree directory is removed (`_cleanup_worktree()` at line 826-836)
+    - The branch PERSISTS in the main repository for user to review/merge
+    - User is responsible for manually merging or pushing the branch
+- Orchestrator prints completion message (lines 262-269) showing:
+    - Branch name
+    - Suggested git commands for user to manually checkout/merge
+    - **ISSUE**: Current message shows incorrect workflow: `git checkout {branch}` then `git merge {branch}` which would try to merge a branch into itself
+    - **CORRECT**: Should guide user to either (1) push to remote, OR (2) switch to main branch first before merging
+- Worktree cleanup happens for all statuses EXCEPT `PAUSED` (line 272-273)
+- The `_cleanup_worktree()` method:
+    - Only removes the worktree directory using `git worktree remove --force`
+    - Does NOT delete branches (branches persist for user review)
+    - Uses `--force` flag to handle Windows permission errors gracefully
+    - Is called from both `run()` and `resume()` methods on completion
+
+### Pipeline Orchestrator Structure
+
+- `Orchestrator.run()` method (lines 195-276):
+    - Main entry point for pipeline execution
+    - Creates worktree and branch if `create_git_branch` is enabled
+    - Executes all pipeline steps
+    - On successful completion (status == COMPLETED):
+        - Commits the journal
+        - Prints branch completion message (lines 265-269) - **THIS IS THE PROBLEM**
+        - Cleans up worktree (but preserves branch)
+- `Orchestrator.resume()` method (lines 278-378):
+    - Resumes a previously failed/aborted/paused run
+    - Can recreate worktree from existing branch
+    - On successful completion:
+        - Commits the journal
+        - Does NOT print branch completion message (intentional - branch already exists)
+        - Cleans up worktree (but preserves branch)
+- Both methods share `_cleanup_worktree()` for cleanup
+
+### Rich Console Output
+
+- Uses `rich.console.Console` for terminal output formatting
+- Console instance stored in `self._console` in Orchestrator
+- Supports rich text formatting: `[bold]`, `[yellow]`, etc.
+- Multi-line strings printed with `self._console.print()`
+
 ### GUI Architecture
 
 - **Framework**: PyQt6
@@ -338,6 +386,14 @@
     - Mock `_run_detection`, `_run_agent_with_retry`, `shutil.which`, `subprocess.run`
     - Use `side_effect` to control agent behavior (e.g., lambda name, ctx: ctx)
     - Verify call counts to check pipeline execution
+- Tests for git worktree behavior in `tests/unit/test_concurrent_worktrees.py`:
+    - Verify branches persist after cleanup (lines 226-230)
+    - Test concurrent worktree creation and cleanup
+    - Verify worktree directories are removed but branches remain
+- Tests for branch naming in `tests/unit/test_branch_naming_orchestrator.py`:
+    - Test branch creation with custom conventions
+    - Test placeholder substitution
+    - Test detection loading/writing branch naming
 
 ### Key Dependencies
 
@@ -345,6 +401,8 @@
 - Pydantic for configuration
 - pyte for terminal emulation
 - pywinpty (Windows) / ptyprocess (Unix) for PTY support
+- GitPython (`git` module) for git operations
+- rich for terminal output formatting
 - typer for CLI framework
 - rich for terminal output formatting
 - GitPython for git operations

@@ -27,3 +27,16 @@ See `levelup/project_context.md` for project details.
 - 4 assumption(s)
 - 5 out-of-scope item(s)
 - **Usage:** 99.5s
+### Checkpoint: requirements
+
+- **Decision:** approve
+## Step: planning  (01:50:00)
+
+**Approach:** Fix the incorrect git merge instructions in the pipeline completion message by updating the console output in the orchestrator's run() method. The current message incorrectly suggests 'git checkout {branch}' followed by 'git merge {branch}' which would attempt to merge a branch into itself. The corrected message should explain that the branch is ready and provide two clear options: (1) push to remote, or (2) merge into main from the current branch. No code changes needed for worktree cleanup behavior as it already correctly preserves branches.
+- 3 implementation step(s)
+- **Affected files:** src/levelup/core/orchestrator.py, tests/unit/test_completion_message.py
+- **Risks:**
+  - Users who have memorized or scripted the old (incorrect) instructions may be confused by the change, though the new instructions are actually correct
+  - The multi-line console output formatting with rich markup needs to be tested to ensure proper display
+  - Need to ensure the message is clear for both worktree-based branches and direct branch scenarios (when create_git_branch is true/false)
+- **Usage:** 115.3s

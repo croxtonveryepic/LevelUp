@@ -37,7 +37,38 @@
 - Orchestrator prints completion message (lines 262-269) showing:
   - Branch name
   - Suggested git commands for user to manually checkout/merge
+  - **ISSUE**: Current message shows incorrect workflow: `git checkout {branch}` then `git merge {branch}` which would try to merge a branch into itself
+  - **CORRECT**: Should guide user to either (1) push to remote, OR (2) switch to main branch first before merging
 - Worktree cleanup happens for all statuses EXCEPT `PAUSED` (line 272-273)
+- The `_cleanup_worktree()` method:
+  - Only removes the worktree directory using `git worktree remove --force`
+  - Does NOT delete branches (branches persist for user review)
+  - Uses `--force` flag to handle Windows permission errors gracefully
+  - Is called from both `run()` and `resume()` methods on completion
+
+### Pipeline Orchestrator Structure
+- `Orchestrator.run()` method (lines 195-276):
+  - Main entry point for pipeline execution
+  - Creates worktree and branch if `create_git_branch` is enabled
+  - Executes all pipeline steps
+  - On successful completion (status == COMPLETED):
+    - Commits the journal
+    - Prints branch completion message (lines 265-269) - **THIS IS THE PROBLEM**
+    - Cleans up worktree (but preserves branch)
+- `Orchestrator.resume()` method (lines 278-378):
+  - Resumes a previously failed/aborted/paused run
+  - Can recreate worktree from existing branch
+  - On successful completion:
+    - Commits the journal
+    - Does NOT print branch completion message (intentional - branch already exists)
+    - Cleans up worktree (but preserves branch)
+- Both methods share `_cleanup_worktree()` for cleanup
+
+### Rich Console Output
+- Uses `rich.console.Console` for terminal output formatting
+- Console instance stored in `self._console` in Orchestrator
+- Supports rich text formatting: `[bold]`, `[yellow]`, etc.
+- Multi-line strings printed with `self._console.print()`
 
 ### GUI Architecture
 - **Framework**: PyQt6
@@ -86,10 +117,20 @@
 - GUI tests exist for non-Qt components (e.g., `test_gui_tickets.py` tests color/icon resources)
 - Tests use pytest with standard assertions
 - Path normalization needed on Windows: `.replace("\\", "/")` in assertions
+- Tests for git worktree behavior in `tests/unit/test_concurrent_worktrees.py`:
+  - Verify branches persist after cleanup (lines 226-230)
+  - Test concurrent worktree creation and cleanup
+  - Verify worktree directories are removed but branches remain
+- Tests for branch naming in `tests/unit/test_branch_naming_orchestrator.py`:
+  - Test branch creation with custom conventions
+  - Test placeholder substitution
+  - Test detection loading/writing branch naming
 
 ### Key Dependencies
 - PyQt6 for GUI (installed via `gui` or `dev` optional dependencies)
 - Pydantic for configuration
 - pyte for terminal emulation
 - pywinpty (Windows) / ptyprocess (Unix) for PTY support
+- GitPython (`git` module) for git operations
+- rich for terminal output formatting
 - Would need to add: `darkdetect` for system theme detection

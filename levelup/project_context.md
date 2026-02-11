@@ -280,7 +280,7 @@
 - **Key widgets**:
     - `checkpoint_dialog.py` - Modal dialog for approving/revising/rejecting pipeline steps
     - `terminal_emulator.py` - Full VT100 terminal emulator with pyte + pywinpty/ptyprocess
-    - `ticket_detail.py` - Ticket editing and run terminal view
+    - `ticket_detail.py` - Ticket editing and run terminal view (manages per-ticket terminal instances)
     - `ticket_sidebar.py` - Ticket list navigation (lines 45-72 implement set_tickets() method)
     - `run_terminal.py` - Terminal wrapper for running levelup commands
 - **Theming**:
@@ -289,53 +289,32 @@
     - Some widgets use inline `setStyleSheet()` calls for specific styling
 - **Resources**: `resources.py` contains status colors, labels, and icons
 
-### Ticket-Run Relationship
+### Terminal Initialization Flow (Current Behavior - Being Fixed)
 
-- **Tickets**: Defined in `src/levelup/core/tickets.py` with statuses: `pending`, `in progress`, `done`, `merged`
-- **Runs**: Defined in `src/levelup/state/models.py` with statuses: `pending`, `running`, `waiting_for_input`, `paused`, `completed`, `failed`, `aborted`
-- **Link**: `RunRecord.ticket_number` field links runs to tickets (one-to-many relationship)
-- **Sidebar Display**: `TicketSidebarWidget` currently colors tickets based on ticket status only, not run status
-    - Line 62 in `ticket_sidebar.py`: calls `get_ticket_status_color(ticket.status.value, theme=self._current_theme)`
-    - Color is applied to QListWidgetItem via `setForeground(QColor(color))` on line 63
-- **Main Window Refresh**: `MainWindow._refresh()` loads both runs (`_runs`) and tickets (`_cached_tickets`) but doesn't pass run status to sidebar
-    - Line 174 in `main_window.py`: loads runs via `self._state_manager.list_runs()`
-    - Line 189-190: loads tickets and calls `self._sidebar.set_tickets(tickets)`
-    - No run status information is passed to sidebar
+- **When a ticket is selected**: `TicketDetailWidget.set_ticket()` is called (line 242 in ticket_detail.py)
+- **Terminal creation**: `_show_terminal()` → `_get_or_create_terminal()` creates a `RunTerminalWidget` for that ticket
+- **Widget visibility**: When the terminal widget becomes visible, PyQt6 fires the `showEvent()`
+- **Shell initialization (CURRENT PROBLEM)**: `RunTerminalWidget.showEvent()` (line 198) calls `_ensure_shell()` (line 200)
+- **PTY starts immediately (UNWANTED)**: `_ensure_shell()` calls `self._terminal.start_shell()` which spawns a PTY/shell process
+- **Problem**: The shell starts as soon as the ticket is selected/viewed, NOT when the Run button is clicked
 
-### Color Scheme (Catppuccin Mocha)
+### Terminal Initialization Flow (Target Behavior - Delayed Init)
 
-- **Dark theme colors in `resources.py`**:
-    - Ticket "in progress": `#E6A817` (yellow-orange)
-    - Run "running": `#4A90D9` (blue)
-    - Run "waiting_for_input": `#E6A817` (yellow-orange, same as ticket in progress)
-- **Light theme colors**:
-    - Ticket "in progress": `#F39C12` (orange)
-    - Run "running": `#3498DB` (blue)
-    - Run "waiting_for_input": `#F39C12` (orange)
+- **Shell should NOT start** when `RunTerminalWidget.showEvent()` is triggered by ticket selection
+- **Shell SHOULD start** when user clicks the "Run" button (inside `start_run()` method, line 160)
+- **Shell SHOULD start** when user clicks the "Resume" button (inside `_on_resume_clicked()` method, line 311)
+- **Implementation approach**: Remove `_ensure_shell()` call from `showEvent()`, keep it in `start_run()` and `_on_resume_clicked()`
+- **Benefit**: Avoids spawning unnecessary PTY processes for tickets that are just being viewed, not run
 
-### Resources Module Color Functions
+### RunTerminalWidget Lifecycle
 
-- `get_ticket_status_color(status, theme="dark")` - Returns theme-aware color for ticket status (lines 97-110)
-    - Accepts ticket status string ("pending", "in progress", "done", "merged")
-    - Returns hex color from `TICKET_STATUS_COLORS` (dark) or `_LIGHT_TICKET_STATUS_COLORS` (light)
-    - Currently has no awareness of run status
-- `get_status_color(status, theme="dark")` - Returns theme-aware color for run status (lines 50-63)
-    - Accepts run status string ("running", "waiting_for_input", etc.)
-    - Returns hex color from `STATUS_COLORS` (dark) or `_LIGHT_STATUS_COLORS` (light)
-
-### State Manager Query Methods
-
-- `list_runs(status_filter=None, limit=50)` - Returns list of RunRecord objects (lines 141-159)
-- `get_run_for_ticket(project_path, ticket_number)` - Returns most recent run for a ticket (lines 171-187)
-- `has_active_run_for_ticket(project_path, ticket_number)` - Returns non-completed run for ticket (lines 189+)
-- **Table structure**:
-    - `_update_table()` (lines 193-208) populates table from `self._runs` list
-    - Column data extracted from `RunRecord` fields
-    - Status column uses color from `STATUS_COLORS` dict
-- **Detail view**:
-    - `_view_details()` (lines 448-465) shows message box with run info
-    - Currently displays: run_id, task_title, task_description, project_path, status, current_step, language, framework, test_runner, error_message, started_at, updated_at, pid
-    - Does NOT display: total_cost_usd, token counts
+- **Widget creation**: Created per-ticket by `TicketDetailWidget._get_or_create_terminal()` (line 135)
+- **Reusability**: Same terminal widget is reused across multiple runs for the same ticket
+- **State tracking**:
+    - `_shell_started` flag (line 70) tracks whether PTY has been initialized
+    - `_command_running` flag (line 69) tracks whether a command is actively executing
+- **Shell initialization**: `_ensure_shell()` (line 202) is idempotent - only starts shell once
+- **Shell cleanup**: `close_shell()` called when terminal widget is deleted (line 164 in ticket_detail.py)
 
 ### Configuration
 
@@ -420,6 +399,8 @@
 - Tests use pytest with standard assertions
 - Mocking patterns: Use `unittest.mock.MagicMock` and `@patch` decorator for agent/LLM mocking
 - Path normalization needed on Windows: `.replace("\\", "/")` in assertions
+- PyQt6 tests use `@pytest.mark.skipif(not _can_import_pyqt6())` decorator to skip when PyQt6 unavailable
+- GUI widget tests mock the `PtyBackend` to avoid spawning real PTY processes
 - Existing test patterns:
     - `test_gui_tickets.py` - Tests ticket status colors and icons without Qt dependencies
     - `test_theme_aware_resources.py` - Tests theme-aware color functions for both light and dark themes

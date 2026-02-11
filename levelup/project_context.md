@@ -25,6 +25,24 @@
   - `tools/` - Agent tools (file I/O, shell, test runner)
 - `tests/` - Test suite with unit and integration tests
 
+### Usage Tracking Architecture
+- **Backend tracking**: Both `ClaudeCodeBackend` and `AnthropicSDKBackend` track usage via `AgentResult`
+  - `AgentResult` dataclass (`agents/backend.py`) contains: `input_tokens`, `output_tokens`, `cost_usd`, `duration_ms`, `num_turns`
+  - `ToolLoopResult` dataclass (`agents/llm_client.py`) tracks tokens accumulated across LLM API calls
+- **Context storage**: `PipelineContext` (`core/context.py`) stores usage data:
+  - `step_usage: dict[str, StepUsage]` - per-step metrics
+  - `total_cost_usd: float` - cumulative cost across all steps
+  - `StepUsage` model tracks: `cost_usd`, `input_tokens`, `output_tokens`, `duration_ms`, `num_turns`
+- **Orchestrator**: `_capture_usage()` method (`core/orchestrator.py`) captures agent results into context
+- **Journal**: `RunJournal` (`core/journal.py`) logs usage per step and total cost in markdown
+- **CLI display**: `print_pipeline_summary()` (`cli/display.py`) shows:
+  - Total tokens summary (lines 260-264)
+  - Per-step cost breakdown table with tokens column (lines 268-281)
+- **Database**: `runs` table has `total_cost_usd` column but NO token columns
+- **GUI**: Main window (`gui/main_window.py`) shows run table with columns: Run ID, Task, Project, Status, Step, Started
+  - Does NOT display cost or token information in the table or detail views
+  - `RunRecord` model (`state/models.py`) only has `total_cost_usd` field, no token fields
+
 ### GUI Architecture
 - **Framework**: PyQt6
 - **Entry point**: `src/levelup/gui/app.py` - launches QApplication and MainWindow
@@ -72,6 +90,7 @@
 - GUI tests exist for non-Qt components (e.g., `test_gui_tickets.py` tests color/icon resources)
 - Tests use pytest with standard assertions
 - Path normalization needed on Windows: `.replace("\\", "/")` in assertions
+- Comprehensive usage tracking tests in `tests/unit/test_cost_tracking.py`
 
 ### Key Dependencies
 - PyQt6 for GUI (installed via `gui` or `dev` optional dependencies)

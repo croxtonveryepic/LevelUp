@@ -11,3 +11,10 @@ The intended use of the resume button is to resume the run pipeline on tickets t
 ## Step: detect  (01:54:26)
 
 See `levelup/project_context.md` for project details.
+## Step: requirements  (01:55:46)
+
+**Summary:** Fix resume button state logic and ensure run button is disabled when a resumable run exists
+- 4 requirement(s)
+- 6 assumption(s)
+- 7 out-of-scope item(s)
+- **Usage:** 78.0s

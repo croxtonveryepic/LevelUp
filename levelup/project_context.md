@@ -42,6 +42,17 @@
   - `run_terminal.py` - Terminal wrapper for running levelup commands
 - **Resources**: `resources.py` contains status colors, labels, and icons
 
+### Run Terminal Button States
+- **Run button**: Starts a new pipeline run for the current ticket
+- **Resume button**: Resumes a paused/failed/aborted run
+- **Pause button**: Requests pipeline pause (enabled only while running)
+- **Terminate button**: Kills the running pipeline (enabled only while running)
+- **Forget button**: Removes run record from database (enabled when run exists and is not running)
+- **Button state management**: Handled by `_set_running_state()` and `_update_button_states()` methods
+- **Resumable statuses**: `("failed", "aborted", "paused")` defined in `RESUMABLE_STATUSES` constant
+- **State detection**: `_is_resumable()` method checks if last run status is in resumable statuses
+- **Run tracking**: `_last_run_id` stores the run ID, populated by `_poll_for_run_id()` and `_wire_existing_run()`
+
 ### Configuration
 - Uses Pydantic settings with environment variable support
 - Settings classes in `src/levelup/config/settings.py`:

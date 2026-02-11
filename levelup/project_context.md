@@ -30,15 +30,19 @@
 - **Entry point**: `src/levelup/gui/app.py` - launches QApplication and MainWindow
 - **Main window**: `src/levelup/gui/main_window.py` - dashboard with run table and ticket sidebar
 - **Theming**:
-  - Current theme: Catppuccin Mocha (dark theme) defined in `src/levelup/gui/styles.py`
-  - Applied globally via `app.setStyleSheet(DARK_THEME)` in `app.py` (line 25)
+  - Theme manager: `src/levelup/gui/theme_manager.py` - handles theme preferences and system detection
+  - Two themes available: `DARK_THEME` and `LIGHT_THEME` defined in `src/levelup/gui/styles.py`
+  - Theme preferences: "light", "dark", or "system" (default: "system")
+  - System theme detection via `darkdetect` library (already in dependencies)
+  - Applied globally via `app.setStyleSheet()` in `app.py`
   - Terminal emulator has its own color scheme class: `CatppuccinMochaColors` in `terminal_emulator.py`
   - Some widgets use inline `setStyleSheet()` calls for specific styling (e.g., ticket_detail.py, ticket_sidebar.py)
+  - **Theme switcher UI**: Currently a QComboBox dropdown in main_window.py toolbar (lines 82-101) with label "Theme:"
 - **Key widgets**:
   - `checkpoint_dialog.py` - Modal dialog for approving/revising/rejecting pipeline steps
   - `terminal_emulator.py` - Full VT100 terminal emulator with pyte + pywinpty/ptyprocess
   - `ticket_detail.py` - Ticket editing and run terminal view
-  - `ticket_sidebar.py` - Ticket list navigation
+  - `ticket_sidebar.py` - Ticket list navigation with icon button ("+" button for adding tickets)
   - `run_terminal.py` - Terminal wrapper for running levelup commands
 - **Resources**: `resources.py` contains status colors, labels, and icons
 
@@ -48,11 +52,12 @@
   - `LLMSettings` - LLM backend configuration
   - `ProjectSettings` - Project-specific settings
   - `PipelineSettings` - Pipeline behavior settings
+  - `GUISettings` - GUI configuration including theme preference (default: "system")
   - `LevelUpSettings` - Root settings class with nested models
 - Configuration loading in `src/levelup/config/loader.py`:
   - Searches for config files: `levelup.yaml`, `levelup.yml`, `.levelup.yaml`, `.levelup.yml`
   - Layered config: defaults → file → env vars → overrides
-- No GUI/theme configuration currently exists in settings
+- GUI theme preference stored in config under `gui.theme` key
 
 ### Styling Patterns
 - Global stylesheet applied to QApplication in `app.py`
@@ -60,16 +65,20 @@
 - Some widgets have inline `setStyleSheet()` calls for custom colors
 - Status colors for runs and tickets defined in `resources.py`
 - Terminal emulator uses custom color scheme class with QColor objects
+- Icon button pattern: Small square buttons with text symbols (e.g., "+" button in ticket sidebar)
+  - Styled via `#objectName` selectors in styles.py
+  - Example: `#addTicketBtn` - 28x28px square button with centered text
 
 ### System Theme Detection
 - PyQt6 doesn't provide native cross-platform dark mode detection API
-- Recommended approach: use `darkdetect` library (cross-platform, supports Windows/macOS/Linux)
+- Currently using `darkdetect` library (cross-platform, supports Windows/macOS/Linux)
 - darkdetect provides: `theme()` returns "Dark"/"Light", `isDark()`, `isLight()`, and `listener()` for watching changes
 - Alternative: PyQt6's `QStyleHints.colorScheme()` (Qt 6.5+) but less reliable across platforms
 
 ### Testing Patterns
 - Unit tests in `tests/unit/`
 - GUI tests exist for non-Qt components (e.g., `test_gui_tickets.py` tests color/icon resources)
+- Theme-related tests: `test_theme_switcher_ui.py`, `test_theme_settings.py`, `test_theme_manager.py`
 - Tests use pytest with standard assertions
 - Path normalization needed on Windows: `.replace("\\", "/")` in assertions
 
@@ -78,4 +87,4 @@
 - Pydantic for configuration
 - pyte for terminal emulation
 - pywinpty (Windows) / ptyprocess (Unix) for PTY support
-- Would need to add: `darkdetect` for system theme detection
+- darkdetect for system theme detection (already included in optional dependencies)

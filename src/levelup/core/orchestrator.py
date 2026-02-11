@@ -345,10 +345,6 @@ class Orchestrator:
                         f"  git checkout main && git merge {branch_name}"
                     )
 
-        # Cleanup worktree (branch persists in main repo) — but not for paused runs
-        if ctx.status != PipelineStatus.PAUSED:
-            self._cleanup_worktree(project_path, ctx)
-
         self._persist_state(ctx)
         return ctx
 
@@ -457,10 +453,6 @@ class Orchestrator:
                         f"Or to merge into main:\n"
                         f"  git checkout main && git merge {branch_name}"
                     )
-
-        # Cleanup worktree (branch persists in main repo) — but not for paused runs
-        if ctx.status != PipelineStatus.PAUSED:
-            self._cleanup_worktree(project_path, ctx)
 
         self._persist_state(ctx)
         return ctx

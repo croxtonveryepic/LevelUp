@@ -11,3 +11,10 @@ After a ticket is completed, the name of the newly-created branch should be reco
 ## Step: detect  (04:25:14)
 
 See `levelup/project_context.md` for project details.
+## Step: requirements  (04:27:21)
+
+**Summary:** Record the git branch name in ticket metadata after successful pipeline completion
+- 3 requirement(s)
+- 5 assumption(s)
+- 6 out-of-scope item(s)
+- **Usage:** 126.0s

@@ -468,7 +468,7 @@
 - **Line Ending Preservation**: Parser preserves original line endings (CRLF/LF)
 - **Update Pattern**: Read entire file, modify relevant sections, write back atomically
 
-### Ticket Sidebar Filtering (NEW)
+### Ticket Sidebar Filtering
 
 - **Filter State**: Sidebar needs to maintain filter state for merged ticket visibility
 - **Default Behavior**: Merged tickets hidden by default from main sidebar list
@@ -478,3 +478,25 @@
 - **Selection Preservation**: If selected ticket is filtered out, selection should be cleared or moved to nearest visible ticket
 - **Theme Integration**: Filtered tickets should respect theme colors when shown
 - **Run Status Integration**: Filtered tickets should still show correct colors based on run status when visible
+
+### Status Change Flow
+
+- **CLI Status Changes**:
+    - `set_ticket_status()` function in `core/tickets.py` is the primary API
+    - Used by CLI in `cli/app.py` for transitions: pending → in progress (on run start), in progress → done (on completion)
+    - CLI `levelup tickets` command supports manual status changes: `levelup tickets done 5` changes ticket #5 to done
+- **GUI Status Changes**:
+    - Currently no direct status change UI in the GUI
+    - Status changes only through ticket lifecycle (starting/completing runs)
+    - Ticket detail widget displays status as read-only label with icon and color
+    - Status label located at line 79-81 in `ticket_detail.py` (QLabel showing icon + status text)
+- **Status Persistence**:
+    - Status stored as markdown tag in heading: `## [done] Ticket Title`
+    - PENDING status has no tag (bare heading)
+    - Other statuses use bracketed tags: `[in progress]`, `[done]`, `[merged]`
+- **Available Statuses** (`TicketStatus` enum in `core/tickets.py`):
+    - PENDING: Default, no markdown tag
+    - IN_PROGRESS: `[in progress]` tag
+    - DONE: `[done]` tag
+    - MERGED: `[merged]` tag
+    - Note: "declined" is not currently a supported status in the enum

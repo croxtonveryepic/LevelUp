@@ -11,3 +11,10 @@ Create a dropdown in the UI to force-change the status of a ticket. Include an o
 ## Step: detect  (20:37:49)
 
 See `levelup/project_context.md` for project details.
+## Step: requirements  (20:40:39)
+
+**Summary:** Add a status dropdown widget to the ticket detail form that allows manual status changes, including a new 'declined' status that displays green in the sidebar
+- 6 requirement(s)
+- 5 assumption(s)
+- 6 out-of-scope item(s)
+- **Usage:** 169.0s

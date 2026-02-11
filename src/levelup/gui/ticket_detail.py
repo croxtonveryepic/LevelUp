@@ -80,6 +80,7 @@ class TicketDetailWidget(QWidget):
         form_layout.addWidget(self._title_label)
 
         self._title_edit = QLineEdit()
+        self._title_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._title_edit.textChanged.connect(self._mark_dirty)
         form_layout.addWidget(self._title_edit)
 
@@ -107,7 +108,9 @@ class TicketDetailWidget(QWidget):
         form_layout.addWidget(self._desc_label)
 
         self._desc_edit = ImageTextEdit(project_path=project_path, theme=theme)
+        self._desc_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._desc_edit.textChanged.connect(self._mark_dirty)
+        self._desc_edit.save_requested.connect(self._on_save)
         form_layout.addWidget(self._desc_edit)
 
         # Auto-approve checkbox
@@ -140,6 +143,12 @@ class TicketDetailWidget(QWidget):
         btn_layout.addWidget(self._save_btn)
 
         form_layout.addLayout(btn_layout)
+
+        # Set explicit tab order: Title -> Description -> Auto-approve -> Save
+        self.setTabOrder(self._title_edit, self._desc_edit)
+        self.setTabOrder(self._desc_edit, self.auto_approve_checkbox)
+        self.setTabOrder(self.auto_approve_checkbox, self._save_btn)
+
         splitter.addWidget(form_widget)
 
         # -- Bottom: per-ticket terminal stack --
@@ -153,6 +162,16 @@ class TicketDetailWidget(QWidget):
         splitter.setSizes([350, 250])
 
         layout.addWidget(splitter)
+
+    def show(self) -> None:
+        """Override show to ensure widget can receive focus in tests."""
+        super().show()
+        # Activate the window and process events so setFocus() works reliably in tests
+        if self.parent() is None:
+            self.activateWindow()
+            self.raise_()
+            from PyQt6.QtWidgets import QApplication
+            QApplication.processEvents()
 
     # -- Public API ---------------------------------------------------------
 

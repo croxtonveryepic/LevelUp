@@ -6,8 +6,8 @@ import io
 import re
 from pathlib import Path
 
-from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QUrl, Qt
-from PyQt6.QtGui import QImage, QImageReader, QTextCursor, QTextDocument
+from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QUrl, Qt, pyqtSignal
+from PyQt6.QtGui import QImage, QImageReader, QKeyEvent, QTextCursor, QTextDocument
 from PyQt6.QtWidgets import QTextEdit
 
 from levelup.gui.image_asset_manager import (
@@ -19,7 +19,16 @@ from levelup.gui.image_asset_manager import (
 
 
 class ImageTextEdit(QTextEdit):
-    """QTextEdit with image paste and drag-drop support."""
+    """QTextEdit with image paste and drag-drop support.
+
+    Features:
+    - Paste/drop images directly into text
+    - Tab/Shift-Tab trigger focus navigation instead of inserting tab characters
+    - Enter emits save_requested signal instead of inserting newline
+    - Shift-Enter inserts newline (normal behavior)
+    """
+
+    save_requested = pyqtSignal()
 
     def __init__(
         self,
@@ -40,6 +49,37 @@ class ImageTextEdit(QTextEdit):
     def set_ticket_number(self, ticket_number: int) -> None:
         """Update ticket number for image filenames."""
         self.ticket_number = ticket_number
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Override key press handling for keyboard navigation and save shortcuts."""
+        key = event.key()
+        modifiers = event.modifiers()
+
+        # Handle Tab - trigger focus next
+        if key == Qt.Key.Key_Tab and modifiers == Qt.KeyboardModifier.NoModifier:
+            self.focusNextChild()
+            event.accept()
+            return
+
+        # Handle Shift+Tab - trigger focus previous
+        if key == Qt.Key.Key_Tab and modifiers == Qt.KeyboardModifier.ShiftModifier:
+            self.focusPreviousChild()
+            event.accept()
+            return
+
+        # Handle Enter (without modifiers) - emit save signal
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and modifiers == Qt.KeyboardModifier.NoModifier:
+            self.save_requested.emit()
+            event.accept()
+            return
+
+        # Handle Shift+Enter - insert newline (allow default behavior)
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and modifiers == Qt.KeyboardModifier.ShiftModifier:
+            super().keyPressEvent(event)
+            return
+
+        # All other keys: default behavior
+        super().keyPressEvent(event)
 
     def insertFromMimeData(self, source):
         """Override to handle image paste and drop."""

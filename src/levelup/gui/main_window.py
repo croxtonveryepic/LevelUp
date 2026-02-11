@@ -5,10 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtGui import QAction, QColor
+from PyQt6.QtGui import QAction, QColor, QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QDialog,
     QHeaderView,
     QLabel,
     QMainWindow,
@@ -26,9 +27,13 @@ from PyQt6.QtWidgets import (
     QApplication,
 )
 
+from levelup.config.settings import HotkeySettings
+from levelup.config.loader import load_settings, save_settings
 from levelup.gui.checkpoint_dialog import CheckpointDialog
 from levelup.gui.completed_tickets_widget import CompletedTicketsWidget
 from levelup.gui.docs_widget import DocsWidget
+from levelup.gui.hotkey_settings_dialog import HotkeySettingsDialog
+from levelup.gui.keyboard_shortcuts_help import KeyboardShortcutsHelp
 from levelup.gui.resources import STATUS_COLORS, STATUS_LABELS, get_status_color, status_display
 from levelup.gui.ticket_detail import TicketDetailWidget
 from levelup.gui.ticket_sidebar import TicketSidebarWidget
@@ -56,6 +61,17 @@ class MainWindow(QMainWindow):
         self._active_run_pids: set[int] = set()
         self._checkpoint_dialog_open = False
         self._cached_tickets: list = []
+        self._shortcuts: list[QShortcut] = []
+
+        # Load settings including hotkeys
+        self._hotkey_settings = HotkeySettings()
+        if project_path is not None:
+            try:
+                settings = load_settings(project_path=project_path)
+                self._tickets_file = settings.project.tickets_file
+                self._hotkey_settings = settings.gui.hotkeys
+            except Exception:
+                pass
 
         self._current_theme = get_current_theme()
 
@@ -72,9 +88,9 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
+        self._register_hotkeys()
         self._start_refresh_timer()
         self._refresh()
-        self.show()
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -97,7 +113,7 @@ class MainWindow(QMainWindow):
 
         self._docs_btn = QPushButton("\U0001F4C4")
         self._docs_btn.setObjectName("docsBtn")
-        self._docs_btn.setToolTip("Documentation")
+        self._docs_btn.setToolTip(f"Documentation ({self._hotkey_settings.open_documentation})")
         self._docs_btn.clicked.connect(self._on_docs_clicked)
         toolbar_layout.addWidget(self._docs_btn)
 
@@ -109,9 +125,25 @@ class MainWindow(QMainWindow):
 
         toolbar_layout.addStretch()
 
-        refresh_btn = QPushButton("Refresh")
-        refresh_btn.clicked.connect(self._refresh)
-        toolbar_layout.addWidget(refresh_btn)
+        # Help button for keyboard shortcuts
+        help_btn = QPushButton("?")
+        help_btn.setObjectName("helpBtn")
+        help_btn.setToolTip("Keyboard Shortcuts Reference")
+        help_btn.clicked.connect(self._show_keyboard_shortcuts_help)
+        toolbar_layout.addWidget(help_btn)
+
+        # Settings button
+        settings_btn = QPushButton("⚙")
+        settings_btn.setObjectName("settingsBtn")
+        settings_btn.setToolTip("Keyboard Shortcuts Settings")
+        settings_btn.clicked.connect(self._show_hotkey_settings)
+        toolbar_layout.addWidget(settings_btn)
+
+        self._refresh_btn = QPushButton("Refresh")
+        self._refresh_btn.setObjectName("refreshBtn")
+        self._refresh_btn.setToolTip(f"Refresh ({self._hotkey_settings.refresh_dashboard})")
+        self._refresh_btn.clicked.connect(self._refresh)
+        toolbar_layout.addWidget(self._refresh_btn)
 
         cleanup_btn = QPushButton("Clean Up")
         cleanup_btn.setToolTip("Remove completed and failed runs")
@@ -326,9 +358,9 @@ class MainWindow(QMainWindow):
             "dark": "☾"
         }
         tooltips = {
-            "system": "Theme: Match System",
-            "light": "Theme: Light",
-            "dark": "Theme: Dark"
+            "system": f"Theme: Match System ({self._hotkey_settings.toggle_theme})",
+            "light": f"Theme: Light ({self._hotkey_settings.toggle_theme})",
+            "dark": f"Theme: Dark ({self._hotkey_settings.toggle_theme})"
         }
 
         self._theme_switcher.setText(symbols[self._current_theme_preference])
@@ -647,3 +679,149 @@ class MainWindow(QMainWindow):
         """Clean up all PTY shells before closing."""
         self._detail.cleanup_all_terminals()
         super().closeEvent(event)  # type: ignore[arg-type]
+
+    # -- Hotkey methods -----------------------------------------------------
+
+    def _register_hotkeys(self) -> None:
+        """Register all keyboard shortcuts."""
+        # Clear existing shortcuts
+        for shortcut in self._shortcuts:
+            shortcut.deleteLater()
+        self._shortcuts.clear()
+
+        # Next waiting ticket (Ctrl+N)
+        shortcut = QShortcut(QKeySequence(self._hotkey_settings.next_waiting_ticket), self)
+        shortcut.activated.connect(self._on_next_waiting_ticket)
+        self._shortcuts.append(shortcut)
+
+        # Back to runs (Escape)
+        shortcut = QShortcut(QKeySequence(self._hotkey_settings.back_to_runs), self)
+        shortcut.activated.connect(self._on_back_to_runs)
+        self._shortcuts.append(shortcut)
+
+        # Toggle theme (Ctrl+T)
+        shortcut = QShortcut(QKeySequence(self._hotkey_settings.toggle_theme), self)
+        shortcut.activated.connect(self._cycle_theme)
+        self._shortcuts.append(shortcut)
+
+        # Refresh dashboard (F5)
+        shortcut = QShortcut(QKeySequence(self._hotkey_settings.refresh_dashboard), self)
+        shortcut.activated.connect(self._refresh)
+        self._shortcuts.append(shortcut)
+
+        # Open documentation (F1)
+        shortcut = QShortcut(QKeySequence(self._hotkey_settings.open_documentation), self)
+        shortcut.activated.connect(self._on_docs_hotkey)
+        self._shortcuts.append(shortcut)
+
+        # Focus terminal (Ctrl+`)
+        shortcut = QShortcut(QKeySequence(self._hotkey_settings.focus_terminal), self)
+        shortcut.activated.connect(self._on_focus_terminal)
+        self._shortcuts.append(shortcut)
+
+    def _update_hotkeys(self, settings: HotkeySettings) -> None:
+        """Update hotkeys with new settings."""
+        self._hotkey_settings = settings
+        self._register_hotkeys()
+        self._update_tooltips()
+
+    def _update_tooltips(self) -> None:
+        """Update button tooltips with current keybindings."""
+        if hasattr(self, "_docs_btn"):
+            self._docs_btn.setToolTip(f"Documentation ({self._hotkey_settings.open_documentation})")
+        if hasattr(self, "_refresh_btn"):
+            self._refresh_btn.setToolTip(f"Refresh ({self._hotkey_settings.refresh_dashboard})")
+        if hasattr(self, "_theme_switcher"):
+            self._update_theme_button()
+
+    def _on_next_waiting_ticket(self) -> None:
+        """Navigate to next ticket waiting for input."""
+        # Get all runs waiting for input
+        waiting_runs = [r for r in self._runs if r.status == "waiting_for_input"]
+
+        if not waiting_runs:
+            return
+
+        # Find current ticket number if in ticket detail view
+        current_ticket = None
+        if self._stack.currentIndex() == 1:
+            # Try to get current ticket from detail widget
+            if hasattr(self._detail, "_ticket") and self._detail._ticket:
+                current_ticket = self._detail._ticket.number
+
+        # Find next waiting ticket
+        waiting_ticket_numbers = sorted([r.ticket_number for r in waiting_runs if r.ticket_number])
+
+        if not waiting_ticket_numbers:
+            return
+
+        # If not in ticket view or no current ticket, go to first waiting
+        if current_ticket is None:
+            next_ticket = waiting_ticket_numbers[0]
+        else:
+            # Find next ticket after current
+            try:
+                current_index = waiting_ticket_numbers.index(current_ticket)
+                # Wrap around to first if at end
+                next_ticket = waiting_ticket_numbers[(current_index + 1) % len(waiting_ticket_numbers)]
+            except ValueError:
+                # Current ticket not in waiting list, go to first
+                next_ticket = waiting_ticket_numbers[0]
+
+        # Navigate to the ticket
+        self._on_ticket_selected(next_ticket)
+
+        # Focus terminal if it exists
+        if hasattr(self._detail, "terminal") and self._detail.terminal:
+            self._detail.terminal.setFocus()
+
+    def _on_back_to_runs(self) -> None:
+        """Return to runs table view."""
+        if self._stack.currentIndex() != 0:
+            self._stack.setCurrentIndex(0)
+            self._sidebar.clear_selection()
+
+    def _on_docs_hotkey(self) -> None:
+        """Open documentation via hotkey (same as clicking docs button)."""
+        self._on_docs_clicked()
+
+    def _on_focus_terminal(self) -> None:
+        """Focus terminal widget in ticket detail view."""
+        # Only works if in ticket detail view
+        if self._stack.currentIndex() == 1:
+            if hasattr(self._detail, "terminal") and self._detail.terminal:
+                self._detail.terminal.setFocus()
+
+    def _show_keyboard_shortcuts_help(self) -> None:
+        """Show keyboard shortcuts reference dialog."""
+        dialog = KeyboardShortcutsHelp(settings=self._hotkey_settings, parent=self)
+        dialog.exec()
+
+    def _show_hotkey_settings(self) -> None:
+        """Show hotkey settings dialog."""
+        dialog = HotkeySettingsDialog(settings=self._hotkey_settings, parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            new_settings = dialog.get_settings()
+            self._apply_hotkey_settings(new_settings)
+
+    def _apply_hotkey_settings(self, settings: HotkeySettings) -> None:
+        """Apply new hotkey settings and save to config."""
+        self._hotkey_settings = settings
+        self._register_hotkeys()
+        self._update_tooltips()
+
+        # Save to config file if we have a project path
+        if self._project_path:
+            try:
+                full_settings = load_settings(project_path=self._project_path)
+                full_settings.gui.hotkeys = settings
+                save_settings(full_settings, project_path=self._project_path)
+            except Exception:
+                # Fail gracefully if save fails
+                pass
+
+    # Alias for compatibility with tests
+    @property
+    def _stacked_widget(self):
+        """Alias for _stack to match test expectations."""
+        return self._stack

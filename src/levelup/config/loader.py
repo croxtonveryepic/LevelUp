@@ -112,3 +112,33 @@ def _merge_env_vars(data: dict[str, Any], prefix: str) -> None:
                 data[field_name] = int(value)
             else:
                 data[field_name] = value
+
+
+def save_settings(settings: LevelUpSettings, project_path: Path | None = None) -> None:
+    """Save settings to a YAML config file."""
+    # Determine the config file to write to
+    config_file = find_config_file(project_path)
+
+    # If no config file exists, create levelup.yaml in project directory or cwd
+    if config_file is None:
+        target_dir = project_path.resolve() if project_path else Path.cwd()
+        config_file = target_dir / "levelup.yaml"
+
+    # Convert settings to dict
+    data = settings.model_dump(exclude_defaults=False)
+
+    # Convert Path objects to strings for YAML serialization
+    def convert_paths(obj: Any) -> Any:
+        if isinstance(obj, Path):
+            return str(obj)
+        elif isinstance(obj, dict):
+            return {k: convert_paths(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_paths(item) for item in obj]
+        return obj
+
+    data = convert_paths(data)
+
+    # Write to file
+    with open(config_file, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)

@@ -33,3 +33,8 @@ See `levelup/project_context.md` for project details.
   - Testing requires mocking PyQt6 components and StateManager interactions which may be complex
   - Changes affect critical user workflow (starting runs) so thorough testing is essential
 - **Usage:** 81.6s
+## Step: test_writing  (02:01:58)
+
+Wrote 2 test file(s):
+- `tests/unit/test_run_terminal_button_states.py` (new)
+- `tests/integration/test_run_resume_forget_workflow.py` (new)

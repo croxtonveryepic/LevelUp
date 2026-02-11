@@ -759,15 +759,40 @@ class TerminalEmulatorWidget(QWidget):
         return True
 
     def _get_selected_text(self) -> str:
-        """Extract text from the current selection."""
+        """Extract text from the current selection.
+
+        Uses the same composite view logic as paintEvent() to account for scroll offset.
+        When scrolled up (scroll_offset > 0), rows < scroll_offset read from history,
+        while rows >= scroll_offset read from the current buffer.
+        """
         sel_start, sel_end = self._normalized_selection()
         if sel_start is None or sel_end is None:
             return ""
+
         lines = []
         sc, sr = sel_start
         ec, er = sel_end
+
+        screen = self._screen
+        history_len = len(screen.history.top)
+        scroll_offset = self._scroll_offset
+
         for row in range(sr, er + 1):
-            line = self._screen.buffer[row]
+            # Determine which line to extract from based on scroll offset
+            # This matches the logic in paintEvent() for rendering
+            if scroll_offset > 0 and row < scroll_offset:
+                # Extract from history
+                history_idx = history_len - scroll_offset + row
+                if 0 <= history_idx < history_len:
+                    line = screen.history.top[history_idx]
+                else:
+                    # Out of bounds - use fallback (matches paintEvent logic)
+                    line = screen.buffer[0]
+            else:
+                # Extract from current buffer
+                buffer_row = row - scroll_offset
+                line = screen.buffer[buffer_row]
+
             start_col = sc if row == sr else 0
             end_col = ec if row == er else self._cols - 1
             chars = []
@@ -775,6 +800,7 @@ class TerminalEmulatorWidget(QWidget):
                 ch = line[col].data
                 chars.append(ch if ch else " ")
             lines.append("".join(chars).rstrip())
+
         return "\n".join(lines)
 
     def _copy_selection(self) -> None:

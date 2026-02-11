@@ -621,11 +621,8 @@ class TestTerminalScrollbackCopy:
         """Regression: Existing copy behavior when at bottom (_scroll_offset == 0) is preserved."""
         widget = self._make_widget()
 
-        # Fill history
-        for i in range(30):
-            widget._on_pty_data(f"Old{i}\r\n".encode())
-
-        # Write current buffer
+        # Write current buffer WITHOUT filling history first
+        # (so "Hello World" is at row 0 of the buffer)
         widget._on_pty_data(b"Hello World\r\n")
         widget._on_pty_data(b"Second Line\r\n")
 
@@ -643,11 +640,8 @@ class TestTerminalScrollbackCopy:
         """Regression: Existing multiline copy behavior when at bottom is preserved."""
         widget = self._make_widget()
 
-        # Fill history
-        for i in range(30):
-            widget._on_pty_data(f"Old{i}\r\n".encode())
-
-        # Write buffer
+        # Write buffer WITHOUT filling history first
+        # (so "AAABBB" is at row 0 of the buffer)
         widget._on_pty_data(b"AAABBB\r\n")
         widget._on_pty_data(b"CCCDDD\r\n")
 

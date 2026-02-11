@@ -18,3 +18,18 @@ See `levelup/project_context.md` for project details.
 - 6 assumption(s)
 - 7 out-of-scope item(s)
 - **Usage:** 78.0s
+### Checkpoint: requirements
+
+- **Decision:** approve
+## Step: planning  (01:57:56)
+
+**Approach:** Fix the run and resume button state logic in RunTerminalWidget by updating both _set_running_state() and _update_button_states() methods to check for resumable runs before enabling the run button. The run button should be disabled when a resumable run exists (status: failed, aborted, or paused), and only be enabled when not running AND (no run exists OR run is not resumable). This ensures users must either resume or forget the existing run before starting a new one.
+- 5 implementation step(s)
+- **Affected files:** src/levelup/gui/run_terminal.py, tests/unit/test_run_terminal_button_states.py, tests/integration/test_run_resume_workflow.py
+- **Risks:**
+  - The enable_run() method is called from ticket_detail.py and may need coordination to ensure consistent behavior across both widgets
+  - Button state changes during polling (_poll_for_run_id) may interact with manual state updates in complex ways
+  - The _wire_existing_run() method in ticket_detail.py calls _update_button_states(), so changes must be compatible with that flow
+  - Testing requires mocking PyQt6 components and StateManager interactions which may be complex
+  - Changes affect critical user workflow (starting runs) so thorough testing is essential
+- **Usage:** 81.6s

@@ -49,9 +49,40 @@
 - **Terminate button**: Kills the running pipeline (enabled only while running)
 - **Forget button**: Removes run record from database (enabled when run exists and is not running)
 - **Button state management**: Handled by `_set_running_state()` and `_update_button_states()` methods
-- **Resumable statuses**: `("failed", "aborted", "paused")` defined in `RESUMABLE_STATUSES` constant
-- **State detection**: `_is_resumable()` method checks if last run status is in resumable statuses
+- **Resumable statuses**: `("failed", "aborted", "paused")` defined in `RESUMABLE_STATUSES` constant (line 28)
+- **State detection**: `_is_resumable()` method checks if last run status is in resumable statuses (lines 230-240)
 - **Run tracking**: `_last_run_id` stores the run ID, populated by `_poll_for_run_id()` and `_wire_existing_run()`
+
+### Button State Logic Issues (Current Behavior)
+1. **_set_running_state() method** (lines 210-217):
+   - When transitioning to not-running state (`running=False`), unconditionally enables the run button on line 212
+   - Does NOT check for resumable runs when enabling the run button
+   - This causes the run button to be enabled even when a resumable run exists
+   - The resume button logic on line 215 is correct: `self._resume_btn.setEnabled(not running and self._is_resumable())`
+
+2. **_update_button_states() method** (lines 219-228):
+   - Checks for ticket and project context (lines 222-224) but does NOT check for resumable runs
+   - Enables run button when: `not running and self._ticket_number is not None and self._project_path is not None`
+   - Missing check: should also verify `not self._is_resumable()` to prevent new runs when a resumable one exists
+   - The resume button logic on line 227 is correct
+
+3. **enable_run() method** (lines 183-186):
+   - Simple setter that directly enables/disables the run button
+   - Does NOT check for resumable runs
+   - Called from ticket_detail.py when loading a ticket (lines 271-273, 195)
+
+### State Manager Integration
+- **StateManager** (`src/levelup/state/manager.py`):
+  - `get_run(run_id)` - retrieves a single run record (lines 130-139)
+  - `get_run_for_ticket(project_path, ticket_number)` - gets most recent run for a ticket (lines 171-187)
+  - `has_active_run_for_ticket(project_path, ticket_number)` - checks for non-completed runs (lines 189-206)
+  - Returns `RunRecord` objects with status field
+- **RunRecord** (`src/levelup/state/models.py`):
+  - Pydantic model with `status` field (line 15)
+  - Status values: "pending", "running", "waiting_for_input", "completed", "failed", "aborted", "paused"
+- **Guard in _on_run_clicked()** (lines 242-261):
+  - Already checks for active runs using `has_active_run_for_ticket()` and displays warning
+  - This is a safety check, but the run button should be disabled proactively
 
 ### Configuration
 - Uses Pydantic settings with environment variable support
@@ -83,6 +114,7 @@
 - GUI tests exist for non-Qt components (e.g., `test_gui_tickets.py` tests color/icon resources)
 - Tests use pytest with standard assertions
 - Path normalization needed on Windows: `.replace("\\", "/")` in assertions
+- Integration tests in `tests/integration/` for cross-component behavior
 
 ### Key Dependencies
 - PyQt6 for GUI (installed via `gui` or `dev` optional dependencies)

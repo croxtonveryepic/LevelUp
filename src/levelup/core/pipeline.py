@@ -51,6 +51,13 @@ DEFAULT_PIPELINE: list[PipelineStep] = [
         description="Write tests (TDD red phase)",
     ),
     PipelineStep(
+        name="test_verification",
+        step_type=StepType.AGENT,
+        agent_name="test_verifier",
+        checkpoint_after=False,
+        description="Verify tests fail before implementation",
+    ),
+    PipelineStep(
         name="coding",
         step_type=StepType.AGENT,
         agent_name="coder",

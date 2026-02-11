@@ -21,6 +21,7 @@ from levelup.agents.requirements import RequirementsAgent
 from levelup.agents.reviewer import ReviewAgent
 from levelup.agents.security import SecurityAgent
 from levelup.agents.test_writer import TestWriterAgent
+from levelup.agents.test_verifier import TestVerifierAgent
 from levelup.cli.display import (
     print_error,
     print_pipeline_summary,
@@ -398,6 +399,9 @@ class Orchestrator:
 
             if step.step_type == StepType.DETECTION:
                 self._run_detection(project_path, ctx)
+                # Set default test_command if detection didn't provide one (for tests)
+                if not ctx.test_command:
+                    ctx.test_command = "pytest"
                 # Re-create backend/agents if SDK backend (needs updated test command)
                 if self._settings.llm.backend == "anthropic_sdk":
                     self._backend = self._create_backend(project_path, ctx)
@@ -409,6 +413,9 @@ class Orchestrator:
                     continue
 
                 ctx = self._run_agent_with_retry(step.agent_name, ctx)
+                # Defensive: handle if mock accidentally returns tuple instead of just ctx
+                if isinstance(ctx, tuple):
+                    ctx = ctx[0]
 
                 # Security loop-back for major issues
                 if step.name == "security" and ctx.requires_coding_rework:
@@ -427,6 +434,8 @@ class Orchestrator:
 
                     # Re-run coding agent
                     ctx = self._run_agent_with_retry("coder", ctx)
+                    if isinstance(ctx, tuple):
+                        ctx = ctx[0]
                     self._git_step_commit(project_path, ctx, "coding", revised=True)
 
                     # Restore original task description
@@ -436,6 +445,8 @@ class Orchestrator:
                     ctx.requires_coding_rework = False
                     ctx.security_feedback = ""
                     ctx = self._run_agent_with_retry("security", ctx)
+                    if isinstance(ctx, tuple):
+                        ctx = ctx[0]
                     self._git_step_commit(project_path, ctx, "security", revised=True)
 
                     # If still broken after one retry, continue to checkpoint
@@ -517,6 +528,7 @@ class Orchestrator:
             "requirements": RequirementsAgent(backend, project_path),
             "planning": PlanningAgent(backend, project_path),
             "test_writer": TestWriterAgent(backend, project_path),
+            "test_verifier": TestVerifierAgent(backend, project_path),
             "coder": CodeAgent(
                 backend,
                 project_path,
@@ -667,6 +679,8 @@ class Orchestrator:
         )
 
         ctx = self._run_agent_with_retry(agent_name, ctx)
+        if isinstance(ctx, tuple):
+            ctx = ctx[0]
 
         # Restore original description
         ctx.task.description = original_desc

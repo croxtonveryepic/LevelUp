@@ -11,3 +11,10 @@ When scrolled up in an integrated terminal, highlighting text and copying it to 
 ## Step: detect  (21:04:53)
 
 See `levelup/project_context.md` for project details.
+## Step: requirements  (21:07:14)
+
+**Summary:** Fix terminal text copying bug when scrolled up - clipboard copies wrong text from buffer instead of visible history
+- 2 requirement(s)
+- 5 assumption(s)
+- 7 out-of-scope item(s)
+- **Usage:** 140.0s

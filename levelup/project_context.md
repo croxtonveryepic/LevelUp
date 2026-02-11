@@ -74,11 +74,49 @@
 - **Theme Manager** (`gui/theme_manager.py`): Handles theme preferences (light/dark/system) and applies stylesheets
 - **Terminal Emulator** (`gui/terminal_emulator.py`): VT100 terminal using pyte, supports both `CatppuccinMochaColors` (dark) and `LightTerminalColors` (light) schemes
 - **Key Components**:
+    - `main_window.py`: Main application window that coordinates GUI components
     - `ticket_sidebar.py`: Displays ticket list with status indicators
     - `ticket_detail.py`: Detail view with ticket form (title, description, auto-approve, status label) and embedded RunTerminalWidget
     - `run_terminal.py`: Wrapper around TerminalEmulatorWidget for running pipeline commands
+    - `terminal_emulator.py`: VT100 terminal using pyte library with scrollback support
+    - `theme_manager.py`: Handles theme preferences (light/dark/system) and applies stylesheets
     - `resources.py`: Defines status-to-color/icon mappings for both dark and light themes
     - `styles.py`: QSS stylesheets for dark and light themes
+
+### Terminal Emulator Architecture
+
+- **Location**: `src/levelup/gui/terminal_emulator.py`
+- **Terminal Backend**: Uses `pyte` library for VT100 terminal emulation with PTY (pseudo-terminal) backend
+- **Screen State**:
+    - `pyte.HistoryScreen` with 10,000 line scrollback buffer
+    - Current buffer: `self._screen.buffer` (visible screen rows)
+    - History buffer: `self._screen.history.top` (deque of historical lines)
+- **Scrollback System**:
+    - `_scroll_offset`: Number of lines scrolled up from bottom (0 = at bottom)
+    - `wheelEvent()`: Updates scroll offset (±3 lines per wheel event)
+    - `paintEvent()`: Renders composite of history + buffer based on scroll offset
+- **Rendering Logic** (`paintEvent()` lines 513-606):
+    - When `_scroll_offset > 0`: Top rows come from `screen.history.top`, remaining rows from `screen.buffer`
+    - Formula: `history_idx = len(history.top) - scroll_offset + row`
+    - Transitions from history to buffer at row = `_scroll_offset`
+- **Selection & Copy System**:
+    - Mouse events track selection: `_selection_start` and `_selection_end` (col, row tuples)
+    - `_get_selected_text()`: Extracts text from selection (lines 761-778)
+    - **CURRENT BUG**: `_get_selected_text()` always reads from `screen.buffer[row]`, ignoring scroll offset
+    - Should read from same composite view as `paintEvent()` (history + buffer based on offset)
+- **Copy Shortcuts**:
+    - Ctrl+Shift+C: Copy selection
+    - Ctrl+C with selection: Copy selection
+    - Ctrl+C without selection: Send interrupt to shell
+- **Color Schemes**: `CatppuccinMochaColors` (dark) and `LightTerminalColors` (light)
+
+### Terminal Scrollback Bug
+
+- **Issue**: When terminal is scrolled up (`_scroll_offset > 0`), selecting and copying text copies from wrong location
+- **Root Cause**: `_get_selected_text()` method always reads from `self._screen.buffer[row]` regardless of scroll position
+- **Expected Behavior**: Should read from history when `row < scroll_offset`, just like `paintEvent()` does
+- **Test Documentation**: `tests/unit/test_terminal_scrollback_display.py` line 552 documents expected behavior
+- **Impact**: User sees highlighted text from history but clipboard gets text from current buffer at same row position
 
 ### Ticket System
 
@@ -277,28 +315,6 @@
 - **Skip planning resolution** (line 312): CLI > ticket metadata > false
 - Settings passed to `_create_backend()` (line 315) with model_override and thinking_budget
 
-### Testing Patterns
-
-- Unit tests use pytest with PyQt6 fixtures
-- Mock state manager using `MagicMock(spec=StateManager)`
-- Mock terminal emulator with `patch("levelup.gui.terminal_emulator.PtyBackend")`
-- Test files follow pattern: `test_<component>.py` or `test_<component>_<feature>.py`
-- Button state tests verify enabled/disabled states after state transitions
-- Metadata tests verify round-trip serialization and preservation of non-form fields
-- Integration tests use temporary directories (`tmp_path` fixture) for file operations
-- Tests for project settings use `load_settings(project_path=tmp_path)` pattern
-- Config files created as `tmp_path / "levelup.yaml"` with YAML content
-- Auto-approve tests in `test_gui_ticket_metadata.py` verify checkbox behavior
-
-### Key Conventions
-
-- Windows paths: Use `.replace("\\", "/")` in test assertions
-- Test classes named `Test*` trigger pytest collection warnings (expected)
-- SQLite WAL mode for multi-process access
-- Git worktrees for concurrent runs at `~/.levelup/worktrees/<run_id>/`
-- Parent widgets pass theme to child widgets during construction
-- Theme updates propagate via `update_theme(theme)` method
-
 ### Theming System
 
 - **Themes**: Dark (default) and Light
@@ -341,6 +357,21 @@
     - Only includes runs with status "running" or "waiting_for_input"
     - Passes run_status_map to `TicketSidebarWidget.set_tickets()`
     - Sidebar stores run_status_map internally for theme switching
+
+### Testing Patterns
+
+- Unit tests use pytest with PyQt6 fixtures
+- Mock state manager using `MagicMock(spec=StateManager)`
+- Mock terminal emulator with `patch("levelup.gui.terminal_emulator.PtyBackend")`
+- Test files follow pattern: `test_<component>.py` or `test_<component>_<feature>.py`
+- Button state tests verify enabled/disabled states after state transitions
+- Metadata tests verify round-trip serialization and preservation of non-form fields
+- Integration tests use temporary directories (`tmp_path` fixture) for file operations
+- Tests for project settings use `load_settings(project_path=tmp_path)` pattern
+- Config files created as `tmp_path / "levelup.yaml"` with YAML content
+- Auto-approve tests in `test_gui_ticket_metadata.py` verify checkbox behavior
+- Terminal scrollback tests located at `tests/unit/test_terminal_scrollback_display.py` (display logic)
+- Terminal rendering tests located at `tests/unit/test_terminal_scrollback_rendering.py` (rendering details)
 
 ### Ticket Sidebar Widget Structure
 

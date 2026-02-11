@@ -25,6 +25,30 @@
   - `tools/` - Agent tools (file I/O, shell, test runner)
 - `tests/` - Test suite with unit and integration tests
 
+### TDD Pipeline Architecture
+- **Pipeline definition**: `src/levelup/core/pipeline.py` contains `DEFAULT_PIPELINE` with ordered `PipelineStep` objects
+- **Current pipeline flow**:
+  1. `detect` - Project detection (StepType.DETECTION)
+  2. `requirements` - Requirements agent (StepType.AGENT, checkpoint_after=True)
+  3. `planning` - Planning agent (StepType.AGENT)
+  4. `test_writing` - Test writer agent (StepType.AGENT, checkpoint_after=True)
+  5. `coding` - Coder agent (StepType.AGENT)
+  6. `security` - Security agent (StepType.AGENT, checkpoint_after=True)
+  7. `review` - Review agent (StepType.AGENT, checkpoint_after=True)
+- **Step execution**: `Orchestrator._execute_steps()` iterates through pipeline steps
+- **Agents**:
+  - `TestWriterAgent` (`agents/test_writer.py`) - Writes tests (TDD red phase), optionally runs tests via Bash to confirm they fail
+  - `CodeAgent` (`agents/coder.py`) - Implements code and iterates until tests pass (TDD green phase)
+  - Both agents have system prompts, allowed tools, and run methods that return `(PipelineContext, AgentResult)`
+- **Checkpoints**: User review points defined by `checkpoint_after=True` on pipeline steps
+  - Interactive mode: `run_checkpoint()` displays content and gets user decision
+  - Headless mode: Polls DB for checkpoint decision via `_wait_for_checkpoint_decision()`
+  - Display logic: `build_checkpoint_display_data()` and `_display_checkpoint_content()` in `checkpoint.py`
+- **Test execution**:
+  - Agents use `Bash` tool to run test commands during their workflows
+  - `TestRunnerTool` (`tools/test_runner.py`) can be used by agents to run tests with structured parsing
+  - Final test results stored in `PipelineContext.test_results` (list of `TestResult` objects)
+
 ### GUI Architecture
 - **Framework**: PyQt6
 - **Entry point**: `src/levelup/gui/app.py` - launches QApplication and MainWindow
@@ -69,9 +93,12 @@
 
 ### Testing Patterns
 - Unit tests in `tests/unit/`
-- GUI tests exist for non-Qt components (e.g., `test_gui_tickets.py` tests color/icon resources)
+- Integration tests in `tests/integration/`
 - Tests use pytest with standard assertions
+- Mocking patterns: Use `unittest.mock.MagicMock` and `@patch` decorator for agent/LLM mocking
 - Path normalization needed on Windows: `.replace("\\", "/")` in assertions
+- Agent tests: Mock `backend.run_agent()` to return `AgentResult` objects
+- Pipeline tests: Mock individual agents and detection steps to test orchestration flow
 
 ### Key Dependencies
 - PyQt6 for GUI (installed via `gui` or `dev` optional dependencies)

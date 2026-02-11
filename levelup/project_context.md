@@ -200,15 +200,37 @@
 
 - **Color Mapping** (`src/levelup/gui/resources.py`):
     - Dark theme pending tickets: `#CDD6F4` (light lavender)
-    - Light theme pending tickets: `#4C566A` (dark gray-blue)
+    - Light theme pending tickets: `#4C566A` (dark gray-blue) - **NEEDS IMPROVEMENT FOR ACCESSIBILITY**
     - Tickets without active runs inherit their status color
     - "In progress" tickets can show dynamic colors based on run status:
         - Blue (`#4A90D9` dark, `#3498DB` light) when run is "running"
         - Yellow-orange (`#E6A817` dark, `#F39C12` light) when run is "waiting_for_input"
-- **Current Issue**: In light mode, pending tickets use `#4C566A` (medium gray) on `#FFFFFF` (white) background, which provides insufficient contrast
+- **Current Issue**: In light mode, pending tickets use `#4C566A` (medium gray) on `#FFFFFF` (white) background, which provides insufficient contrast for WCAG AA compliance (requires 4.5:1 minimum for normal text)
+- **Color Function**: `get_ticket_status_color()` in `resources.py` accepts three parameters:
+    - `status`: Ticket status string ("pending", "in progress", "done", "merged")
+    - `theme`: Theme mode ("light" or "dark")
+    - `run_status`: Optional run status for dynamic coloring ("running", "waiting_for_input", etc.)
+- **Theme-aware color selection**:
+    - Function uses `_LIGHT_TICKET_STATUS_COLORS` dict for light theme
+    - Function uses `TICKET_STATUS_COLORS` dict for dark theme
+    - Returns default colors for unknown statuses
+- **Run Status Integration** (`main_window.py`):
+    - `MainWindow._refresh_tickets()` creates run_status_map from active runs
+    - Only includes runs with status "running" or "waiting_for_input"
+    - Passes run_status_map to `TicketSidebarWidget.set_tickets()`
+    - Sidebar stores run_status_map internally for theme switching
 
 ### Testing
 
 - **Test Location**: `tests/unit/test_ticket_sidebar_run_status_colors.py`
 - **Coverage**: 40+ tests covering color logic for various ticket/run status combinations
 - **Test Runner**: pytest with PyQt6 integration
+- **Test Dependencies**: Tests use PyQt6 and are skipped if not available
+- **Color Assertion Pattern**: Tests assert exact hex color values (e.g., `assert color == "#CDD6F4"`)
+- **Theme Testing**: Tests verify color behavior in both light and dark themes
+- **Edge Cases Covered**:
+    - Invalid statuses/themes
+    - None/empty run status values
+    - Theme switching with preserved run status
+    - Multiple runs for same ticket
+    - Selection preservation during updates

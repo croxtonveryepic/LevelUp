@@ -69,3 +69,9 @@ Found 10 issue(s):
 - [WARNING] `src/levelup/gui/terminal_emulator.py`: wheelEvent() clamps scroll_offset to len(history.top) but doesn't account for viewport height. When history is shorter than viewport, scrolling could result in gaps or incorrect display.
 - [INFO] `tests/unit/test_terminal_scrollback_rendering.py`: test_terminal_scrollback_rendering.py and test_terminal_scrollback_display.py have significant overlap in test coverage. Both test files verify similar scrollback behaviors with slightly different test case names.
 - [WARNING] `src/levelup/gui/terminal_emulator.py`: Array index access in _get_selected_text() at line 768 (screen.buffer[row]) could raise IndexError if row >= len(screen.buffer). The selection coordinates are in viewport space but buffer access assumes they're valid buffer indices.
+### Checkpoint: review
+
+- **Decision:** approve
+## Outcome
+
+- **Status:** completed

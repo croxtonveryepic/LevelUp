@@ -41,7 +41,7 @@ Integrated terminal should only be initialized when the ticket is run.
 ## [done] Bug: Resume button always disabled
 The intended use of the resume button is to resume the run pipeline on tickets that have been paused. Review what the button currently does and when it is enabled to ensure correct functionality. Also, disable the run button while there is a pipeline that can be resumed.
 
-## [in progress] Bug: Can't scroll up in integrated terminal
+## [done] Bug: Can't scroll up in integrated terminal
 Users report that they can't scroll up in integrated terminals to review each step.
 
 ## Bug: Database schema error
@@ -63,9 +63,6 @@ Users report that they can't scroll up in integrated terminals to review each st
 ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 RuntimeError: Database schema version 5 is newer than the code supports (max 4). Please upgrade LevelUp.
 
-## Bug: Many spawned windows
-User reports that while running multiple pipelines, there appeared to dozens of windows titled LevelUp Dashboard that were created and closed, only appearing on the screen for a fraction of a second each.
-
 ## Bug: Active run exists
 User reports getting a pop-up error stating that an active run already exists. He states that the ticket is done and he did not do anything that would create another run for that ticket.
 
@@ -78,5 +75,13 @@ Resume or forget it first.
 OK   
 ---------------------------
 
-## Record branch name
+## [done] Record branch name
 After a ticket is completed, the name of the newly-created branch should be recorded beneath the ticket.
+
+## Create command to change branch naming convention
+We already have a function to prompt a user for a branch naming convention. Let's add a command that lets them do this ahead of time, or to run it later to change the naming convention.
+
+## [in progress] Add GUI navigation hotkeys
+Since LevelUp is a tool for developers, many will expect there to be hotkeys to help them navigate and use the app. There should at least be one to jump to the next ticket waiting for user input (and focus the terminal). Create sensible default hotkeys for each functionality, and add page for hotkey customization.
+## [in progress] Bug: Incorrect color for tickets in sidebar
+Sidebar tickets should be blue while thinking and turn yellow-orange when they reach a checkpoint. Create an additional ticket status if necessary.

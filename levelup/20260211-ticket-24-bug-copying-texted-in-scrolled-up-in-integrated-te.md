@@ -32,3 +32,7 @@ See `levelup/project_context.md` for project details.
   - Multi-line selections spanning both history and buffer regions require correct composite text assembly
   - Existing tests in test_terminal_emulator.py test _get_selected_text() at scroll_offset=0, must ensure backward compatibility
 - **Usage:** 142.6s
+## Step: test_writing  (21:12:21)
+
+Wrote 1 test file(s):
+- `tests/unit/test_terminal_scrollback_copy.py` (new)

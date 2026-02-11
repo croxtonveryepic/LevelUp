@@ -60,3 +60,17 @@ Wrote 3 file(s):
 
 Step `security` completed.
 - **Usage:** 59.5s
+### Checkpoint: security
+
+- **Decision:** auto-approved
+## Step: review  (23:34:07)
+
+Found 8 issue(s):
+- [WARNING] `src/levelup/gui/ticket_sidebar.py`: The refresh() method in TicketSidebarWidget doesn't preserve run_status_map when refreshing, which could cause active run status colors to be lost
+- [INFO] `src/levelup/gui/main_window.py`: The status bar shows total ticket count from _cached_tickets, which includes all tickets regardless of filter state. This might be confusing when merged tickets are hidden from the sidebar
+- [INFO] `src/levelup/gui/completed_tickets_widget.py`: The update_theme method duplicates code from set_tickets. The logic for rendering tickets is repeated in two places
+- [INFO] `src/levelup/gui/ticket_sidebar.py`: The _show_merged state variable is redundant since it can be derived from _show_merged_checkbox.isChecked()
+- [INFO] `src/levelup/gui/main_window.py`: The condition 'not hasattr(self, "_cached_tickets")' is checking for attribute existence, but _cached_tickets is initialized in __init__ as an empty list. This condition will always be False
+- [INFO] `tests/unit/test_sidebar_toggle_styling.py`: Test file focuses on styling and accessibility but doesn't verify actual CSS/QSS styling is applied to the checkbox
+- [INFO] `src/levelup/gui/ticket_sidebar.py`: Signal blocking pattern is used but could be encapsulated in a context manager for better error handling
+- [INFO] `src/levelup/gui/ticket_sidebar.py`: The _apply_filter method clears and rebuilds the entire list widget on every filter change, which could be slow with many tickets

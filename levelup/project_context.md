@@ -42,6 +42,23 @@
   - `run_terminal.py` - Terminal wrapper for running levelup commands
 - **Resources**: `resources.py` contains status colors, labels, and icons
 
+### Ticket-Run Relationship
+- **Tickets**: Defined in `src/levelup/core/tickets.py` with statuses: `pending`, `in progress`, `done`, `merged`
+- **Runs**: Defined in `src/levelup/state/models.py` with statuses: `pending`, `running`, `waiting_for_input`, `paused`, `completed`, `failed`, `aborted`
+- **Link**: `RunRecord.ticket_number` field links runs to tickets (one-to-many relationship)
+- **Sidebar Display**: `TicketSidebarWidget` currently colors tickets based on ticket status only, not run status
+- **Main Window Refresh**: `MainWindow._refresh()` loads both runs (`_runs`) and tickets (`_cached_tickets`) but doesn't pass run status to sidebar
+
+### Color Scheme (Catppuccin Mocha)
+- **Dark theme colors in `resources.py`**:
+  - Ticket "in progress": `#E6A817` (yellow-orange)
+  - Run "running": `#4A90D9` (blue)
+  - Run "waiting_for_input": `#E6A817` (yellow-orange, same as ticket in progress)
+- **Light theme colors**:
+  - Ticket "in progress": `#F39C12` (orange)
+  - Run "running": `#3498DB` (blue)
+  - Run "waiting_for_input": `#F39C12` (orange)
+
 ### Configuration
 - Uses Pydantic settings with environment variable support
 - Settings classes in `src/levelup/config/settings.py`:

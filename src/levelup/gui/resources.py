@@ -80,7 +80,7 @@ TICKET_STATUS_COLORS: dict[str, str] = {
 
 # Light theme ticket status colors
 _LIGHT_TICKET_STATUS_COLORS: dict[str, str] = {
-    "pending": "#4C566A",
+    "pending": "#2E3440",
     "in progress": "#F39C12",
     "done": "#27AE60",
     "merged": "#95A5A6",

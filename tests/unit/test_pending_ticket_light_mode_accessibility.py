@@ -95,10 +95,11 @@ class TestPendingTicketLightModeColorContrast:
         assert color.blue() < 200, f"Blue channel too bright: {color.blue()}"
 
     def test_old_color_4C566A_had_insufficient_contrast(self):
-        """Verify that old color #4C566A had insufficient WCAG AA contrast."""
+        """Verify that old color #4C566A had good but improvable contrast."""
         from PyQt6.QtGui import QColor
 
-        # This test documents the problem we're fixing
+        # This test documents that while the old color passed WCAG AA,
+        # the new color provides even better contrast for improved readability
         old_color = QColor("#4C566A")
         background_color = QColor("#FFFFFF")
 
@@ -118,9 +119,9 @@ class TestPendingTicketLightModeColorContrast:
         bg_lum = relative_luminance(background_color)
         contrast_ratio = (bg_lum + 0.05) / (text_lum + 0.05)
 
-        # Document that old color failed WCAG AA
-        assert contrast_ratio < 4.5, \
-            f"Old color should have failed WCAG AA (got {contrast_ratio:.2f}:1)"
+        # Old color passed WCAG AA but we improved it further
+        assert contrast_ratio >= 4.5, \
+            f"Old color passed WCAG AA (got {contrast_ratio:.2f}:1)"
 
 
 class TestPendingTicketDarkModeUnchanged:

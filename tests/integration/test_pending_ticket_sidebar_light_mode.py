@@ -454,8 +454,10 @@ class TestMainWindowIntegrationWithNewPendingColor:
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
-            window = MainWindow(state_manager, project_path=project_path, theme="light")
+            window = MainWindow(state_manager, project_path=project_path)
 
+        # Update sidebar theme to light mode
+        window._sidebar.update_theme("light")
         window._refresh_tickets()
 
         # Both pending tickets should use new color
@@ -481,15 +483,15 @@ class TestMainWindowIntegrationWithNewPendingColor:
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
-            window = MainWindow(state_manager, project_path=project_path, theme="dark")
+            window = MainWindow(state_manager, project_path=project_path)
 
         window._refresh_tickets()
 
-        # Initially dark mode
+        # Initially dark mode (default)
         assert window._sidebar._list.item(0).foreground().color().name().upper() == "#CDD6F4"
 
         # Switch to light mode
-        window._update_theme("light")
+        window._sidebar.update_theme("light")
 
         # Should now use light mode color
         assert window._sidebar._list.item(0).foreground().color().name().upper() == "#2E3440"

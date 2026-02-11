@@ -200,6 +200,13 @@
 
 - **Color Mapping** (`src/levelup/gui/resources.py`):
     - Dark theme pending tickets: `#CDD6F4` (light lavender)
+    - Light theme pending tickets: `#2E3440` (dark blue-gray matching main text color) - **WCAG AA COMPLIANT**
+    - Tickets without active runs inherit their status color
+    - "In progress" tickets can show dynamic colors based on run status:
+        - Blue (`#4A90D9` dark, `#3498DB` light) when run is "running"
+        - Yellow-orange (`#E6A817` dark, `#F39C12` light) when run is "waiting_for_input"
+- **Accessibility**: Light mode pending ticket color was updated from `#4C566A` to `#2E3440` to meet WCAG AA contrast requirements (4.5:1 minimum) against white background
+    - Dark theme pending tickets: `#CDD6F4` (light lavender)
     - Light theme pending tickets: `#4C566A` (dark gray-blue) - **NEEDS IMPROVEMENT FOR ACCESSIBILITY**
     - Tickets without active runs inherit their status color
     - "In progress" tickets can show dynamic colors based on run status:

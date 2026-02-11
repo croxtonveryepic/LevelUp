@@ -129,7 +129,7 @@ class TestWCAGContrastRatioPendingLightMode:
             f"Contrast {contrast:.2f}:1 should exceed AA minimum by margin"
 
     def test_old_color_4C566A_failed_wcag_aa(self):
-        """Document that old color #4C566A failed WCAG AA requirements."""
+        """Document that old color #4C566A passed WCAG AA but was improved."""
         from PyQt6.QtGui import QColor
 
         old_color = QColor("#4C566A")
@@ -144,9 +144,9 @@ class TestWCAGContrastRatioPendingLightMode:
 
         contrast = calculate_contrast_ratio(text_lum, bg_lum)
 
-        # Old color should fail WCAG AA
-        assert contrast < 4.5, \
-            f"Old color should have failed WCAG AA (got {contrast:.2f}:1)"
+        # Old color passed WCAG AA (and even AAA), but we improved it further
+        assert contrast >= 4.5, \
+            f"Old color passed WCAG AA (got {contrast:.2f}:1)"
 
     def test_contrast_improvement_from_old_to_new(self):
         """New color should have significantly better contrast than old color."""
@@ -381,13 +381,17 @@ class TestAccessibilityImprovementMetrics:
         old_score = readability_score(old_contrast)
         new_score = readability_score(new_contrast)
 
-        # Old should fail or be marginal
-        assert old_score in ["Fail", "AA Large Text"], \
-            f"Old color should have failed/marginal score, got {old_score}"
+        # Both should pass, but new should be better or equal
+        assert old_score in ["AA", "AAA"], \
+            f"Old color passed WCAG standards, got {old_score}"
 
-        # New should pass AA
+        # New should pass AA or AAA
         assert new_score in ["AA", "AAA"], \
             f"New color should pass AA, got {new_score}"
+
+        # New contrast should be better than old
+        assert new_contrast > old_contrast, \
+            f"New contrast {new_contrast:.2f} should exceed old {old_contrast:.2f}"
 
     def test_passes_wcag_level_aa_for_normal_text(self):
         """Verify new color explicitly passes WCAG Level AA for normal text."""

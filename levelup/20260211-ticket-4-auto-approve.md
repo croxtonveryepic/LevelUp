@@ -55,3 +55,20 @@ Wrote 7 test file(s):
 
 Step `security` completed.
 - **Usage:** 107.1s
+### Checkpoint: security
+
+- **Decision:** approve
+## Step: review  (02:15:23)
+
+Found 11 issue(s):
+- [WARNING] `tests/unit/test_gui_ticket_metadata.py`: The _on_save method in TicketDetailWidget does not save auto_approve metadata. It only emits a signal without passing metadata.
+- [INFO] `tests/unit/test_ticket_metadata.py`: Test test_metadata_in_code_block_ignored may have false positives if the parser is changed to handle code blocks differently.
+- [INFO] `tests/unit/test_auto_approve_orchestrator.py`: Mock setup uses side_effect=lambda name, ctx: ctx which doesn't properly simulate agent execution. This may hide bugs in context handling.
+- [WARNING] `tests/unit/test_auto_approve_orchestrator.py`: Test expects mock_checkpoint.assert_not_called() but ticket lookup may fail silently and fall back to project settings, causing the test to pass for wrong reasons.
+- [INFO] `tests/unit/test_tickets_cli_metadata.py`: Test test_tickets_update_with_metadata_flag tests a command that doesn't exist ('tickets update'). This is marked as testing an alternative design.
+- [INFO] `tests/integration/test_auto_approve_pipeline.py`: Test test_mixed_tickets_with_different_metadata only runs one ticket and doesn't verify the second ticket's behavior.
+- [WARNING] `tests/unit/test_auto_approve_cli.py`: Test verifies overrides dict but doesn't verify that the Orchestrator actually receives the correct settings object with auto_approve=True.
+- [INFO] `tests/unit/test_gui_ticket_metadata.py`: Test test_save_preserves_other_metadata copies metadata dict without handling the case where auto_approve doesn't exist in original metadata.
+- [INFO] `tests/unit/test_ticket_metadata.py`: The empty metadata block test (test_parse_empty_metadata_block) allows both None and {} as valid results, making behavior unclear.
+- [WARNING] `tests/integration/test_auto_approve_pipeline.py`: Test test_ticket_metadata_highest_precedence patches tickets.read_tickets but the orchestrator calls it from within _should_auto_approve, which may not use the patched version if imports are cached.
+- [INFO] `tests/integration/test_auto_approve_pipeline.py`: Test test_headless_without_auto_approve_creates_checkpoints creates a background thread that approves all checkpoints, adding unnecessary complexity.

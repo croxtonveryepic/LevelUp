@@ -51,3 +51,18 @@ Wrote 1 file(s):
 
 Step `security` completed.
 - **Usage:** 49.2s
+### Checkpoint: security
+
+- **Decision:** approve
+## Step: review  (02:20:29)
+
+Found 9 issue(s):
+- [WARNING] `src/levelup/gui/run_terminal.py`: Command injection vulnerability via os.system() with user-controlled PID
+- [WARNING] `src/levelup/gui/run_terminal.py`: Direct access to private StateManager._conn() method violates encapsulation
+- [INFO] `src/levelup/gui/run_terminal.py`: Accessing internal _shell_started flag from ticket_detail.py breaks encapsulation
+- [INFO] `src/levelup/gui/run_terminal.py`: Empty showEvent implementation could be confusing
+- [INFO] `src/levelup/gui/ticket_detail.py`: Race condition: checking _shell_started before calling close_shell()
+- [INFO] `tests/unit/test_delayed_terminal_initialization.py`: PtyBackend is mocked at import time, which may cause issues if tests run in parallel
+- [INFO] `src/levelup/gui/run_terminal.py`: Polling every 1 second for run status could be optimized
+- [WARNING] `src/levelup/gui/run_terminal.py`: Fallback run detection by project_path can return wrong run if multiple runs exist
+- [INFO] `src/levelup/gui/run_terminal.py`: _ensure_shell method is idempotent but lacks error handling

@@ -32,3 +32,8 @@ See `levelup/project_context.md` for project details.
   - Edge case: when history has fewer lines than scroll_offset, viewport should show all available history then fill remaining rows with buffer lines
   - Performance: accessing history.top deque elements by index may be O(n) for deque - consider converting to list if performance issues arise
 - **Usage:** 259.7s
+## Step: test_writing  (04:47:44)
+
+Wrote 2 test file(s):
+- `tests/unit/test_terminal_scrollback_display.py` (new)
+- `tests/unit/test_terminal_scrollback_rendering.py` (new)

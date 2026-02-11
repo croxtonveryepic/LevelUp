@@ -47,12 +47,42 @@
 - Settings classes in `src/levelup/config/settings.py`:
   - `LLMSettings` - LLM backend configuration
   - `ProjectSettings` - Project-specific settings
-  - `PipelineSettings` - Pipeline behavior settings
+  - `PipelineSettings` - Pipeline behavior settings (includes `require_checkpoints: bool = True`)
+  - `GUISettings` - GUI theme configuration
   - `LevelUpSettings` - Root settings class with nested models
 - Configuration loading in `src/levelup/config/loader.py`:
   - Searches for config files: `levelup.yaml`, `levelup.yml`, `.levelup.yaml`, `.levelup.yml`
   - Layered config: defaults → file → env vars → overrides
-- No GUI/theme configuration currently exists in settings
+  - Uses `_deep_merge()` to combine nested dictionaries
+- CLI flag `--no-checkpoints` overrides `pipeline.require_checkpoints` setting
+
+### Checkpoint System
+- Checkpoints occur after: requirements, test_writing, security, and review steps
+- Logic in `src/levelup/core/checkpoint.py`:
+  - `run_checkpoint()` - displays content and gets user decision via terminal
+  - `build_checkpoint_display_data()` - extracts checkpoint data as serializable dict
+  - `_display_checkpoint_content()` - renders checkpoint content in terminal
+- Orchestrator checkpoint handling in `src/levelup/core/orchestrator.py` (lines 456-494):
+  - Checks `settings.pipeline.require_checkpoints` before prompting
+  - Supports DB checkpoints (headless/GUI mode) via `_wait_for_checkpoint_decision()`
+  - Supports terminal checkpoints via `run_checkpoint()`
+  - User can approve, revise, instruct, or reject at each checkpoint
+- Decisions handled in `get_checkpoint_decision()` in `src/levelup/cli/prompts.py`
+
+### Ticket System
+- Markdown-based tickets stored in `levelup/tickets.md` (configurable via `project.tickets_file`)
+- Ticket model in `src/levelup/core/tickets.py`:
+  - `Ticket` class: number, title, description, status (pending/in progress/done/merged)
+  - Status tags in markdown: `## [status] Title` (pending tickets have no tag)
+  - Parsing functions: `parse_tickets()`, `read_tickets()`, `get_next_ticket()`
+  - Modification functions: `set_ticket_status()`, `update_ticket()`, `delete_ticket()`, `add_ticket()`
+- CLI integration in `src/levelup/cli/app.py`:
+  - Every run creates or is linked to a ticket
+  - `--ticket N` runs specific ticket, `--ticket-next` auto-picks next pending ticket
+  - Auto-transitions: pending→in progress on run start, in progress→done on completion
+  - One active run per ticket enforced via state manager
+- State DB stores `ticket_number` in runs table (added in DB v4)
+- Current ticket format has no metadata/options beyond the four fields
 
 ### Styling Patterns
 - Global stylesheet applied to QApplication in `app.py`

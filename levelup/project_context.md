@@ -25,6 +25,20 @@
   - `tools/` - Agent tools (file I/O, shell, test runner)
 - `tests/` - Test suite with unit and integration tests
 
+### Git Worktree Workflow
+- LevelUp uses git worktrees for concurrent pipeline execution
+- Each pipeline run creates:
+  - A new branch (e.g., `levelup/{run_id}`) in the main repository
+  - A worktree directory at `~/.levelup/worktrees/{run_id}`
+- On pipeline completion:
+  - The worktree directory is removed (`_cleanup_worktree()` at line 826-836)
+  - The branch PERSISTS in the main repository for user to review/merge
+  - User is responsible for manually merging or pushing the branch
+- Orchestrator prints completion message (lines 262-269) showing:
+  - Branch name
+  - Suggested git commands for user to manually checkout/merge
+- Worktree cleanup happens for all statuses EXCEPT `PAUSED` (line 272-273)
+
 ### GUI Architecture
 - **Framework**: PyQt6
 - **Entry point**: `src/levelup/gui/app.py` - launches QApplication and MainWindow

@@ -20,3 +20,10 @@ Failed to remove worktree: Cmd('git') failed due to: exit code(255)
 ## Step: detect  (01:43:32)
 
 See `levelup/project_context.md` for project details.
+## Step: requirements  (01:45:14)
+
+**Summary:** Fix incorrect git merge instructions in pipeline completion message
+- 2 requirement(s)
+- 4 assumption(s)
+- 5 out-of-scope item(s)
+- **Usage:** 99.5s

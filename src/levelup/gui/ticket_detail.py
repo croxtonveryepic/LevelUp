@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSplitter,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -109,11 +110,12 @@ class TicketDetailWidget(QWidget):
         form_layout.addLayout(btn_layout)
         splitter.addWidget(form_widget)
 
-        # -- Bottom: run terminal --
-        self._terminal = RunTerminalWidget()
-        self._terminal.run_started.connect(self._on_run_started)
-        self._terminal.run_finished.connect(self._on_run_finished)
-        splitter.addWidget(self._terminal)
+        # -- Bottom: per-ticket terminal stack --
+        self._terminal_stack = QStackedWidget()
+        self._terminals: dict[int, RunTerminalWidget] = {}
+        self._current_terminal: RunTerminalWidget | None = None
+        self._state_manager_ref: object | None = None
+        splitter.addWidget(self._terminal_stack)
 
         # Initial sizes: ~60% form, ~40% terminal
         splitter.setSizes([350, 250])
@@ -127,8 +129,50 @@ class TicketDetailWidget(QWidget):
         return self._dirty
 
     @property
-    def terminal(self) -> RunTerminalWidget:
-        return self._terminal
+    def terminal(self) -> RunTerminalWidget | None:
+        return self._current_terminal
+
+    def _get_or_create_terminal(self, ticket_number: int) -> RunTerminalWidget:
+        """Return an existing terminal for *ticket_number*, or create one."""
+        if ticket_number in self._terminals:
+            return self._terminals[ticket_number]
+        terminal = RunTerminalWidget()
+        terminal.run_started.connect(self._on_run_started)
+        terminal.run_finished.connect(self._on_run_finished)
+        if self._project_path and self._db_path:
+            terminal.set_context(self._project_path, self._db_path)
+        if self._state_manager_ref is not None:
+            terminal.set_state_manager(self._state_manager_ref)
+        terminal._ticket_number = ticket_number
+        self._terminal_stack.addWidget(terminal)
+        self._terminals[ticket_number] = terminal
+        return terminal
+
+    def _show_terminal(self, ticket_number: int) -> None:
+        """Switch the visible terminal to the one for *ticket_number*."""
+        terminal = self._get_or_create_terminal(ticket_number)
+        self._terminal_stack.setCurrentWidget(terminal)
+        self._current_terminal = terminal
+
+    def _remove_terminal(self, ticket_number: int) -> None:
+        """Destroy the terminal associated with *ticket_number*."""
+        terminal = self._terminals.pop(ticket_number, None)
+        if terminal is None:
+            return
+        if terminal is self._current_terminal:
+            self._current_terminal = None
+        if terminal._shell_started:
+            terminal._terminal.close_shell()
+        self._terminal_stack.removeWidget(terminal)
+        terminal.deleteLater()
+
+    def cleanup_all_terminals(self) -> None:
+        """Shut down every PTY and clear the terminal dict."""
+        for terminal in list(self._terminals.values()):
+            if terminal._shell_started:
+                terminal._terminal.close_shell()
+        self._terminals.clear()
+        self._current_terminal = None
 
     def set_project_context(
         self,
@@ -139,11 +183,16 @@ class TicketDetailWidget(QWidget):
         """Store project context so runs can be launched."""
         self._project_path = project_path
         self._db_path = db_path
-        self._terminal.set_context(project_path, db_path)
         if state_manager is not None:
-            self._terminal.set_state_manager(state_manager)
-        # Enable run button if a ticket is loaded
-        self._terminal.enable_run(self._ticket is not None)
+            self._state_manager_ref = state_manager
+        # Propagate context to all existing terminals
+        for terminal in self._terminals.values():
+            terminal.set_context(project_path, db_path)
+            if state_manager is not None:
+                terminal.set_state_manager(state_manager)
+        # Enable run button on the current terminal if a ticket is loaded
+        if self._current_terminal is not None:
+            self._current_terminal.enable_run(self._ticket is not None)
 
     def update_theme(self, theme: str) -> None:
         """Update widget styling for theme change.
@@ -186,7 +235,8 @@ class TicketDetailWidget(QWidget):
         self._dirty = False
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
-        self._terminal.enable_run(False)
+        if self._current_terminal is not None:
+            self._current_terminal.enable_run(False)
         self._title_edit.setFocus()
 
     def set_ticket(self, ticket: Ticket) -> None:
@@ -215,10 +265,11 @@ class TicketDetailWidget(QWidget):
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(True)
 
-        # Store ticket number for the terminal and enable Run if we have context
-        self._terminal._ticket_number = ticket.number
-        self._terminal.enable_run(
-            self._project_path is not None and not self._terminal.is_running
+        # Show (or create) the terminal for this ticket
+        self._show_terminal(ticket.number)
+        assert self._current_terminal is not None
+        self._current_terminal.enable_run(
+            self._project_path is not None and not self._current_terminal.is_running
         )
 
         # Wire existing run from DB for this ticket
@@ -228,29 +279,31 @@ class TicketDetailWidget(QWidget):
 
     def _wire_existing_run(self, ticket_number: int) -> None:
         """Query the DB for an existing run for this ticket and update terminal state."""
-        if not self._project_path or not self._terminal._state_manager:
+        if self._current_terminal is None:
+            return
+        if not self._project_path or not self._current_terminal._state_manager:
             return
         from levelup.state.manager import StateManager
 
-        sm = self._terminal._state_manager
+        sm = self._current_terminal._state_manager
         assert isinstance(sm, StateManager)
         record = sm.get_run_for_ticket(self._project_path, ticket_number)
         if record is None:
-            self._terminal._last_run_id = None
-            self._terminal._update_button_states()
-            self._terminal._status_label.setText("Ready")
+            self._current_terminal._last_run_id = None
+            self._current_terminal._update_button_states()
+            self._current_terminal._status_label.setText("Ready")
             return
 
-        self._terminal._last_run_id = record.run_id
+        self._current_terminal._last_run_id = record.run_id
 
         if record.status in ("completed", "failed", "aborted"):
-            self._terminal._status_label.setText(f"Last run: {record.status}")
+            self._current_terminal._status_label.setText(f"Last run: {record.status}")
         elif record.status == "paused":
-            self._terminal._status_label.setText("Paused")
+            self._current_terminal._status_label.setText("Paused")
         elif record.status in ("running", "pending", "waiting_for_input"):
-            self._terminal._status_label.setText(f"Active ({record.status})")
+            self._current_terminal._status_label.setText(f"Active ({record.status})")
 
-        self._terminal._update_button_states()
+        self._current_terminal._update_button_states()
 
     def _mark_dirty(self) -> None:
         self._dirty = True
@@ -325,7 +378,7 @@ class TicketDetailWidget(QWidget):
         title = self._ticket.title
 
         # If a pipeline run is active, warn and terminate first
-        if self._terminal.is_running:
+        if self._current_terminal is not None and self._current_terminal.is_running:
             reply = QMessageBox.warning(
                 self,
                 "Active Run",
@@ -336,7 +389,7 @@ class TicketDetailWidget(QWidget):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
-            self._terminal._on_terminate_clicked()
+            self._current_terminal._on_terminate_clicked()
 
         # Confirm deletion
         reply = QMessageBox.question(
@@ -350,6 +403,7 @@ class TicketDetailWidget(QWidget):
             return
 
         self.ticket_deleted.emit(number)
+        self._remove_terminal(number)
 
     def _on_run_started(self, pid: int) -> None:
         self.run_pid_changed.emit(pid, True)

@@ -330,7 +330,8 @@ class MainWindow(QMainWindow):
             return
 
         # Clean up associated run + worktree if one exists
-        run_id = self._detail.terminal.last_run_id
+        terminal = self._detail.terminal
+        run_id = terminal.last_run_id if terminal else None
         if run_id:
             import shutil
 
@@ -505,3 +506,8 @@ class MainWindow(QMainWindow):
             for r in to_remove:
                 self._state_manager.delete_run(r.run_id)
             self._refresh()
+
+    def closeEvent(self, event: object) -> None:
+        """Clean up all PTY shells before closing."""
+        self._detail.cleanup_all_terminals()
+        super().closeEvent(event)  # type: ignore[arg-type]

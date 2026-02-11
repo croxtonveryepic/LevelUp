@@ -18,3 +18,17 @@ See `levelup/project_context.md` for project details.
 - 5 assumption(s)
 - 7 out-of-scope item(s)
 - **Usage:** 140.0s
+### Checkpoint: requirements
+
+- **Decision:** auto-approved
+## Step: planning  (21:09:39)
+
+**Approach:** Fix the terminal text copying bug by updating the _get_selected_text() method to use the same composite view logic as paintEvent() when scroll_offset > 0. This involves reading from history.top for rows < scroll_offset and from buffer for rows >= scroll_offset, matching the rendering behavior. Add comprehensive unit tests to verify correct copying behavior in all scroll states.
+- 2 implementation step(s)
+- **Affected files:** src/levelup/gui/terminal_emulator.py, tests/unit/test_terminal_scrollback_copy.py
+- **Risks:**
+  - Edge case: If scroll_offset exceeds history length, index calculation could be out of bounds - need to handle gracefully like paintEvent does
+  - Edge case: Empty history with scroll_offset > 0 needs careful handling to avoid index errors
+  - Multi-line selections spanning both history and buffer regions require correct composite text assembly
+  - Existing tests in test_terminal_emulator.py test _get_selected_text() at scroll_offset=0, must ensure backward compatibility
+- **Usage:** 142.6s

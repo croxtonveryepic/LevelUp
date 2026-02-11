@@ -89,7 +89,7 @@
 - **Terminal Backend**: Uses `pyte` library for VT100 terminal emulation with PTY (pseudo-terminal) backend
 - **Screen State**:
     - `pyte.HistoryScreen` with 10,000 line scrollback buffer
-    - Current buffer: `self._screen.buffer` (visible screen rows)
+    - Current buffer: `self._screen.buffer` (visible screen rows, list of line objects)
     - History buffer: `self._screen.history.top` (deque of historical lines)
 - **Scrollback System**:
     - `_scroll_offset`: Number of lines scrolled up from bottom (0 = at bottom)
@@ -97,26 +97,36 @@
     - `paintEvent()`: Renders composite of history + buffer based on scroll offset
 - **Rendering Logic** (`paintEvent()` lines 513-606):
     - When `_scroll_offset > 0`: Top rows come from `screen.history.top`, remaining rows from `screen.buffer`
-    - Formula: `history_idx = len(history.top) - scroll_offset + row`
+    - Formula for history lines: `history_idx = len(history.top) - scroll_offset + row`
+    - Formula for buffer lines: `buffer_row = row - scroll_offset`
     - Transitions from history to buffer at row = `_scroll_offset`
 - **Selection & Copy System**:
-    - Mouse events track selection: `_selection_start` and `_selection_end` (col, row tuples)
+    - Mouse events track selection: `_selection_start` and `_selection_end` (col, row tuples in viewport coordinates)
+    - Selection coordinates are always in viewport space (0 to _rows-1, 0 to _cols-1)
     - `_get_selected_text()`: Extracts text from selection (lines 761-778)
     - **CURRENT BUG**: `_get_selected_text()` always reads from `screen.buffer[row]`, ignoring scroll offset
-    - Should read from same composite view as `paintEvent()` (history + buffer based on offset)
+    - **FIX NEEDED**: Should read from same composite view as `paintEvent()` (history + buffer based on offset)
+    - When `_scroll_offset > 0` and `row < _scroll_offset`: read from history using `history_idx = len(history.top) - scroll_offset + row`
+    - When `_scroll_offset > 0` and `row >= _scroll_offset`: read from buffer using `buffer_row = row - scroll_offset`
+    - When `_scroll_offset == 0`: read from buffer using `buffer[row]` (current behavior)
 - **Copy Shortcuts**:
     - Ctrl+Shift+C: Copy selection
     - Ctrl+C with selection: Copy selection
     - Ctrl+C without selection: Send interrupt to shell
 - **Color Schemes**: `CatppuccinMochaColors` (dark) and `LightTerminalColors` (light)
 
-### Terminal Scrollback Bug
+### Terminal Scrollback Copy Bug Details
 
 - **Issue**: When terminal is scrolled up (`_scroll_offset > 0`), selecting and copying text copies from wrong location
 - **Root Cause**: `_get_selected_text()` method always reads from `self._screen.buffer[row]` regardless of scroll position
 - **Expected Behavior**: Should read from history when `row < scroll_offset`, just like `paintEvent()` does
 - **Test Documentation**: `tests/unit/test_terminal_scrollback_display.py` line 552 documents expected behavior
 - **Impact**: User sees highlighted text from history but clipboard gets text from current buffer at same row position
+- **Edge Cases to Handle**:
+    - Empty history with scroll offset > 0
+    - Scroll offset exceeding history length
+    - Selection spanning both history and buffer regions
+    - Multi-line selections across history/buffer boundary
 
 ### Ticket System
 
@@ -372,6 +382,8 @@
 - Auto-approve tests in `test_gui_ticket_metadata.py` verify checkbox behavior
 - Terminal scrollback tests located at `tests/unit/test_terminal_scrollback_display.py` (display logic)
 - Terminal rendering tests located at `tests/unit/test_terminal_scrollback_rendering.py` (rendering details)
+- Terminal copy/selection tests use mock clipboard and simulate mouse/keyboard events
+- Test helper `_fill_history()` in scrollback tests writes lines to push content into history buffer
 
 ### Ticket Sidebar Widget Structure
 

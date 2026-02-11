@@ -58,11 +58,21 @@
 ### Git & Branch Management
 
 - **Worktrees**: Pipeline runs create git worktrees at `~/.levelup/worktrees/<run_id>/`
+    - **Location**: `~/.levelup/worktrees/<run_id>/`
+    - **Purpose**: Enable concurrent pipeline runs on different tickets without conflicts
+    - **Lifecycle**:
+        - Created in `Orchestrator._create_git_branch()` (orchestrator.py line 934)
+        - Currently removed in `Orchestrator._cleanup_worktree()` (orchestrator.py lines 949-959) at end of successful runs
+        - Also removed during rollback in `cli/app.py` (line 669) and GUI delete ticket in `main_window.py` (line 417)
+    - **Current behavior**: Worktrees are automatically removed after successful pipeline completion (lines 353, 466 in orchestrator.py)
+    - **Error handling**: Removal failures are logged as warnings (logger.warning) which appear to users as errors
+    - **Tests**: `tests/unit/test_concurrent_worktrees.py` - tests for concurrent worktree creation and cleanup
+    - **Issue**: On Windows, worktree removal often fails with "Permission denied" errors, likely due to file locks from running processes
 - **Branch Naming**: Stored in `ctx.branch_naming` (e.g., `levelup/{task_title}`)
 - **Branch Metadata**: Branch name stored in ticket metadata as `branch_name` after completion
+- **Branch Preservation**: Branches persist in main repo after worktree cleanup (verified in test_git_completion_message.py line 467)
 - **Step Commits**: Each pipeline step gets a commit (when `create_git_branch: true`)
 - **Pre-run SHA**: Stored in `ctx.pre_run_sha` for rollback support
-- **Worktree Cleanup**: Removed after run completes (branch persists in main repo)
 - **Merge Operations**: Existing rebase-merge skill uses simple git commands, no conflict resolution
 - **Main Repository Operations**: Merge operations should run in the main repository (ctx.project_path), not in worktrees
 

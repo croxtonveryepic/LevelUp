@@ -20,3 +20,10 @@ Failed to remove worktree: Cmd('git') failed due to: exit code(255)
 ## Step: detect  (20:59:30)
 
 See `levelup/project_context.md` for project details.
+## Step: requirements  (21:03:05)
+
+**Summary:** Remove automatic worktree cleanup at end of pipeline runs
+- 3 requirement(s)
+- 5 assumption(s)
+- 5 out-of-scope item(s)
+- **Usage:** 212.8s

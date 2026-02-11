@@ -263,15 +263,19 @@
 - **Entry point**: `src/levelup/gui/app.py` - launches QApplication and MainWindow
 - **Main window**: `src/levelup/gui/main_window.py` - dashboard with run table and ticket sidebar
 - **Theming**:
-    - Current theme: Catppuccin Mocha (dark theme) defined in `src/levelup/gui/styles.py`
-    - Applied globally via `app.setStyleSheet(DARK_THEME)` in `app.py` (line 25)
-    - Terminal emulator has its own color scheme class: `CatppuccinMochaColors` in `terminal_emulator.py`
-    - Some widgets use inline `setStyleSheet()` calls for specific styling (e.g., ticket_detail.py, ticket_sidebar.py)
+    - Theme manager: `src/levelup/gui/theme_manager.py` - handles theme preferences and system detection
+    - Two themes available: `DARK_THEME` and `LIGHT_THEME` defined in `src/levelup/gui/styles.py`
+    - Theme preferences: "light", "dark", or "system" (default: "system")
+    - System theme detection via `darkdetect` library (already in dependencies)
+        - Applied globally via `app.setStyleSheet()` in `app.py`
+        - Terminal emulator has its own color scheme class: `CatppuccinMochaColors` in `terminal_emulator.py`
+        - Some widgets use inline `setStyleSheet()` calls for specific styling (e.g., ticket_detail.py, ticket_sidebar.py)
+    - **Theme switcher UI**: Currently a QComboBox dropdown in main_window.py toolbar (lines 82-101) with label "Theme:"
 - **Key widgets**:
     - `checkpoint_dialog.py` - Modal dialog for approving/revising/rejecting pipeline steps
     - `terminal_emulator.py` - Full VT100 terminal emulator with pyte + pywinpty/ptyprocess
     - `ticket_detail.py` - Ticket editing and run terminal view
-    - `ticket_sidebar.py` - Ticket list navigation
+    - `ticket_sidebar.py` - Ticket list navigation with icon button ("+" button for adding tickets)
     - `run_terminal.py` - Terminal wrapper for running levelup commands
 - **Key widgets**:
     - `checkpoint_dialog.py` - Modal dialog for approving/revising/rejecting pipeline steps
@@ -300,11 +304,12 @@
     - `LLMSettings` - LLM backend configuration
     - `ProjectSettings` - Project-specific settings
     - `PipelineSettings` - Pipeline behavior settings
-    - `LevelUpSettings` - Root settings class with nested models
+    - `GUISettings` - GUI configuration including theme preference (default: "system")
+        - `LevelUpSettings` - Root settings class with nested models
 - Configuration loading in `src/levelup/config/loader.py`:
     - Searches for config files: `levelup.yaml`, `levelup.yml`, `.levelup.yaml`, `.levelup.yml`
     - Layered config: defaults → file → env vars → overrides
-- No GUI/theme configuration currently exists in settings
+- GUI theme preference stored in config under `gui.theme` key
 
 ### State Management
 
@@ -351,21 +356,38 @@
 - Some widgets have inline `setStyleSheet()` calls for custom colors
 - Status colors for runs and tickets defined in `resources.py`
 - Terminal emulator uses custom color scheme class with QColor objects
+- Icon button pattern: Small square buttons with text symbols (e.g., "+" button in ticket sidebar)
+    - Styled via `#objectName` selectors in styles.py
+    - Example: `#addTicketBtn` - 28x28px square button with centered text
+    - Pattern for icon buttons: QPushButton with objectName, fixed size (28x28px), centered symbol, no min-width override, appropriate hover states
 
 ### System Theme Detection
 
 - PyQt6 doesn't provide native cross-platform dark mode detection API
-- Recommended approach: use `darkdetect` library (cross-platform, supports Windows/macOS/Linux)
+- Currently using `darkdetect` library (cross-platform, supports Windows/macOS/Linux)
 - darkdetect provides: `theme()` returns "Dark"/"Light", `isDark()`, `isLight()`, and `listener()` for watching changes
 - Alternative: PyQt6's `QStyleHints.colorScheme()` (Qt 6.5+) but less reliable across platforms
+- System theme detection works correctly in `app.py` on startup through `get_system_theme()` function
+- Default behavior: when `gui.theme` is "system" (default), `get_current_theme()` calls `get_system_theme()` which returns "light" or "dark"
+- Fallback: if darkdetect unavailable or fails, defaults to "dark" theme
 
 ### Testing Patterns
 
 - Unit tests in `tests/unit/`
 - Integration tests in `tests/integration/`
+- Integration tests in `tests/integration/`
+- Theme-related tests: `test_theme_switcher_ui.py`, `test_theme_settings.py`, `test_theme_manager.py`, `test_app_theme_integration.py`, `test_theme_switching_integration.py`
 - Tests use pytest with standard assertions
 - Mocking patterns: Use `unittest.mock.MagicMock` and `@patch` decorator for agent/LLM mocking
 - Path normalization needed on Windows: `.replace("\\", "/")` in assertions
+- Theme switcher tests expect either QComboBox or QPushButton (flexible)
+- Tests verify:
+    - Theme control exists and is visible
+    - Has tooltip
+    - Theme changes apply immediately
+    - Theme preference is saved
+    - All three theme options (light/dark/system) are available
+    - Current theme is indicated
 - Comprehensive usage tracking tests in `tests/unit/test_cost_tracking.py`
     - Tests for `AgentResult` defaults and values
     - Tests for `ToolLoopResult` token accumulation
@@ -401,24 +423,13 @@
 - Pydantic for configuration
 - pyte for terminal emulation
 - pywinpty (Windows) / ptyprocess (Unix) for PTY support
-- GitPython (`git` module) for git operations
-- rich for terminal output formatting
-- typer for CLI framework
-- rich for terminal output formatting
-- GitPython for git operations
+- darkdetect for system theme detection (already included in optional dependencies)
 
-### Auto-Approve Implementation Considerations
+### Theme Switcher Implementation Details
 
-Based on the codebase analysis:
-
-1. **Settings**: Add `auto_approve: bool = False` to `PipelineSettings` in `settings.py`
-2. **Environment variable**: Will automatically work via Pydantic: `LEVELUP_PIPELINE__AUTO_APPROVE=true`
-3. **CLI flag**: Add `--auto-approve` flag to `run` command in `cli/app.py`, add to overrides dict
-4. **Ticket metadata**: Need to extend ticket parsing to support metadata (recommend YAML frontmatter or HTML comment)
-5. **Orchestrator logic**: Modify checkpoint section in `_execute_steps()` (lines 456-494) to check auto-approve
-6. **Priority order**: ticket metadata → project setting → normal checkpoint flow
-7. **Journal logging**: Use existing `log_checkpoint()` with decision="auto-approved"
-8. **DB checkpoint skip**: When auto-approved, skip `_wait_for_checkpoint_decision()` and `run_checkpoint()` entirely
-9. **GUI integration**: Add checkbox to `TicketDetailWidget` for per-ticket auto-approve
-10. **CLI command**: Add `levelup tickets set-metadata <N>` subcommand for metadata editing
-11. **Backward compatibility**: Tickets without metadata should continue to work (metadata defaults to None)
+- Current implementation: QComboBox dropdown with "Light", "Dark", "Match System" options
+- Location: main_window.py lines 82-101 (toolbar section)
+- Method `_on_theme_changed()` handles theme selection changes
+- Theme cycling for button implementation: system → light → dark → system
+- Theme symbols for button: '◐' for system, '☀' for light, '☾' for dark
+- Tooltip pattern: "Theme: Match System", "Theme: Light", "Theme: Dark"

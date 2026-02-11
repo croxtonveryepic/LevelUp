@@ -42,13 +42,29 @@
   - `run_terminal.py` - Terminal wrapper for running levelup commands
 - **Resources**: `resources.py` contains status colors, labels, and icons
 
-### Terminal Initialization Flow (Current Behavior)
+### Terminal Initialization Flow (Current Behavior - Being Fixed)
 - **When a ticket is selected**: `TicketDetailWidget.set_ticket()` is called (line 242 in ticket_detail.py)
 - **Terminal creation**: `_show_terminal()` → `_get_or_create_terminal()` creates a `RunTerminalWidget` for that ticket
 - **Widget visibility**: When the terminal widget becomes visible, PyQt6 fires the `showEvent()`
-- **Shell initialization**: `RunTerminalWidget.showEvent()` (line 198) calls `_ensure_shell()` (line 202)
-- **PTY starts immediately**: `_ensure_shell()` calls `self._terminal.start_shell()` which spawns a PTY/shell process
+- **Shell initialization (CURRENT PROBLEM)**: `RunTerminalWidget.showEvent()` (line 198) calls `_ensure_shell()` (line 200)
+- **PTY starts immediately (UNWANTED)**: `_ensure_shell()` calls `self._terminal.start_shell()` which spawns a PTY/shell process
 - **Problem**: The shell starts as soon as the ticket is selected/viewed, NOT when the Run button is clicked
+
+### Terminal Initialization Flow (Target Behavior - Delayed Init)
+- **Shell should NOT start** when `RunTerminalWidget.showEvent()` is triggered by ticket selection
+- **Shell SHOULD start** when user clicks the "Run" button (inside `start_run()` method, line 160)
+- **Shell SHOULD start** when user clicks the "Resume" button (inside `_on_resume_clicked()` method, line 311)
+- **Implementation approach**: Remove `_ensure_shell()` call from `showEvent()`, keep it in `start_run()` and `_on_resume_clicked()`
+- **Benefit**: Avoids spawning unnecessary PTY processes for tickets that are just being viewed, not run
+
+### RunTerminalWidget Lifecycle
+- **Widget creation**: Created per-ticket by `TicketDetailWidget._get_or_create_terminal()` (line 135)
+- **Reusability**: Same terminal widget is reused across multiple runs for the same ticket
+- **State tracking**:
+  - `_shell_started` flag (line 70) tracks whether PTY has been initialized
+  - `_command_running` flag (line 69) tracks whether a command is actively executing
+- **Shell initialization**: `_ensure_shell()` (line 202) is idempotent - only starts shell once
+- **Shell cleanup**: `close_shell()` called when terminal widget is deleted (line 164 in ticket_detail.py)
 
 ### Configuration
 - Uses Pydantic settings with environment variable support
@@ -81,6 +97,8 @@
 - Terminal-specific tests in `tests/unit/test_ticket_detail_terminals.py` verify per-ticket terminal isolation
 - Tests use pytest with standard assertions
 - Path normalization needed on Windows: `.replace("\\", "/")` in assertions
+- PyQt6 tests use `@pytest.mark.skipif(not _can_import_pyqt6())` decorator to skip when PyQt6 unavailable
+- GUI widget tests mock the `PtyBackend` to avoid spawning real PTY processes
 
 ### Key Dependencies
 - PyQt6 for GUI (installed via `gui` or `dev` optional dependencies)

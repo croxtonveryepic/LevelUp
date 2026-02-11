@@ -19,3 +19,17 @@ See `levelup/project_context.md` for project details.
 - 6 assumption(s)
 - 8 out-of-scope item(s)
 - **Usage:** 88.7s
+### Checkpoint: requirements
+
+- **Decision:** approve
+## Step: planning  (01:49:21)
+
+**Approach:** Replace the QComboBox theme dropdown with a QPushButton icon button that cycles through themes (system → light → dark → system). The button will display a symbol indicating the current theme and show a tooltip with the full theme name. Update styles.py to add button styling for both light and dark themes. Modify existing tests to work with the new button-based UI while maintaining all existing functionality.
+- 3 implementation step(s)
+- **Affected files:** src/levelup/gui/main_window.py, src/levelup/gui/styles.py, tests/unit/test_theme_switcher_ui.py
+- **Risks:**
+  - Tests may need adjustment if they rely on specific QComboBox behavior
+  - Symbol characters (☀, ☾, ◐) may not render consistently across all platforms/fonts
+  - Cycling UI pattern may be less discoverable than dropdown for new users
+  - Existing users accustomed to dropdown may need to learn new interaction pattern
+- **Usage:** 79.2s

@@ -346,6 +346,61 @@
 - **Skip planning resolution** (line 312): CLI > ticket metadata > false
 - Settings passed to `_create_backend()` (line 315) with model_override and thinking_budget
 
+### Testing Patterns
+
+- Unit tests use pytest with PyQt6 fixtures
+- Mock state manager using `MagicMock(spec=StateManager)`
+- Mock terminal emulator with `patch("levelup.gui.terminal_emulator.PtyBackend")`
+- Test files follow pattern: `test_<component>.py` or `test_<component>_<feature>.py`
+- Button state tests verify enabled/disabled states after state transitions
+- Metadata tests verify round-trip serialization and preservation of non-form fields
+- Integration tests use temporary directories (`tmp_path` fixture) for file operations
+- **PyQt6 keyboard event testing**: Use `QKeyEvent` with `Type.KeyPress`, key code, modifiers, and text
+- **Example from test_terminal_scrollback_display.py**:
+  ```python
+  event = QKeyEvent(
+      QKeyEvent.Type.KeyPress,
+      Qt.Key.Key_Tab,
+      Qt.KeyboardModifier.ShiftModifier,
+      "",
+  )
+  widget.keyPressEvent(event)
+  ```
+- **Focus testing**: Can verify focus state with `widget.hasFocus()` and focus navigation with `focusNextChild()`/`focusPreviousChild()`
+- **Signal testing**: Connect signals to lambda/list to capture emissions, e.g., `widget.signal.connect(lambda: received.append(True))`
+
+### Key Conventions
+
+- Windows paths: Use `.replace("\\", "/")` in test assertions
+- Test classes named `Test*` trigger pytest collection warnings (expected)
+- SQLite WAL mode for multi-process access
+- Git worktrees for concurrent runs at `~/.levelup/worktrees/<run_id>/`
+- Parent widgets pass theme to child widgets during construction
+- Theme updates propagate via `update_theme(theme)` method
+
+## Codebase Insights
+
+### GUI Architecture
+
+- **Framework**: PyQt6-based desktop GUI
+- **Location**: `src/levelup/gui/`
+- **Key Components**:
+    - `ticket_sidebar.py`: Displays ticket list with status indicators
+    - `resources.py`: Defines status-to-color/icon mappings for both dark and light themes
+    - `styles.py`: QSS stylesheets for dark and light themes
+    - `main_window.py`: Main application window that coordinates GUI components
+
+### Ticket System
+
+- **Location**: `src/levelup/core/tickets.py`
+- **Ticket Statuses**:
+    - `PENDING` (default, no status tag in markdown)
+    - `IN_PROGRESS` (tagged with `[in progress]`)
+    - `DONE` (tagged with `[done]`)
+    - `MERGED` (tagged with `[merged]`)
+- **Storage**: Markdown-based in `levelup/tickets.md` (configurable)
+- **Format**: Level-2 headings (`##`) represent tickets
+
 ### Theming System
 
 - **Themes**: Dark (default) and Light
@@ -404,6 +459,18 @@
     - No custom `keyPressEvent` handler currently implemented
     - Expected focus order: Title → Description → Save button
     - Current issue: Tab key inserts tab character instead of moving focus
+- **Keyboard Event Handling Pattern**:
+    - Custom widgets can override `keyPressEvent(event: QKeyEvent)` method
+    - Access key code via `event.key()` (e.g., `Qt.Key.Key_Tab`)
+    - Access modifiers via `event.modifiers()` (e.g., `Qt.KeyboardModifier.ShiftModifier`)
+    - Call `event.accept()` to prevent default behavior or `event.ignore()` to allow it
+    - For focus navigation, call `self.focusNextChild()` or `self.focusPreviousChild()`
+    - Example from `terminal_emulator.py` lines 612-622: Custom handling of Ctrl+Shift+C/V for copy/paste
+- **Custom QPlainTextEdit Subclass Approach**:
+    - Create a custom subclass of `QPlainTextEdit` with overridden `keyPressEvent`
+    - Handle Tab, Shift+Tab, Enter, and Shift+Enter specially
+    - Use `self.parent()` or emit signals to communicate with parent widget for save action
+    - Can be reused for other text fields needing similar behavior (e.g., checkpoint dialog)
 - **Related Files**:
     - Tests: `tests/unit/test_gui_create_ticket.py` - tests for create ticket flow
     - Keyboard handling example: `src/levelup/gui/terminal_emulator.py` (has `keyPressEvent` for special key handling)

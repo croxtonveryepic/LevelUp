@@ -170,6 +170,7 @@ class PipelineContext(BaseModel):
     requirements: Requirements | None = None
     plan: Plan | None = None
     test_files: list[FileChange] = Field(default_factory=list)
+    test_verification_passed: bool | None = None
     code_files: list[FileChange] = Field(default_factory=list)
     test_results: list[TestResult] = Field(default_factory=list)
     review_findings: list[ReviewFinding] = Field(default_factory=list)

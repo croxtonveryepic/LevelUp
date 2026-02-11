@@ -47,6 +47,11 @@ def build_checkpoint_display_data(step_name: str, ctx: PipelineContext) -> dict:
         else:
             data["message"] = "No test files written."
 
+    elif step_name == "test_verification":
+        # No checkpoint for this step, but include minimal data
+        if ctx.test_verification_passed is not None:
+            data["verification_passed"] = ctx.test_verification_passed
+
     elif step_name == "security":
         data["security_findings"] = [f.model_dump() for f in ctx.security_findings]
         data["patches_applied"] = ctx.security_patches_applied

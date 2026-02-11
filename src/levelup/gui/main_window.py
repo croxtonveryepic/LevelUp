@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from levelup.gui.checkpoint_dialog import CheckpointDialog
+from levelup.gui.docs_widget import DocsWidget
 from levelup.gui.resources import STATUS_COLORS, STATUS_LABELS, status_display
 from levelup.gui.ticket_detail import TicketDetailWidget
 from levelup.gui.ticket_sidebar import TicketSidebarWidget
@@ -90,6 +91,13 @@ class MainWindow(QMainWindow):
         self._update_theme_button()
 
         toolbar_layout.addWidget(self._theme_switcher)
+
+        self._docs_btn = QPushButton("\U0001F4C4")
+        self._docs_btn.setObjectName("docsBtn")
+        self._docs_btn.setToolTip("Documentation")
+        self._docs_btn.clicked.connect(self._on_docs_clicked)
+        toolbar_layout.addWidget(self._docs_btn)
+
         toolbar_layout.addStretch()
 
         refresh_btn = QPushButton("Refresh")
@@ -142,6 +150,11 @@ class MainWindow(QMainWindow):
         self._detail.ticket_deleted.connect(self._on_ticket_deleted)
         self._detail.run_pid_changed.connect(self._on_run_pid_changed)
         self._stack.addWidget(self._detail)  # index 1
+
+        # Page 2: documentation viewer
+        self._docs = DocsWidget()
+        self._docs.back_clicked.connect(self._on_docs_back)
+        self._stack.addWidget(self._docs)  # index 2
 
         splitter.addWidget(self._stack)
 
@@ -269,6 +282,9 @@ class MainWindow(QMainWindow):
 
             # Update button appearance
             self._update_theme_button()
+
+            # Update docs HTML theme
+            self._docs.update_theme(actual_theme)
         except Exception:
             # Handle errors gracefully - theme may fail to save or apply
             # but we shouldn't crash the app
@@ -294,6 +310,16 @@ class MainWindow(QMainWindow):
         """Return to the runs table view."""
         self._stack.setCurrentIndex(0)
         self._sidebar.clear_selection()
+
+    def _on_docs_clicked(self) -> None:
+        """Switch to the documentation viewer."""
+        self._sidebar.clear_selection()
+        self._docs.set_project_path(self._project_path)
+        self._stack.setCurrentIndex(2)
+
+    def _on_docs_back(self) -> None:
+        """Return from docs to the runs table view."""
+        self._stack.setCurrentIndex(0)
 
     def _on_create_ticket(self) -> None:
         """Open the detail widget in create mode."""

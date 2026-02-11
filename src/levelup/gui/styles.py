@@ -236,6 +236,44 @@ QLabel#terminalStatusLabel {
     color: #A6ADC8;
     font-size: 12px;
 }
+QPushButton#docsBtn {
+    background-color: #45475A;
+    color: #CDD6F4;
+    border: 1px solid #585B70;
+    border-radius: 4px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    font-size: 16px;
+}
+QPushButton#docsBtn:hover {
+    background-color: #585B70;
+}
+QComboBox {
+    background-color: #181825;
+    color: #CDD6F4;
+    border: 1px solid #313244;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+QComboBox::drop-down {
+    border: none;
+}
+QComboBox QAbstractItemView {
+    background-color: #313244;
+    color: #CDD6F4;
+    border: 1px solid #45475A;
+    selection-background-color: #45475A;
+}
+QTextBrowser#docsBrowser {
+    background-color: #181825;
+    color: #CDD6F4;
+    border: 1px solid #313244;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+}
 """
 
 LIGHT_THEME = """
@@ -471,6 +509,44 @@ QPushButton#deleteBtn:disabled {
 QLabel#terminalStatusLabel {
     color: #4C566A;
     font-size: 12px;
+}
+QPushButton#docsBtn {
+    background-color: #E5E9F0;
+    color: #2E3440;
+    border: 1px solid #D8DEE9;
+    border-radius: 4px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    font-size: 16px;
+}
+QPushButton#docsBtn:hover {
+    background-color: #D8DEE9;
+}
+QComboBox {
+    background-color: #FFFFFF;
+    color: #2E3440;
+    border: 1px solid #D8DEE9;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+QComboBox::drop-down {
+    border: none;
+}
+QComboBox QAbstractItemView {
+    background-color: #FFFFFF;
+    color: #2E3440;
+    border: 1px solid #D8DEE9;
+    selection-background-color: #88C0D0;
+}
+QTextBrowser#docsBrowser {
+    background-color: #FFFFFF;
+    color: #2E3440;
+    border: 1px solid #D8DEE9;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
 }
 """
 

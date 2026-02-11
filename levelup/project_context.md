@@ -190,6 +190,11 @@
     - Can be set via `levelup.yaml` under `pipeline.auto_approve`
     - Can be set via environment variable `LEVELUP_PIPELINE__AUTO_APPROVE`
     - Config loaded via `load_settings()` from `config/loader.py`
+- **Settings loading in GUI**:
+    - `MainWindow.__init__()` loads settings via `load_settings(project_path=project_path)` (main_window.py line 62-67)
+    - Settings are used to get `tickets_file` configuration
+    - `TicketDetailWidget` does NOT currently load settings - needs to be added
+    - `set_project_context()` is the natural place to load settings when project path is set
 
 ### Theme System
 
@@ -256,6 +261,9 @@
 - Button state tests verify enabled/disabled states after state transitions
 - Metadata tests verify round-trip serialization and preservation of non-form fields
 - Integration tests use temporary directories (`tmp_path` fixture) for file operations
+- Tests for project settings use `load_settings(project_path=tmp_path)` pattern
+- Config files created as `tmp_path / "levelup.yaml"` with YAML content
+- Auto-approve tests in `test_gui_ticket_metadata.py` verify checkbox behavior
 
 ### Key Conventions
 

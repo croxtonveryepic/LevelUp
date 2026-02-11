@@ -18,3 +18,16 @@ See `levelup/project_context.md` for project details.
 - 4 assumption(s)
 - 4 out-of-scope item(s)
 - **Usage:** 181.9s
+### Checkpoint: requirements
+
+- **Decision:** auto-approved
+## Step: planning  (20:48:56)
+
+**Approach:** Add project settings loading to TicketDetailWidget to populate auto-approve checkbox with project's default when ticket has no metadata. Load settings when project context is set, store the default value, and use it in both set_ticket() and set_create_mode() methods.
+- 4 implementation step(s)
+- **Affected files:** src/levelup/gui/ticket_detail.py, tests/unit/test_gui_auto_approve_defaults.py
+- **Risks:**
+  - Settings loading may fail if project path is invalid - need graceful fallback to False
+  - Existing tests in test_gui_ticket_metadata.py may need updates if they expect False default behavior
+  - Need to ensure settings are reloaded if project path changes after initial widget creation
+- **Usage:** 133.1s

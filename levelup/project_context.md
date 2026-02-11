@@ -170,7 +170,26 @@
     1. CLI `run()` function accepts `--model`, `--effort`, `--skip-planning` flags
     2. Orchestrator reads ticket metadata via `_read_ticket_settings()`
     3. Precedence: CLI flags > ticket metadata > config defaults
-    4. Auto-approve handled separately via `_should_auto_approve()`
+    4. Auto-approve handled separately via `_should_auto_approve()` (orchestrator.py line 89)
+
+### Auto-Approve Special Case
+
+- Currently stored in ticket metadata like other settings
+- Used by orchestrator to skip checkpoint prompts
+- **Not** a run-level setting (applies to all runs of a ticket)
+- Should remain as ticket-level metadata, not moved to run options
+- **Resolution priority** (orchestrator.py `_should_auto_approve()`, line 86):
+    1. Ticket metadata `auto_approve` field (if present)
+    2. Project-level config `pipeline.auto_approve` (default: False)
+- **Current GUI behavior**:
+    - `set_ticket()` (line 286-292): Populates checkbox from ticket metadata, defaults to False if not present
+    - `set_create_mode()` (line 253-255): Always sets checkbox to False for new tickets
+    - **BUG**: Does not respect project's default `pipeline.auto_approve` setting when ticket has no metadata
+- **Config system**:
+    - `PipelineSettings.auto_approve` field in `config/settings.py` (line 40), default: False
+    - Can be set via `levelup.yaml` under `pipeline.auto_approve`
+    - Can be set via environment variable `LEVELUP_PIPELINE__AUTO_APPROVE`
+    - Config loaded via `load_settings()` from `config/loader.py`
 
 ### Theme System
 
@@ -228,6 +247,24 @@
 - **Skip planning resolution** (line 312): CLI > ticket metadata > false
 - Settings passed to `_create_backend()` (line 315) with model_override and thinking_budget
 
+### Testing Patterns
+
+- Unit tests use pytest with PyQt6 fixtures
+- Mock state manager using `MagicMock(spec=StateManager)`
+- Mock terminal emulator with `patch("levelup.gui.terminal_emulator.PtyBackend")`
+- Test files follow pattern: `test_<component>.py` or `test_<component>_<feature>.py`
+- Button state tests verify enabled/disabled states after state transitions
+- Metadata tests verify round-trip serialization and preservation of non-form fields
+- Integration tests use temporary directories (`tmp_path` fixture) for file operations
+
+### Key Conventions
+
+- Windows paths: Use `.replace("\\", "/")` in test assertions
+- Test classes named `Test*` trigger pytest collection warnings (expected)
+- SQLite WAL mode for multi-process access
+- Git worktrees for concurrent runs at `~/.levelup/worktrees/<run_id>/`
+- Parent widgets pass theme to child widgets during construction
+- Theme updates propagate via `update_theme(theme)` method
 ### Theming System
 
 - **Themes**: Dark (default) and Light

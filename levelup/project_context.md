@@ -62,11 +62,22 @@
     - **Purpose**: Enable concurrent pipeline runs on different tickets without conflicts
     - **Lifecycle**:
         - Created in `Orchestrator._create_git_branch()` (orchestrator.py line 934)
-        - Currently removed in `Orchestrator._cleanup_worktree()` (orchestrator.py lines 949-959) at end of successful runs
+        - **Currently removed automatically** in `Orchestrator._cleanup_worktree()` (orchestrator.py lines 949-959) at end of successful runs (lines 353, 466)
         - Also removed during rollback in `cli/app.py` (line 669) and GUI delete ticket in `main_window.py` (line 417)
-    - **Current behavior**: Worktrees are automatically removed after successful pipeline completion (lines 353, 466 in orchestrator.py)
+        - Stale worktree cleanup before creating new worktrees (orchestrator.py lines 402 and 929)
+    - **Current automatic cleanup behavior**:
+        - Lines 352-353 in `Orchestrator.run()`: Cleanup after successful/failed/aborted runs (but not paused)
+        - Lines 465-466 in `Orchestrator.resume()`: Cleanup after successful/failed/aborted resume (but not paused)
+    - **Explicit cleanup scenarios** (to preserve):
+        - `cli/app.py` line 669: Worktree cleanup during rollback operations
+        - `main_window.py` line 417: Worktree cleanup during GUI ticket deletion
+        - `orchestrator.py` lines 402, 929: Stale worktree removal before creating new worktrees
     - **Error handling**: Removal failures are logged as warnings (logger.warning) which appear to users as errors
-    - **Tests**: `tests/unit/test_concurrent_worktrees.py` - tests for concurrent worktree creation and cleanup
+    - **Tests**:
+        - `tests/unit/test_concurrent_worktrees.py` - tests for concurrent worktree creation and cleanup
+        - `tests/unit/test_git_completion_message.py` - contains `test_cleanup_worktree_only_removes_directory_not_branch` (line 467)
+        - `tests/unit/test_step_commits.py` - tests cleanup behavior (line 233)
+        - `tests/integration/test_concurrent_pipelines.py` - manually cleans up worktrees in test cleanup (lines 136-146, 198-208)
     - **Issue**: On Windows, worktree removal often fails with "Permission denied" errors, likely due to file locks from running processes
 - **Branch Naming**: Stored in `ctx.branch_naming` (e.g., `levelup/{task_title}`)
 - **Branch Metadata**: Branch name stored in ticket metadata as `branch_name` after completion

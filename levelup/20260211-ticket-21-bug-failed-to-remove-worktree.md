@@ -27,3 +27,18 @@ See `levelup/project_context.md` for project details.
 - 5 assumption(s)
 - 5 out-of-scope item(s)
 - **Usage:** 212.8s
+### Checkpoint: requirements
+
+- **Decision:** auto-approved
+## Step: planning  (21:05:27)
+
+**Approach:** Remove automatic worktree cleanup from successful pipeline runs while preserving explicit cleanup scenarios. The change involves removing two `_cleanup_worktree()` calls in orchestrator.py (lines 353 and 466) and updating affected tests to reflect the new behavior where worktrees persist after successful completion.
+- 6 implementation step(s)
+- **Affected files:** src/levelup/core/orchestrator.py, tests/unit/test_git_completion_message.py, tests/unit/test_step_commits.py
+- **Risks:**
+  - Worktree directories will accumulate in ~/.levelup/worktrees/ over time, requiring manual cleanup or a separate cleanup command
+  - Integration tests that depend on worktrees being cleaned up automatically may need manual cleanup added to their teardown
+  - Windows permission errors that were previously logged as warnings at the end of runs will no longer appear, which might mask other issues if users expect to see them
+  - Users may run out of disk space if many worktrees accumulate without cleanup
+  - Concurrent worktree tests in test_concurrent_worktrees.py may need to verify that worktrees persist rather than being cleaned up
+- **Usage:** 140.3s

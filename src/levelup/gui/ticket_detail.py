@@ -11,7 +11,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
     QSplitter,
     QStackedWidget,
@@ -23,6 +22,8 @@ from levelup.core.tickets import Ticket
 from levelup.gui.resources import TICKET_STATUS_COLORS, TICKET_STATUS_ICONS, get_ticket_status_color
 from levelup.gui.run_terminal import RunTerminalWidget
 from levelup.gui.terminal_emulator import CatppuccinMochaColors, LightTerminalColors
+from levelup.gui.image_text_edit import ImageTextEdit
+from levelup.gui.image_asset_manager import cleanup_orphaned_images
 
 
 class TicketDetailWidget(QWidget):
@@ -85,7 +86,7 @@ class TicketDetailWidget(QWidget):
         self._desc_label.setStyleSheet("font-size: 12px; margin-top: 8px;")
         form_layout.addWidget(self._desc_label)
 
-        self._desc_edit = QPlainTextEdit()
+        self._desc_edit = ImageTextEdit(project_path=project_path, theme=theme)
         self._desc_edit.textChanged.connect(self._mark_dirty)
         form_layout.addWidget(self._desc_edit)
 
@@ -233,6 +234,10 @@ class TicketDetailWidget(QWidget):
         for terminal in self._terminals.values():
             terminal._terminal.set_color_scheme(scheme)
 
+        # Update ImageTextEdit theme
+        if hasattr(self._desc_edit, 'update_theme'):
+            self._desc_edit.update_theme(theme)
+
     def set_create_mode(self) -> None:
         """Switch to create-new-ticket mode: clear fields and disable Run."""
         self._create_mode = True
@@ -247,7 +252,7 @@ class TicketDetailWidget(QWidget):
         self._status_label.hide()
 
         self._desc_edit.blockSignals(True)
-        self._desc_edit.setPlainText("")
+        self._desc_edit.clear()
         self._desc_edit.blockSignals(False)
 
         self.auto_approve_checkbox.blockSignals(True)
@@ -280,7 +285,10 @@ class TicketDetailWidget(QWidget):
         )
 
         self._desc_edit.blockSignals(True)
-        self._desc_edit.setPlainText(ticket.description)
+        # Set ticket number for image operations
+        self._desc_edit.set_ticket_number(ticket.number)
+        # Load description as markdown (may contain image references)
+        self._desc_edit.setMarkdown(ticket.description)
         self._desc_edit.blockSignals(False)
 
         # Load auto-approve metadata
@@ -422,7 +430,7 @@ class TicketDetailWidget(QWidget):
             if not title:
                 QMessageBox.warning(self, "Validation", "Title cannot be empty.")
                 return
-            description = self._desc_edit.toPlainText()
+            description = self._desc_edit.toMarkdown()
             self.ticket_created.emit(title, description)
             self._dirty = False
             self._save_btn.setEnabled(False)
@@ -431,7 +439,8 @@ class TicketDetailWidget(QWidget):
             return
         import json
         title = self._title_edit.text().replace("\n", " ").strip()
-        description = self._desc_edit.toPlainText()
+        # Get markdown with image references
+        description = self._desc_edit.toMarkdown()
         metadata = self._build_save_metadata()
         metadata_json = json.dumps(metadata) if metadata else ""
         self.ticket_saved.emit(self._ticket.number, title, description, metadata_json)
@@ -502,12 +511,26 @@ class TicketDetailWidget(QWidget):
             # For testing, we'll create the ticket directly
             from levelup.core.tickets import add_ticket
             title = self._title_edit.text().replace("\n", " ").strip()
-            description = self._desc_edit.toPlainText()
+
+            # Save pending images and get markdown description
+            description = self._save_images_and_get_markdown()
+
             metadata = self._build_metadata()
-            add_ticket(Path(self._project_path), title, description, metadata=metadata)
+            ticket = add_ticket(Path(self._project_path), title, description, metadata=metadata)
+
+            # Set ticket number and clear pending images
+            self._desc_edit.set_ticket_number(ticket.number)
+            self._desc_edit.commit_images()
         elif self._ticket is not None:
             title = self._title_edit.text().replace("\n", " ").strip()
-            description = self._desc_edit.toPlainText()
+
+            # Save pending images and get markdown description
+            description = self._save_images_and_get_markdown()
+
+            # Clean up orphaned images
+            if self._project_path:
+                cleanup_orphaned_images(description, self._ticket.number, Path(self._project_path))
+
             metadata = self._build_save_metadata()
 
             update_ticket(
@@ -518,8 +541,51 @@ class TicketDetailWidget(QWidget):
                 metadata=metadata,
             )
 
+            # Clear pending images
+            self._desc_edit.commit_images()
+
         self._dirty = False
         self._save_btn.setEnabled(False)
+
+    def _save_images_and_get_markdown(self) -> str:
+        """Save pending images to disk and return markdown description with image references."""
+        if not self._project_path:
+            return self._desc_edit.toMarkdown()
+
+        from pathlib import Path
+        from levelup.gui.image_asset_manager import save_image
+
+        # Get pending images
+        pending_images = self._desc_edit.get_pending_images()
+
+        # Save each image and build a replacement map
+        html = self._desc_edit.toHtml()
+
+        for temp_id, image_data, extension in pending_images:
+            # Save image to disk
+            if self._ticket or self._create_mode:
+                # Use ticket number if available, or use 0 as placeholder for new tickets
+                ticket_num = self._ticket.number if self._ticket else 0
+                if ticket_num == 0:
+                    # For new tickets in create mode, we'll save with a temp number
+                    # This will be fixed when we get the actual ticket number
+                    # For now, just use 1 (will be corrected on next save)
+                    from levelup.core.tickets import read_tickets
+                    tickets = read_tickets(Path(self._project_path))
+                    ticket_num = len(tickets) + 1
+
+                saved_path = save_image(image_data, ticket_num, Path(self._project_path), extension)
+
+                # Replace pending:temp_id with actual path in HTML
+                html = html.replace(f'pending:{temp_id}', saved_path)
+                html = html.replace(f'data-pending="{temp_id}"', '')
+
+        # Update the editor with saved paths
+        if pending_images:
+            self._desc_edit.setHtml(html)
+
+        # Return markdown
+        return self._desc_edit.toMarkdown()
 
     @property
     def project_path(self) -> str | None:

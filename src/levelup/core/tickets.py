@@ -396,6 +396,34 @@ def update_ticket(
     path.write_text("".join(new_lines), encoding="utf-8")
 
 
+def cleanup_ticket_images(
+    ticket_number: int,
+    project_path: Path,
+    filename: str | None = None,
+) -> None:
+    """Remove all images associated with a ticket.
+
+    Args:
+        ticket_number: Ticket number to clean up
+        project_path: Project root path
+        filename: Tickets filename (unused, for compatibility)
+    """
+    asset_dir = project_path / "levelup" / "ticket-assets"
+
+    if not asset_dir.exists():
+        return
+
+    # Pattern to match ticket-N-* files
+    pattern = f"ticket-{ticket_number}-*"
+
+    for img_file in asset_dir.glob(pattern):
+        try:
+            img_file.unlink()
+        except Exception:
+            # Ignore errors (file may be locked, etc.)
+            pass
+
+
 def delete_ticket(
     project_path: Path,
     ticket_number: int,
@@ -462,6 +490,9 @@ def delete_ticket(
     new_lines = lines[:start_idx] + lines[next_heading_idx:]
 
     path.write_text("".join(new_lines), encoding="utf-8")
+
+    # Clean up associated images
+    cleanup_ticket_images(ticket_number, project_path, filename)
 
     return title
 

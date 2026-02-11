@@ -37,10 +37,18 @@
 - **Key widgets**:
   - `checkpoint_dialog.py` - Modal dialog for approving/revising/rejecting pipeline steps
   - `terminal_emulator.py` - Full VT100 terminal emulator with pyte + pywinpty/ptyprocess
-  - `ticket_detail.py` - Ticket editing and run terminal view
+  - `ticket_detail.py` - Ticket editing and run terminal view (manages per-ticket terminal instances)
   - `ticket_sidebar.py` - Ticket list navigation
   - `run_terminal.py` - Terminal wrapper for running levelup commands
 - **Resources**: `resources.py` contains status colors, labels, and icons
+
+### Terminal Initialization Flow (Current Behavior)
+- **When a ticket is selected**: `TicketDetailWidget.set_ticket()` is called (line 242 in ticket_detail.py)
+- **Terminal creation**: `_show_terminal()` → `_get_or_create_terminal()` creates a `RunTerminalWidget` for that ticket
+- **Widget visibility**: When the terminal widget becomes visible, PyQt6 fires the `showEvent()`
+- **Shell initialization**: `RunTerminalWidget.showEvent()` (line 198) calls `_ensure_shell()` (line 202)
+- **PTY starts immediately**: `_ensure_shell()` calls `self._terminal.start_shell()` which spawns a PTY/shell process
+- **Problem**: The shell starts as soon as the ticket is selected/viewed, NOT when the Run button is clicked
 
 ### Configuration
 - Uses Pydantic settings with environment variable support
@@ -70,6 +78,7 @@
 ### Testing Patterns
 - Unit tests in `tests/unit/`
 - GUI tests exist for non-Qt components (e.g., `test_gui_tickets.py` tests color/icon resources)
+- Terminal-specific tests in `tests/unit/test_ticket_detail_terminals.py` verify per-ticket terminal isolation
 - Tests use pytest with standard assertions
 - Path normalization needed on Windows: `.replace("\\", "/")` in assertions
 

@@ -11,3 +11,10 @@ Integrated terminal should only be initialized when the ticket is run.
 ## Step: detect  (01:51:39)
 
 See `levelup/project_context.md` for project details.
+## Step: requirements  (01:52:49)
+
+**Summary:** Delay terminal initialization until Run button is clicked
+- 4 requirement(s)
+- 4 assumption(s)
+- 4 out-of-scope item(s)
+- **Usage:** 68.3s

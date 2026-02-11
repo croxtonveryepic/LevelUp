@@ -51,3 +51,16 @@ Wrote 3 file(s):
 
 Step `security` completed.
 - **Usage:** 45.1s
+### Checkpoint: security
+
+- **Decision:** approve
+## Step: review  (02:18:36)
+
+Found 7 issue(s):
+- [ERROR] `src/levelup/gui/main_window.py`: TicketSidebarWidget is initialized without passing the current theme, defaulting to 'dark' theme regardless of user preference
+- [ERROR] `src/levelup/gui/main_window.py`: _on_theme_changed does not call update_theme on the sidebar widget, so theme changes won't be reflected in ticket colors until tickets are refreshed
+- [WARNING] `src/levelup/gui/main_window.py`: Potential issue if multiple runs exist for the same ticket - only the last run's status will be kept in run_status_map, which may not be the most recent or most relevant
+- [INFO] `src/levelup/gui/ticket_sidebar.py`: _run_status_map is initialized as empty dict but only populated via set_tickets parameter
+- [INFO] `src/levelup/gui/resources.py`: get_ticket_status_color accepts run_status but doesn't validate or document the expected values
+- [INFO] `tests/unit/test_ticket_sidebar_run_status_colors.py`: Test comment says 'Ticket 2 (pending status, should ignore run status)' but the test setup shows ticket 2 is not 'in progress', just checking it doesn't use run status
+- [WARNING] `src/levelup/gui/main_window.py`: The condition checks 'run.ticket_number and run.status' which means ticket_number=0 would be treated as falsy and skipped

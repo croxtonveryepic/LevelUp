@@ -66,3 +66,9 @@ Found 9 issue(s):
 - [INFO] `src/levelup/gui/run_terminal.py`: Polling every 1 second for run status could be optimized
 - [WARNING] `src/levelup/gui/run_terminal.py`: Fallback run detection by project_path can return wrong run if multiple runs exist
 - [INFO] `src/levelup/gui/run_terminal.py`: _ensure_shell method is idempotent but lacks error handling
+### Checkpoint: review
+
+- **Decision:** approve
+## Outcome
+
+- **Status:** completed

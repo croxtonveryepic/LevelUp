@@ -4,7 +4,7 @@
 - **Framework:** none
 - **Test runner:** pytest
 - **Test command:** pytest
-- **Branch naming:** levelup/task-title-in-kebab-case
+- **Branch naming:** levelup/{task_title}
 - **Placeholder substitution**: Support `{run_id}`, `{task_title}`, `{date}` placeholders in branch naming convention
 - **Task title sanitization**: Convert to lowercase, replace spaces and special chars with hyphens, limit length (e.g., 50 chars)
 - **Default convention**: Use `levelup/{run_id}` when field is missing (backward compatibility)
@@ -29,8 +29,47 @@
     - `unit/` - Unit tests
     - `integration/` - Integration tests
 
+### Agent Architecture
+
+- **Base Class**: `BaseAgent` (abstract) in `agents/base.py`
+    - Constructor: `__init__(backend: Backend, project_path: Path)`
+    - Abstract methods: `get_system_prompt()`, `get_allowed_tools()`, `run()`
+    - Returns: `tuple[PipelineContext, AgentResult]`
+- **Existing Agents**:
+    - `RequirementsAgent` - Analyzes task and writes requirements
+    - `PlanningAgent` - Creates implementation plan
+    - `TestWriterAgent` - Writes failing tests (TDD red phase)
+    - `CodeAgent` - Implements code to pass tests
+    - `SecurityAgent` - Scans for vulnerabilities and auto-patches
+    - `ReviewAgent` - Final code review
+    - `ReconAgent` - Standalone (not BaseAgent), explores codebase
+- **Agent Pattern**: System prompt + user prompt + allowed tools → Backend.run_agent() → AgentResult
+- **Standalone Agents**: ReconAgent doesn't inherit BaseAgent (no PipelineContext), runs independently
+- **Standalone Agent Use Cases**: Agents that don't participate in the main TDD pipeline (e.g., ReconAgent, MergeAgent)
+
+### Backend & Tool System
+
+- **Backend Protocol**: `Backend` in `agents/backend.py`
+    - Two implementations: `ClaudeCodeBackend` (subprocess), `AnthropicSDKBackend` (API)
+    - Method: `run_agent(system_prompt, user_prompt, allowed_tools, working_directory, ...)`
+- **Tool Names** (Claude Code conventions): Read, Write, Edit, Glob, Grep, Bash
+- **Sandboxing**: All file tools restricted to project directory
+
+### Git & Branch Management
+
+- **Worktrees**: Pipeline runs create git worktrees at `~/.levelup/worktrees/<run_id>/`
+- **Branch Naming**: Stored in `ctx.branch_naming` (e.g., `levelup/{task_title}`)
+- **Branch Metadata**: Branch name stored in ticket metadata as `branch_name` after completion
+- **Step Commits**: Each pipeline step gets a commit (when `create_git_branch: true`)
+- **Pre-run SHA**: Stored in `ctx.pre_run_sha` for rollback support
+- **Worktree Cleanup**: Removed after run completes (branch persists in main repo)
+- **Merge Operations**: Existing rebase-merge skill uses simple git commands, no conflict resolution
+- **Main Repository Operations**: Merge operations should run in the main repository (ctx.project_path), not in worktrees
+
 ### GUI Architecture
 
+- **Framework**: PyQt6-based desktop GUI
+- **Location**: `src/levelup/gui/`
 - **Main Window** (`gui/main_window.py`): Dashboard with runs table and ticket management
 - **Theme Manager** (`gui/theme_manager.py`): Handles theme preferences (light/dark/system) and applies stylesheets
 - **Terminal Emulator** (`gui/terminal_emulator.py`): VT100 terminal using pyte, supports both `CatppuccinMochaColors` (dark) and `LightTerminalColors` (light) schemes
@@ -49,11 +88,13 @@
 - Form fields currently save to ticket metadata via `_build_save_metadata()` (line 427)
 - Fields populate from ticket.metadata when ticket loads via `set_ticket()` (line 303)
 - Terminal receives settings via `set_ticket_settings()` call (line 367)
+- **Button layout**: Located in form section, includes Delete/Cancel/Save buttons (lines 100-120)
 
 ### Run Terminal Widget Structure
 
 - Located at `src/levelup/gui/run_terminal.py`
 - Header layout: status label + Run/Terminate/Pause/Resume/Forget/Clear buttons
+- **Run Options Widgets** (lines 100-115): Model combo, Effort combo, Skip planning checkbox
 - Stores run options in instance variables (lines 140-143):
     - `_ticket_model: str | None`
     - `_ticket_effort: str | None`
@@ -63,7 +104,7 @@
     - `--model {model}` (line 49)
     - `--effort {effort}` (line 51)
     - `--skip-planning` (line 53)
-- Run button click triggers `_on_run_clicked()` -> `start_run()` -> `build_run_command()`
+- Run button click triggers `_on_run_clicked()` → `start_run()` → `build_run_command()`
 
 ### Adaptive Pipeline Settings Flow
 
@@ -162,18 +203,6 @@
 - Parent widgets pass theme to child widgets during construction
 - Theme updates propagate via `update_theme(theme)` method
 
-## Codebase Insights
-
-### GUI Architecture
-
-- **Framework**: PyQt6-based desktop GUI
-- **Location**: `src/levelup/gui/`
-- **Key Components**:
-    - `ticket_sidebar.py`: Displays ticket list with status indicators
-    - `resources.py`: Defines status-to-color/icon mappings for both dark and light themes
-    - `styles.py`: QSS stylesheets for dark and light themes
-    - `main_window.py`: Main application window that coordinates GUI components
-
 ### Ticket System
 
 - **Location**: `src/levelup/core/tickets.py`
@@ -184,6 +213,10 @@
     - `MERGED` (tagged with `[merged]`)
 - **Storage**: Markdown-based in `levelup/tickets.md` (configurable)
 - **Format**: Level-2 headings (`##`) represent tickets
+- **Metadata**: YAML blocks in HTML comments (`<!--metadata ... -->`) store additional data
+- **Branch Name Storage**: After pipeline completion, branch name stored as `branch_name` in ticket metadata
+- **Status Transitions**: CLI automatically transitions pending→in progress on run start, in progress→done on pipeline success
+- **Metadata Filtering**: Run options (model, effort, skip_planning) are filtered from ticket metadata by `_filter_run_options()`
 
 ### Theming System
 
@@ -205,14 +238,8 @@
     - "In progress" tickets can show dynamic colors based on run status:
         - Blue (`#4A90D9` dark, `#3498DB` light) when run is "running"
         - Yellow-orange (`#E6A817` dark, `#F39C12` light) when run is "waiting_for_input"
+    - Merged tickets: `#6C7086` (dark gray, dark theme), `#95A5A6` (medium gray, light theme)
 - **Accessibility**: Light mode pending ticket color was updated from `#4C566A` to `#2E3440` to meet WCAG AA contrast requirements (4.5:1 minimum) against white background
-    - Dark theme pending tickets: `#CDD6F4` (light lavender)
-    - Light theme pending tickets: `#4C566A` (dark gray-blue) - **NEEDS IMPROVEMENT FOR ACCESSIBILITY**
-    - Tickets without active runs inherit their status color
-    - "In progress" tickets can show dynamic colors based on run status:
-        - Blue (`#4A90D9` dark, `#3498DB` light) when run is "running"
-        - Yellow-orange (`#E6A817` dark, `#F39C12` light) when run is "waiting_for_input"
-- **Current Issue**: In light mode, pending tickets use `#4C566A` (medium gray) on `#FFFFFF` (white) background, which provides insufficient contrast for WCAG AA compliance (requires 4.5:1 minimum for normal text)
 - **Color Function**: `get_ticket_status_color()` in `resources.py` accepts three parameters:
     - `status`: Ticket status string ("pending", "in progress", "done", "merged")
     - `theme`: Theme mode ("light" or "dark")
@@ -241,3 +268,47 @@
     - Theme switching with preserved run status
     - Multiple runs for same ticket
     - Selection preservation during updates
+
+### Existing Merge Skills
+
+- **rebase-merge** (`.claude/commands/rebase-merge.md`):
+    - Takes branch name as argument
+    - Rebases branch onto master, merges, deletes branch
+    - Aborts on conflicts with error message
+- **merge-to-master** (`.claude/commands/merge-to-master.md`):
+    - Merges current branch into master
+    - No rebase step
+    - Creates merge commit with `--no-ff`
+- **Note**: Both are CLI skills, not agents. They use simple git commands, no conflict resolution.
+
+### MergeAgent Implementation Requirements
+
+- **Agent Type**: Standalone agent (like ReconAgent) - does not inherit BaseAgent since it doesn't participate in TDD pipeline
+- **Execution Context**: Runs in main repository (project_path), not in worktree
+- **Input**: Retrieves branch_name from ticket metadata
+- **Git Operations Flow**:
+    1. Validate branch exists and has branch_name in metadata
+    2. `git checkout <branch>` to switch to feature branch
+    3. `git rebase master` to rebase onto latest master
+    4. If conflicts detected, enter intelligent resolution mode
+    5. `git checkout master` after successful rebase
+    6. `git merge <branch>` (fast-forward merge)
+    7. Optionally `git branch -d <branch>` to clean up
+- **Conflict Resolution**:
+    - Uses Read tool to examine conflict markers
+    - For project_context.md, intelligently merges Codebase Insights sections
+    - Uses Edit tool to resolve conflicts and remove markers
+    - `git add` resolved files
+    - `git rebase --continue` to proceed
+    - Handles multiple conflict rounds
+- **Error Handling**:
+    - Validates branch_name exists in metadata
+    - Validates git branch exists
+    - Aborts rebase if conflicts cannot be auto-resolved
+    - Returns descriptive errors without leaving partial state
+- **GUI Integration**:
+    - Add "Merge" button to RunTerminalWidget header (alongside Run/Terminate/etc.)
+    - Button enabled when: ticket status is "done" AND branch_name exists in metadata AND not currently running
+    - Clicking spawns MergeAgent with terminal output displayed
+    - On success, calls `set_ticket_status(TicketStatus.MERGED)`
+    - Status update triggers ticket sidebar refresh

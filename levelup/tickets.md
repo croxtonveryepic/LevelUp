@@ -47,65 +47,22 @@ The intended use of the resume button is to resume the run pipeline on tickets t
 ## [done] Bug: Can't scroll up in integrated terminal
 
 Users report that they can't scroll up in integrated terminals to review each step.
-
-## Bug: Database schema error
-
-│ 131 │ │ conn.commit() │ db_path = WindowsPath('C:/Users/jccvae/.levelup/state.db') │ │
-│ ❱ 132 │ │ \_run_migrations(conn) ╰─────────────────────────────────────────────────────────────╯ │
-│ 133 │ finally: │
-│ 134 │ │ conn.close() │
-│ 135 │
-│ │
-│ C:\Users\jccvae\AppData\Roaming\uv\tools\levelup\Lib\site-packages\levelup\state\db.py:99 in \_run_migrations │
-│ │
-│ 96 │ current = \_get_schema_version(conn) ╭────────────────────────── locals ───────────────────────────╮ │
-│ 97 │ │ conn = <sqlite3.Connection object at 0x000002D601DF7F10> │ │
-│ 98 │ if current > CURRENT_SCHEMA_VERSION: │ current = 5 │ │
-│ ❱ 99 │ │ raise RuntimeError( ╰─────────────────────────────────────────────────────────────╯ │
-│ 100 │ │ │ f"Database schema version {current} is newer than the code supports " │
-│ 101 │ │ │ f"(max {CURRENT_SCHEMA_VERSION}). Please upgrade LevelUp." │
-│ 102 │ │ ) │
-╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-RuntimeError: Database schema version 5 is newer than the code supports (max 4). Please upgrade LevelUp.
-
-## Bug: Active run exists
-
-User reports getting a pop-up error stating that an active run already exists. He states that the ticket is done and he did not do anything that would create another run for that ticket.
-
----
-
-## Active Run Exists
-
-Ticket #2 already has an active run (<MagicMock name='mock.get_run().run_id.__getitem__()' id='1979491656640'>, status=aborted).
-Resume or forget it first.
-
----
-
-## OK
-
 ## [done] Record branch name
 
 After a ticket is completed, the name of the newly-created branch should be recorded beneath the ticket.
-
-## [in progress] Create command to change branch naming convention
-
-We already have a function to prompt a user for a branch naming convention. Let's add a command that lets them do this ahead of time, or to run it later to change the naming convention.
-
-## [in progress] Add GUI navigation hotkeys
+## [done] Add GUI navigation hotkeys
+<!--metadata
+branch_name: levelup/add-gui-navigation-hotkeys
+-->
 
 Since LevelUp is a tool for developers, many will expect there to be hotkeys to help them navigate and use the app. There should at least be one to jump to the next ticket waiting for user input (and focus the terminal). Create sensible default hotkeys for each functionality, and add page for hotkey customization.
-
-## [in progress] Bug: Incorrect color for tickets in sidebar
-
-Sidebar tickets should be blue while thinking and turn yellow-orange when they reach a checkpoint. Create an additional ticket status if necessary.
-
-## Status Dropdown
-
-Create a dropdown in the UI to force-change the status of a ticket.
-
-## Rich diff view
-Review branch from within levelup gui
-
+## [done] Status Dropdown
+<!--metadata
+branch_name: levelup/status-dropdown
+-->
+Create a dropdown in the UI to force-change the status of a ticket. Include an option for "declined," which shows as green in the sidebar.
+## Feature: Rich diff view
+Users should be able to review changes from within the LevelUp GUI. Changes should be observable on a per-commit basis (so each step can be inspected individually) or the whole branch as a whole. Make sure this works while a run is in progress as well.
 ## Merge ticket from within UI
 ...then mark ticket as archived (put it in a different file) so it doesn't show on the sidebar
 
@@ -127,3 +84,50 @@ Integrated terminal always has a light theme, even when the application theme is
 branch_name: levelup/task-title-in-kebab-case
 -->
 Tickets have options for auto-approve checkpoints, model choice, effort level, and whether to use planning. Really, these options are better suited to be associated with a run. Move the options down (to the left of the run button) and wire them up to be submitted when run is clicked. Lock these options while a run exists for the ticket.
+
+## [done] Bug: Can't tab out of ticket description box
+<!--metadata
+branch_name: levelup/bug-can-t-tab-out-of-ticket-description-box
+-->
+User complains that the ticket description box inserts tab characters when tab is pressed, instead of the expected behavior of moving the focus onto the save button. Also confirm that shift-tab returns to the title box, enter submits (saves), and shift-enter inserts a newline.
+
+## [done] Bug: auto-approve checkpoints checkbox
+<!--metadata
+branch_name: levelup/bug-auto-approve-checkpoints-checkbox
+-->
+The auto-approve checkpoints checkbox should pre-populate with the project's default setting.
+
+## [done] Bug: Failed to remove worktree
+<!--metadata
+branch_name: levelup/bug-failed-to-remove-worktree
+-->
+Users see an error at the end of every successful run. Worktrees should not be removed at the end of a run.
+
+Branch 'levelup/add-gui-navigation-hotkeys' is ready.
+To push to remote:
+  git push origin levelup/add-gui-navigation-hotkeys
+Or to merge into main:
+  git checkout main && git merge levelup/add-gui-navigation-hotkeys
+Failed to remove worktree: Cmd('git') failed due to: exit code(255)
+  cmdline: git worktree remove C:\Users\jccvae\.levelup\worktrees\05f9d36ddad4 --force
+  stderr: 'error: failed to delete 'C:/Users/jccvae/.levelup/worktrees/05f9d36ddad4': Permission denied'
+
+## Bug: Cost breakdown does not show cost or token use
+
+## [done] Feature: Ticket descriptions should accept pasted images
+<!--metadata
+branch_name: levelup/feature-ticket-descriptions-should-accept-pasted-i
+-->
+Users should be able to paste images into ticket descriptions to highlight the issues they are seeing.
+
+## [done] Bug: Copying texted in scrolled-up in integrated terminal
+<!--metadata
+branch_name: levelup/bug-copying-texted-in-scrolled-up-in-integrated-te
+-->
+When scrolled up in an integrated terminal, highlighting text and copying it to clipboard actually copies the text in the same relative position (area of the screen) at the very bottom of the terminal output instead of what appears to be highlighted.
+
+## [done] Feature: Merge branch from within GUI
+<!--metadata
+branch_name: levelup/feature-merge-branch-from-within-gui
+-->
+When a pipeline is completed and a feature branch is ready to be reviewed and merged, naturally, users will want to merge their branch into master. Create an agent to handle merging a feature branch. The agent should always rebase the feature branch onto master first; it is expected that this may cause merge conflicts on project_context.md, the agent should make reasonable adjustments work through these merge conflicts. In the UI, there should be a button on the ticket page to kick off the merge agent. When it completes successfully, the ticket status should be moved from done to merged.

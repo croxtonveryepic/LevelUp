@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from pathlib import Path
 
 from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -23,6 +24,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from levelup.agents.merge import MergeAgent
+from levelup.core.tickets import TicketStatus, set_ticket_status
 from levelup.gui.terminal_emulator import (
     TerminalEmulatorWidget,
     CatppuccinMochaColors,
@@ -80,6 +83,7 @@ class RunTerminalWidget(QWidget):
     run_started = pyqtSignal(int)   # PID (emitted as 0 — no separate process PID)
     run_finished = pyqtSignal(int)  # exit code
     run_paused = pyqtSignal()       # emitted when pause is confirmed via DB
+    merge_finished = pyqtSignal()   # emitted when merge operation completes successfully
 
     def __init__(self, parent: QWidget | None = None, theme: str = "dark") -> None:
         super().__init__(parent)
@@ -146,6 +150,12 @@ class RunTerminalWidget(QWidget):
         self._forget_btn.clicked.connect(self._on_forget_clicked)
         header.addWidget(self._forget_btn)
 
+        self._merge_btn = QPushButton("Merge")
+        self._merge_btn.setObjectName("mergeBtn")
+        self._merge_btn.setEnabled(False)
+        self._merge_btn.clicked.connect(self._on_merge_clicked)
+        header.addWidget(self._merge_btn)
+
         self._clear_btn = QPushButton("Clear")
         self._clear_btn.clicked.connect(self._on_clear)
         header.addWidget(self._clear_btn)
@@ -169,6 +179,9 @@ class RunTerminalWidget(QWidget):
         # Run tracking
         self._last_run_id: str | None = None
         self._state_manager: object | None = None  # StateManager instance
+
+        # Current ticket reference (for merge operations)
+        self._current_ticket: object | None = None  # Ticket instance
 
         # Timer for polling run_id after starting a run
         self._run_id_poll_timer = QTimer(self)
@@ -262,6 +275,11 @@ class RunTerminalWidget(QWidget):
         self._status_label.setText(f"Finished ({exit_code})")
         self.run_finished.emit(exit_code)
 
+    def set_ticket(self, ticket: object) -> None:
+        """Store the current ticket reference for merge operations."""
+        self._current_ticket = ticket
+        self._update_button_states()
+
     # -- Internal -----------------------------------------------------------
 
     def showEvent(self, event: object) -> None:
@@ -283,6 +301,7 @@ class RunTerminalWidget(QWidget):
         self._pause_btn.setEnabled(running)
         self._resume_btn.setEnabled(not running and self._is_resumable())
         self._forget_btn.setEnabled(not running and self._last_run_id is not None)
+        self._merge_btn.setEnabled(not running and self._can_merge())
         self._status_label.setText("Running..." if running else "Ready")
 
         # Lock run options while running
@@ -313,6 +332,7 @@ class RunTerminalWidget(QWidget):
         self._pause_btn.setEnabled(running)
         self._resume_btn.setEnabled(not running and self._is_resumable())
         self._forget_btn.setEnabled(not running and self._last_run_id is not None)
+        self._merge_btn.setEnabled(not running and self._can_merge())
 
         # Lock run options if a run exists (even if not currently running)
         has_run = self._last_run_id is not None
@@ -342,6 +362,26 @@ class RunTerminalWidget(QWidget):
         if record is None:
             return False
         return record.status in RESUMABLE_STATUSES
+
+    def _can_merge(self) -> bool:
+        """Check if merge button should be enabled."""
+        if not self._project_path or not self._db_path or not self._current_ticket:
+            return False
+
+        from levelup.core.tickets import TicketStatus
+
+        # Only enable merge for tickets with status DONE and branch_name metadata
+        if not hasattr(self._current_ticket, 'status') or not hasattr(self._current_ticket, 'metadata'):
+            return False
+
+        if self._current_ticket.status != TicketStatus.DONE:
+            return False
+
+        if not self._current_ticket.metadata:
+            return False
+
+        branch_name = self._current_ticket.metadata.get('branch_name', '')
+        return bool(branch_name and branch_name.strip())
 
     def _on_run_clicked(self) -> None:
         if self._ticket_number is not None and self._project_path and self._db_path:
@@ -554,3 +594,69 @@ class RunTerminalWidget(QWidget):
                         else:
                             self._update_button_states()
                     return
+
+    def _on_merge_clicked(self) -> None:
+        """Handle merge button click."""
+        if not self._current_ticket or not self._project_path or not self._db_path:
+            return
+
+        if self._command_running:
+            return
+
+        # Extract branch_name from ticket metadata
+        if not hasattr(self._current_ticket, 'metadata') or not self._current_ticket.metadata:
+            return
+
+        branch_name = self._current_ticket.metadata.get('branch_name', '')
+        if not branch_name or not branch_name.strip():
+            return
+
+        # Set running state and update status
+        self._set_running_state(True)
+        self._status_label.setText("Merging...")
+
+        # Execute merge (synchronous for now)
+        self._execute_merge(branch_name)
+
+    def _execute_merge(self, branch_name: str) -> None:
+        """Execute the merge operation using MergeAgent."""
+        try:
+            # Create backend
+            backend = self._create_backend()
+
+            # Create and run MergeAgent
+            agent = MergeAgent(backend, Path(self._project_path))
+            result = agent.run(branch_name=branch_name)
+
+            # Display result in terminal
+            if self._terminal:
+                self._terminal.send_command(f"echo '{result.text}'")
+
+            # Check if merge was successful
+            if result.text and ("success" in result.text.lower() or "completed" in result.text.lower()):
+                # Update ticket status to MERGED
+                if self._current_ticket and hasattr(self._current_ticket, 'number'):
+                    try:
+                        set_ticket_status(Path(self._project_path), self._current_ticket.number, TicketStatus.MERGED)
+                        self._status_label.setText("Merge completed")
+                        self.merge_finished.emit()
+                    except Exception as e:
+                        logger.error(f"Failed to update ticket status: {e}")
+                        self._status_label.setText(f"Merge completed (status update failed)")
+            else:
+                self._status_label.setText("Merge failed")
+        finally:
+            # Always restore button state
+            self._set_running_state(False)
+
+    def _create_backend(self) -> object:
+        """Create a backend instance for running agents."""
+        from levelup.agents.backend import ClaudeCodeBackend
+        from levelup.agents.claude_code_client import ClaudeCodeClient
+        from levelup.config.settings import load_settings
+
+        settings = load_settings(Path(self._project_path) if self._project_path else None)
+        client = ClaudeCodeClient(
+            claude_executable=settings.llm.claude_executable,
+        )
+        return ClaudeCodeBackend(client)

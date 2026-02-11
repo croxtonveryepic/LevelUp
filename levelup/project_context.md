@@ -75,7 +75,7 @@
 - **Terminal Emulator** (`gui/terminal_emulator.py`): VT100 terminal using pyte, supports both `CatppuccinMochaColors` (dark) and `LightTerminalColors` (light) schemes
 - **Key Components**:
     - `ticket_sidebar.py`: Displays ticket list with status indicators
-    - `ticket_detail.py`: Detail view with ticket form and embedded terminal
+    - `ticket_detail.py`: Detail view with ticket form (title, description, auto-approve, status label) and embedded RunTerminalWidget
     - `run_terminal.py`: Wrapper around TerminalEmulatorWidget for running pipeline commands
     - `resources.py`: Defines status-to-color/icon mappings for both dark and light themes
     - `styles.py`: QSS stylesheets for dark and light themes
@@ -95,16 +95,32 @@
     - `description`: str (body text below heading, currently plain text)
     - `status`: TicketStatus enum
     - `metadata`: dict[str, Any] | None (from YAML block)
-- **Ticket Statuses**:
-    - `PENDING` (default, no status tag in markdown)
-    - `IN_PROGRESS` (tagged with `[in progress]`)
-    - `DONE` (tagged with `[done]`)
-    - `MERGED` (tagged with `[merged]`)
+- **Ticket Statuses** (TicketStatus enum):
+    - `PENDING = "pending"` (default, no status tag in markdown)
+    - `IN_PROGRESS = "in progress"` (tagged with `[in progress]`)
+    - `DONE = "done"` (tagged with `[done]`)
+    - `MERGED = "merged"` (tagged with `[merged]`)
+- **Parsing**: `_STATUS_PATTERN` regex matches status tags: `^\[(in progress|done|merged)\]\s*` (case-insensitive)
 - **CLI Commands**: `levelup tickets [list|next|start|done|merged|delete]`
 - **Run Integration**: Runs link to tickets via `runs.ticket_number` column in SQLite DB
 - **Branch Name Storage**: After pipeline completion, branch name stored as `branch_name` in ticket metadata
 - **Status Transitions**: CLI automatically transitions pending→in progress on run start, in progress→done on pipeline success
 - **Metadata Filtering**: Run options (model, effort, skip_planning) are filtered from ticket metadata by `_filter_run_options()`
+
+### Status Change Flow
+
+- **CLI Status Changes**:
+    - `set_ticket_status()` function in `core/tickets.py` is the primary API
+    - Used by CLI in `cli/app.py` for transitions: pending → in progress (on run start), in progress → done (on completion)
+    - CLI `levelup tickets` command supports manual status changes: `levelup tickets done 5` changes ticket #5 to done
+- **GUI Status Changes**:
+    - Currently no direct status change UI in the GUI - tickets change status only through lifecycle (starting/completing runs)
+    - Ticket detail widget displays status as read-only label with icon and color (lines 79-81 in `ticket_detail.py`)
+    - Status label uses `TICKET_STATUS_ICONS` dict and `get_ticket_status_color()` for theme-aware coloring
+- **Status Persistence**:
+    - Status stored as markdown tag in heading: `## [done] Ticket Title`
+    - PENDING status has no tag (bare heading)
+    - Other statuses use bracketed tags: `[in progress]`, `[done]`, `[merged]`
 
 ### Ticket Detail Widget Structure
 
@@ -112,16 +128,25 @@
 - Vertical splitter layout: ticket form (top) | terminal (bottom)
 - **Current ticket form fields** (lines 69-98):
     - Title: `QLineEdit` (line 74)
-    - Status label: read-only display (line 79)
+    - **Status label**: QLabel showing icon + status text with theme-aware color (lines 79-81) - READ-ONLY
     - Description: `QPlainTextEdit` - **plain text editor** (line 88)
     - Auto-approve checkbox (line 93)
     - Model combo: Default/Sonnet/Opus (line 105)
     - Effort combo: Default/Low/Medium/High (line 112)
     - Skip planning checkbox (line 118)
+- **Form field behavior**:
+    - Fields populate from ticket data in `set_ticket()` method (lines 264, 275-280)
+    - Status label updated with icon, text, and theme-aware color
+    - Changes trigger `_mark_dirty()` to enable Save button
 - Form fields currently save to ticket metadata via `_build_save_metadata()` (line 427)
 - Fields populate from ticket.metadata when ticket loads via `set_ticket()` (line 303)
 - Terminal receives settings via `set_ticket_settings()` call (line 367)
 - **Button layout**: Located in form section, includes Delete/Cancel/Save buttons (lines 100-120)
+- **Save flow** (lines 416-436):
+    - `_on_save()` builds metadata from form via `_build_save_metadata()`
+    - Emits `ticket_saved` signal with number, title, description, metadata_json
+    - MainWindow's `_on_ticket_saved()` handler calls `update_ticket()` to persist changes
+    - After save, `_refresh_tickets()` reloads ticket list and updates detail widget
 
 ### Ticket Data Flow
 
@@ -273,6 +298,7 @@
 - Git worktrees for concurrent runs at `~/.levelup/worktrees/<run_id>/`
 - Parent widgets pass theme to child widgets during construction
 - Theme updates propagate via `update_theme(theme)` method
+
 ### Theming System
 
 - **Themes**: Dark (default) and Light
@@ -287,6 +313,10 @@
 ### Ticket Sidebar Color Logic
 
 - **Color Mapping** (`src/levelup/gui/resources.py`):
+    - Dark theme colors in `TICKET_STATUS_COLORS` dict
+    - Light theme colors in `_LIGHT_TICKET_STATUS_COLORS` dict
+    - Icons in `TICKET_STATUS_ICONS` dict
+    - `get_ticket_status_color(status, theme, run_status)` returns theme-aware color
     - Dark theme pending tickets: `#CDD6F4` (light lavender)
     - Light theme pending tickets: `#2E3440` (dark blue-gray) - WCAG AA compliant
     - Tickets without active runs inherit their status color
@@ -294,6 +324,9 @@
         - Blue (`#4A90D9` dark, `#3498DB` light) when run is "running"
         - Yellow-orange (`#E6A817` dark, `#F39C12` light) when run is "waiting_for_input"
     - Merged tickets: `#6C7086` (dark gray, dark theme), `#95A5A6` (medium gray, light theme)
+- **Current Status Colors**:
+    - **Dark theme**: pending `#CDD6F4`, in progress `#E6A817`, done `#2ECC71`, merged `#6C7086`
+    - **Light theme**: pending `#2E3440`, in progress `#F39C12`, done `#27AE60`, merged `#95A5A6`
 - **Accessibility**: Light mode pending ticket color was updated from `#4C566A` to `#2E3440` to meet WCAG AA contrast requirements (4.5:1 minimum) against white background
 - **Color Function**: `get_ticket_status_color()` in `resources.py` accepts three parameters:
     - `status`: Ticket status string ("pending", "in progress", "done", "merged")
@@ -349,6 +382,10 @@
 
 ### Testing Patterns
 
+- **Test Location**: Unit tests in `tests/unit/`, integration tests in `tests/integration/`
+- **PyQt6 Tests**: Use `_can_import_pyqt6()` check and `@pytest.mark.skipif` decorator
+- **QApplication**: Tests create QApplication instance via `_ensure_qapp()` helper
+- **Mocking**: Use `unittest.mock.patch` for GUI components and state managers
 - Unit tests use pytest with PyQt6 fixtures
 - Mock state manager using `MagicMock(spec=StateManager)`
 - Mock terminal emulator with `patch("levelup.gui.terminal_emulator.PtyBackend")`
@@ -356,12 +393,16 @@
 - Button state tests verify enabled/disabled states after state transitions
 - Metadata tests verify round-trip serialization and preservation of non-form fields
 - Integration tests use temporary directories (`tmp_path` fixture) for file operations
-- **Test Location**: `tests/unit/test_ticket_sidebar_run_status_colors.py`
-- **Coverage**: 40+ tests covering color logic for various ticket/run status combinations
+- Tests for project settings use `load_settings(project_path=tmp_path)` pattern
+- Config files created as `tmp_path / "levelup.yaml"` with YAML content
+- Auto-approve tests in `test_gui_ticket_metadata.py` verify checkbox behavior
+- **Specific Test Files**:
+    - `tests/unit/test_ticket_sidebar_run_status_colors.py` - 40+ tests covering color logic
 - **Test Runner**: pytest with PyQt6 integration
 - **Test Dependencies**: Tests use PyQt6 and are skipped if not available
 - **Color Assertion Pattern**: Tests assert exact hex color values (e.g., `assert color == "#CDD6F4"`)
-- **Theme Testing**: Tests verify color behavior in both light and dark themes
+- **Ticket Parsing Tests**: Cover all statuses, case-insensitivity, edge cases
+- **GUI Tests**: Verify widget initialization, theme updates, button states, metadata persistence
 - **Edge Cases Covered**:
     - Invalid statuses/themes
     - None/empty run status values
@@ -377,6 +418,8 @@
 - Git worktrees for concurrent runs at `~/.levelup/worktrees/<run_id>/`
 - Parent widgets pass theme to child widgets during construction
 - Theme updates propagate via `update_theme(theme)` method
+- Widget signals use PyQt6 `pyqtSignal` for inter-component communication
+- Form controls block signals during programmatic updates to avoid triggering dirty state
 
 ### Existing Merge Skills
 
@@ -478,25 +521,3 @@
 - **Selection Preservation**: If selected ticket is filtered out, selection should be cleared or moved to nearest visible ticket
 - **Theme Integration**: Filtered tickets should respect theme colors when shown
 - **Run Status Integration**: Filtered tickets should still show correct colors based on run status when visible
-
-### Status Change Flow
-
-- **CLI Status Changes**:
-    - `set_ticket_status()` function in `core/tickets.py` is the primary API
-    - Used by CLI in `cli/app.py` for transitions: pending → in progress (on run start), in progress → done (on completion)
-    - CLI `levelup tickets` command supports manual status changes: `levelup tickets done 5` changes ticket #5 to done
-- **GUI Status Changes**:
-    - Currently no direct status change UI in the GUI
-    - Status changes only through ticket lifecycle (starting/completing runs)
-    - Ticket detail widget displays status as read-only label with icon and color
-    - Status label located at line 79-81 in `ticket_detail.py` (QLabel showing icon + status text)
-- **Status Persistence**:
-    - Status stored as markdown tag in heading: `## [done] Ticket Title`
-    - PENDING status has no tag (bare heading)
-    - Other statuses use bracketed tags: `[in progress]`, `[done]`, `[merged]`
-- **Available Statuses** (`TicketStatus` enum in `core/tickets.py`):
-    - PENDING: Default, no markdown tag
-    - IN_PROGRESS: `[in progress]` tag
-    - DONE: `[done]` tag
-    - MERGED: `[merged]` tag
-    - Note: "declined" is not currently a supported status in the enum

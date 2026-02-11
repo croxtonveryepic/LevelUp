@@ -26,6 +26,27 @@
     - `tools/` - Agent tools (file I/O, shell, test runner)
 - `tests/` - Test suite with unit and integration tests
 
+### GUI Ticket Sidebar Color System
+
+- **Ticket statuses**: pending, in progress, done, merged (defined in `core/tickets.py`)
+- **Run statuses**: pending, running, waiting_for_input, paused, completed, failed, aborted (defined in `core/context.py`)
+- **Color logic** (`gui/resources.py`):
+    - `get_ticket_status_color(status, theme, run_status)` accepts optional `run_status` parameter
+    - For "in progress" tickets with active runs (running/waiting_for_input), uses run status color
+    - Blue (#4A90D9 dark, #3498DB light) for "running" status
+    - Yellow-orange (#E6A817 dark, #F39C12 light) for "waiting_for_input" status
+    - Other ticket statuses ignore run status and use ticket status color
+- **Sidebar implementation** (`gui/ticket_sidebar.py`):
+    - `set_tickets()` accepts optional `run_status_map: dict[int, str]` parameter
+    - Stores run status map in `_run_status_map` instance variable
+    - Passes run status to `get_ticket_status_color()` when rendering items
+    - `update_theme()` preserves run status map when re-rendering
+- **Main window integration** (`gui/main_window.py`):
+    - `_refresh_tickets()` builds run status map from `self._runs`
+    - Only includes "running" and "waiting_for_input" statuses in map
+    - Passes run status map to `sidebar.set_tickets()`
+- **Comprehensive test coverage** in `tests/unit/test_ticket_sidebar_run_status_colors.py`
+
 ### Usage Tracking Architecture
 
 - **Backend tracking**: Both `ClaudeCodeBackend` and `AnthropicSDKBackend` track usage via `AgentResult`

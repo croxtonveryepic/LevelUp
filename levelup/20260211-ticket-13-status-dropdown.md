@@ -63,3 +63,19 @@ Wrote 3 file(s):
 
 Step `security` completed.
 - **Usage:** 64.0s
+### Checkpoint: security
+
+- **Decision:** auto-approved
+## Step: review  (21:02:36)
+
+Found 10 issue(s):
+- [WARNING] `src/levelup/gui/ticket_detail.py`: Status label is shown in both create mode and edit mode, but set_create_mode() hides it on line 268. This creates inconsistent state as the label is created visible but hidden in create mode.
+- [INFO] `tests/unit/test_light_theme_ticket_color_constants.py`: Test imports pytest module but never uses it. The test file has incomplete test_all_values_are_hex_colors() method.
+- [INFO] `src/levelup/gui/ticket_detail.py`: Status dropdown is created as a public attribute (self.status_dropdown) while other form controls use private naming (_title_edit, _desc_edit). This inconsistency makes the API unclear.
+- [INFO] `tests/unit/test_status_dropdown_persistence.py`: Test test_no_status_change_no_set_ticket_status_call() doesn't actually verify that set_ticket_status is not called. It only checks the final status is still PENDING.
+- [WARNING] `src/levelup/gui/ticket_detail.py`: Status change logic calls set_ticket_status() before update_ticket(), but if set_ticket_status() raises an exception, the UI state becomes inconsistent. The ticket_saved signal would not be emitted, but the file may be partially modified.
+- [INFO] `tests/unit/test_status_dropdown_widget.py`: Multiple test methods use similar dropdown accessor pattern 'getattr(widget, "status_dropdown", None) or getattr(widget, "_status_dropdown", None)'. This pattern is repeated 20+ times across test files.
+- [INFO] `src/levelup/gui/ticket_sidebar.py`: The TicketSidebar class is an alias wrapper around TicketSidebarWidget with auto-loading. This creates two similar class names that could be confusing.
+- [WARNING] `src/levelup/gui/ticket_detail.py`: update_theme() re-renders the status label but doesn't update the dropdown selection. If the theme changes while viewing a ticket, the dropdown and label may become visually inconsistent.
+- [INFO] `tests/integration/test_status_dropdown_workflow.py`: Integration tests create QApplication and GUI widgets for each test class, which is relatively slow. Multiple test classes could potentially share the same qapp fixture.
+- [INFO] `tests/unit/test_declined_status_resources.py`: Test test_declined_icon_is_appropriate() accepts two different icon values (✗ or ○) but the implementation only uses one. This makes the test less precise.

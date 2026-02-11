@@ -309,6 +309,44 @@
     - Passes run_status_map to `TicketSidebarWidget.set_tickets()`
     - Sidebar stores run_status_map internally for theme switching
 
+### Ticket Sidebar Widget Structure
+
+- **Location**: `src/levelup/gui/ticket_sidebar.py`
+- **Base Class**: `TicketSidebarWidget(QWidget)` - core sidebar implementation
+- **Signals**:
+    - `ticket_selected = pyqtSignal(int)` - emits ticket number when selected
+    - `create_ticket_clicked = pyqtSignal()` - emits when + button clicked
+- **Header Layout**: "Tickets" label + "+" button for creating new tickets
+- **List Widget**: `QListWidget` displaying tickets with status icons and colors
+- **State Variables**:
+    - `_tickets: list[Ticket]` - current ticket list
+    - `_current_theme: str` - "light" or "dark"
+    - `_run_status_map: dict[int, str]` - maps ticket number to run status
+- **Key Methods**:
+    - `set_tickets(tickets, run_status_map)` - updates ticket list, preserves selection
+    - `update_theme(theme)` - changes theme and re-renders colors
+    - `clear_selection()` - deselects any selected item
+    - `refresh()` - re-renders with current tickets
+- **Selection Preservation**: When `set_tickets()` is called, current selection is remembered by ticket number and restored after re-rendering
+- **Alias Class**: `TicketSidebar(TicketSidebarWidget)` - adds auto-loading from file when project_path provided
+
+### MainWindow Stacked Widget Pages
+
+- **Page Management**: `QStackedWidget` at `self._stack` holds multiple pages
+- **Current Pages** (indices 0-2):
+    - **Index 0**: Runs table (`QTableWidget`) - default view showing all pipeline runs
+    - **Index 1**: Ticket detail (`TicketDetailWidget`) - ticket form + terminal
+    - **Index 2**: Documentation viewer (`DocsWidget`) - markdown file browser
+- **Navigation Pattern**:
+    - Each page widget has `back_clicked = pyqtSignal()` signal
+    - MainWindow connects to `_on_<page>_back()` slots that call `self._stack.setCurrentIndex(0)` to return to runs table
+    - Sidebar selection cleared when navigating back
+- **Adding New Pages**:
+    - Create widget with back button and `back_clicked` signal
+    - Add to stack via `self._stack.addWidget(widget)` - returns new index
+    - Connect `back_clicked` signal to handler that sets index back to 0
+    - Add navigation method to switch to new page (clear sidebar selection, set index)
+
 ### Testing Patterns
 
 - Unit tests use pytest with PyQt6 fixtures
@@ -429,3 +467,14 @@
 - **Code Block Handling**: Parser tracks fenced code blocks to avoid false ticket detection
 - **Line Ending Preservation**: Parser preserves original line endings (CRLF/LF)
 - **Update Pattern**: Read entire file, modify relevant sections, write back atomically
+
+### Ticket Sidebar Filtering (NEW)
+
+- **Filter State**: Sidebar needs to maintain filter state for merged ticket visibility
+- **Default Behavior**: Merged tickets hidden by default from main sidebar list
+- **Toggle Control**: Checkbox or toggle button in sidebar header to show/hide merged tickets
+- **Filter Logic**: Applied in `set_tickets()` method or new filter method
+- **Statuses Shown by Default**: pending, in progress, done (merged hidden)
+- **Selection Preservation**: If selected ticket is filtered out, selection should be cleared or moved to nearest visible ticket
+- **Theme Integration**: Filtered tickets should respect theme colors when shown
+- **Run Status Integration**: Filtered tickets should still show correct colors based on run status when visible

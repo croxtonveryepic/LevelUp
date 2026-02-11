@@ -193,12 +193,44 @@ def run(
 
     # Auto-mark ticket as done on successful completion
     if ctx.status.value == "completed" and ctx.task.source == "ticket" and ctx.task.source_id:
-        from levelup.core.tickets import TicketStatus, set_ticket_status
+        from levelup.core.tickets import TicketStatus, read_tickets, set_ticket_status, update_ticket
 
         try:
             ticket_num = int(ctx.task.source_id.split(":")[1])
             set_ticket_status(path, ticket_num, TicketStatus.DONE, settings.project.tickets_file)
             console.print(f"[green]Ticket #{ticket_num} marked as done.[/green]")
+
+            # Record branch name in ticket metadata
+            try:
+                # Calculate branch name using orchestrator's method
+                if hasattr(orchestrator, "_build_branch_name") and callable(orchestrator._build_branch_name):
+                    convention = ctx.branch_naming or "levelup/{run_id}"
+                    branch_name = orchestrator._build_branch_name(convention, ctx)
+
+                    # Read existing metadata and merge with branch_name
+                    tickets = read_tickets(path, settings.project.tickets_file)
+                    current_ticket = None
+                    for t in tickets:
+                        if t.number == ticket_num:
+                            current_ticket = t
+                            break
+
+                    if current_ticket:
+                        # Merge with existing metadata
+                        metadata = current_ticket.metadata.copy() if current_ticket.metadata else {}
+                        metadata["branch_name"] = branch_name
+
+                        # Update ticket with branch name in metadata
+                        update_ticket(
+                            path,
+                            ticket_num,
+                            metadata=metadata,
+                            filename=settings.project.tickets_file,
+                        )
+            except Exception:
+                # Don't fail the pipeline if metadata update fails
+                pass
+
         except (IndexError, ValueError):
             pass
 

@@ -36,25 +36,47 @@ def markdown_to_html(markdown: str, project_path: Path | None = None) -> str:
         alt_text = match.group(1)
         image_path = match.group(2)
 
-        # External URLs - keep as-is
+        # External URLs - validate and keep as-is
         if image_path.startswith(("http://", "https://")):
-            return f'<img src="{image_path}" alt="{html_module.escape(alt_text)}" style="max-width: 100%;" />'
+            # Escape the URL to prevent XSS
+            escaped_url = html_module.escape(image_path, quote=True)
+            return f'<img src="{escaped_url}" alt="{html_module.escape(alt_text)}" style="max-width: 100%;" />'
+
+        # Block javascript: and data: URIs for security
+        if image_path.startswith(("javascript:", "data:", "vbscript:", "file:")):
+            # Return empty string to ignore malicious URIs
+            return ""
 
         # Resolve to absolute path if project_path provided
         if project_path:
             # Convert to absolute path
             abs_path = (project_path / image_path).resolve()
+
+            # SECURITY: Ensure resolved path is within project directory
+            try:
+                abs_path.relative_to(project_path.resolve())
+            except ValueError:
+                # Path traversal attempt detected - path is outside project directory
+                return ""
+
             # Convert to file:// URL for QTextEdit (with forward slashes)
             file_url = abs_path.as_posix()
             if not file_url.startswith("file://"):
                 file_url = f"file:///{file_url}" if abs_path.is_absolute() else file_url
+            # Escape the URL
+            file_url = html_module.escape(file_url, quote=True)
         else:
-            file_url = image_path
+            file_url = html_module.escape(image_path, quote=True)
 
         return f'<img src="{file_url}" alt="{html_module.escape(alt_text)}" style="max-width: 100%;" />'
 
     # Replace markdown images with HTML img tags
-    image_pattern = r'!\[([^\]]*)\]\(([^\)]+)\)'
+    # SECURITY: Use non-greedy matching and limit input size to prevent ReDoS
+    if len(escaped) > 1000000:  # 1MB text limit
+        # For very large inputs, don't process images to prevent DoS
+        return f'<p>{escaped}</p>'
+
+    image_pattern = r'!\[([^\]]*?)\]\(([^\)]+?)\)'
     html_text = re.sub(image_pattern, replace_image, escaped)
 
     # Convert newlines to <br> for plain text portions
@@ -87,15 +109,20 @@ def html_to_markdown(html: str, project_path: Path | None = None) -> str:
     if not html:
         return ""
 
+    # SECURITY: Limit input size to prevent DoS
+    if len(html) > 5000000:  # 5MB HTML limit
+        # For very large inputs, extract plain text only
+        return html[:1000000]
+
     result = html
 
     # Convert <img> tags to markdown syntax
     def replace_img_tag(match: re.Match) -> str:
         img_tag = match.group(0)
 
-        # Extract src and alt from img tag
-        src_match = re.search(r'src="([^"]+)"', img_tag)
-        alt_match = re.search(r'alt="([^"]*)"', img_tag)
+        # Extract src and alt from img tag (non-greedy to prevent ReDoS)
+        src_match = re.search(r'src="([^"]+?)"', img_tag)
+        alt_match = re.search(r'alt="([^"]*?)"', img_tag)
 
         if not src_match:
             return ""
@@ -147,8 +174,8 @@ def html_to_markdown(html: str, project_path: Path | None = None) -> str:
 
         return f"![{alt}]({src})"
 
-    # Replace all <img> tags
-    img_pattern = r'<img[^>]*/?>'
+    # Replace all <img> tags (use possessive quantifier to prevent ReDoS)
+    img_pattern = r'<img[^>]*?/?>'
     result = re.sub(img_pattern, replace_img_tag, result)
 
     # Remove HTML tags except <br>

@@ -34,14 +34,41 @@
   - `total_cost_usd: float` - cumulative cost across all steps
   - `StepUsage` model tracks: `cost_usd`, `input_tokens`, `output_tokens`, `duration_ms`, `num_turns`
 - **Orchestrator**: `_capture_usage()` method (`core/orchestrator.py`) captures agent results into context
+  - Called after each agent run at line 604
+  - Extracts token counts from `AgentResult` and creates `StepUsage` objects
+  - Accumulates total cost: `ctx.total_cost_usd += usage.cost_usd`
+  - Stores per-step usage: `ctx.step_usage[agent_name] = usage`
 - **Journal**: `RunJournal` (`core/journal.py`) logs usage per step and total cost in markdown
 - **CLI display**: `print_pipeline_summary()` (`cli/display.py`) shows:
-  - Total tokens summary (lines 260-264)
+  - Total tokens summary (lines 260-264): formats as `{total:,} ({input:,} in / {output:,} out)`
   - Per-step cost breakdown table with tokens column (lines 268-281)
-- **Database**: `runs` table has `total_cost_usd` column but NO token columns
+- **Database**: `runs` table has `total_cost_usd` column but NO token columns (as of v4)
 - **GUI**: Main window (`gui/main_window.py`) shows run table with columns: Run ID, Task, Project, Status, Step, Started
-  - Does NOT display cost or token information in the table or detail views
+  - Does NOT display cost or token information in the table (line 38: `COLUMNS` list)
+  - Detail view (lines 448-465) shows run metadata but omits cost and token data
   - `RunRecord` model (`state/models.py`) only has `total_cost_usd` field, no token fields
+
+### Database Schema Management
+- **Current version**: v4 (`CURRENT_SCHEMA_VERSION` in `state/db.py` line 44)
+- **Migration system**:
+  - List of `(target_version, sql)` tuples in `MIGRATIONS` (lines 47-82)
+  - `_run_migrations()` function applies pending migrations sequentially (lines 94-111)
+  - Migration v1: Created schema_version table
+  - Migration v2: Added `total_cost_usd REAL DEFAULT 0` column
+  - Migration v3: Added `pause_requested INTEGER DEFAULT 0` column
+  - Migration v4: Added `ticket_number INTEGER` column and index
+- **Schema initialization**: `init_db()` creates base schema then runs migrations
+- **Migration patterns**: Each migration includes version table update at the end
+
+### StateManager Data Flow
+- **Registration**: `register_run()` (lines 65-97) inserts new run, extracts ticket number from context
+- **Updates**: `update_run()` (lines 99-128) persists context changes including:
+  - Status, step, error message
+  - Language, framework, test runner
+  - `context_json` - serialized full context (includes step_usage dict)
+  - `total_cost_usd` - extracted from ctx.total_cost_usd (line 121)
+  - Does NOT extract input_tokens/output_tokens (would need to sum from ctx.step_usage)
+- **Retrieval**: `get_run()` returns `RunRecord` Pydantic model from DB row
 
 ### GUI Architecture
 - **Framework**: PyQt6
@@ -59,6 +86,14 @@
   - `ticket_sidebar.py` - Ticket list navigation
   - `run_terminal.py` - Terminal wrapper for running levelup commands
 - **Resources**: `resources.py` contains status colors, labels, and icons
+- **Table structure**:
+  - `_update_table()` (lines 193-208) populates table from `self._runs` list
+  - Column data extracted from `RunRecord` fields
+  - Status column uses color from `STATUS_COLORS` dict
+- **Detail view**:
+  - `_view_details()` (lines 448-465) shows message box with run info
+  - Currently displays: run_id, task_title, task_description, project_path, status, current_step, language, framework, test_runner, error_message, started_at, updated_at, pid
+  - Does NOT display: total_cost_usd, token counts
 
 ### Configuration
 - Uses Pydantic settings with environment variable support
@@ -91,6 +126,19 @@
 - Tests use pytest with standard assertions
 - Path normalization needed on Windows: `.replace("\\", "/")` in assertions
 - Comprehensive usage tracking tests in `tests/unit/test_cost_tracking.py`
+  - Tests for `AgentResult` defaults and values
+  - Tests for `ToolLoopResult` token accumulation
+  - Tests for backend integration (ClaudeCodeBackend, AnthropicSDKBackend)
+  - Tests for `StepUsage` model serialization
+  - Tests for `PipelineContext` step_usage persistence
+  - Tests for DB migration v2 (adding total_cost_usd column)
+  - Tests for StateManager cost persistence
+  - Tests for Journal cost tracking in logs
+- DB migration testing pattern:
+  - Create database at old version
+  - Run `init_db()` to apply migrations
+  - Verify schema version updated
+  - Verify new columns exist via `PRAGMA table_info()`
 
 ### Key Dependencies
 - PyQt6 for GUI (installed via `gui` or `dev` optional dependencies)

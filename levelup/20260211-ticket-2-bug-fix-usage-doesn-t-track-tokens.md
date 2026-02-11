@@ -18,3 +18,19 @@ See `levelup/project_context.md` for project details.
 - 5 assumption(s)
 - 5 out-of-scope item(s)
 - **Usage:** 107.2s
+### Checkpoint: requirements
+
+- **Decision:** approve
+## Step: planning  (01:49:48)
+
+**Approach:** Add input_tokens and output_tokens columns to the database schema (migration v5), update RunRecord model to include token fields with defaults, modify StateManager.update_run() to calculate and persist total tokens from ctx.step_usage, and update GUI main window to display token information in both the runs table and detail view. This complements the existing CLI token display without breaking backward compatibility.
+- 8 implementation step(s)
+- **Affected files:** src/levelup/state/db.py, src/levelup/state/models.py, src/levelup/state/manager.py, src/levelup/gui/main_window.py, tests/unit/test_cost_tracking.py
+- **Risks:**
+  - Migration must be idempotent and handle existing databases gracefully
+  - Token calculation logic must handle cases where step_usage dict is empty or missing
+  - GUI table column addition may affect layout and require header resize mode adjustments
+  - RunRecord with zero tokens should display 'N/A' to distinguish from unavailable data
+  - Database queries should remain performant with additional columns
+  - Existing tests in test_cost_tracking.py must continue to pass with schema v5
+- **Usage:** 93.7s

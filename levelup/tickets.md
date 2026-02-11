@@ -56,7 +56,7 @@ branch_name: levelup/add-gui-navigation-hotkeys
 -->
 
 Since LevelUp is a tool for developers, many will expect there to be hotkeys to help them navigate and use the app. There should at least be one to jump to the next ticket waiting for user input (and focus the terminal). Create sensible default hotkeys for each functionality, and add page for hotkey customization.
-## [done] Status Dropdown
+## [merged] Status Dropdown
 <!--metadata
 branch_name: levelup/status-dropdown
 -->

@@ -53,3 +53,15 @@ Wrote 2 file(s):
 
 Step `security` completed.
 - **Usage:** 49.7s
+### Checkpoint: security
+
+- **Decision:** auto-approved
+## Step: review  (21:18:16)
+
+Found 6 issue(s):
+- [CRITICAL] `src/levelup/gui/terminal_emulator.py`: Missing bounds check when accessing buffer row in _get_selected_text(), potentially causing IndexError
+- [WARNING] `src/levelup/gui/terminal_emulator.py`: Logic duplication between _get_selected_text() and paintEvent() for determining which line to read
+- [INFO] `tests/unit/test_terminal_scrollback_copy.py`: Edge case tests only verify string type, not actual exception safety
+- [INFO] `src/levelup/gui/terminal_emulator.py`: Fallback behavior inconsistency between paintEvent() and _get_selected_text()
+- [INFO] `src/levelup/gui/terminal_emulator.py`: Direct attribute access to line[col].data without defensive check
+- [INFO] `tests/unit/test_terminal_scrollback_copy.py`: Test file has 40+ tests with significant code duplication in setup and assertion logic

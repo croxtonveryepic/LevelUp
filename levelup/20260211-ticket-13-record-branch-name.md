@@ -18,3 +18,19 @@ See `levelup/project_context.md` for project details.
 - 5 assumption(s)
 - 6 out-of-scope item(s)
 - **Usage:** 126.0s
+### Checkpoint: requirements
+
+- **Decision:** approve
+## Step: planning  (04:30:42)
+
+**Approach:** Add branch name recording to ticket metadata when a pipeline completes successfully. The implementation involves: (1) Modifying the ticket completion flow in cli/app.py to record the branch name using update_ticket(), (2) Extracting branch name calculation from the orchestrator's _build_branch_name method so it can be reused, (3) Adding comprehensive unit tests to verify metadata recording, parsing, and display. The branch name will be stored in ticket metadata using the key 'branch_name' and displayed in the HTML comment block beneath the ticket heading in tickets.md. The existing metadata infrastructure (parsing, serialization, update_ticket) already supports multiple fields, so no changes are needed to the ticket system itself.
+- 4 implementation step(s)
+- **Affected files:** src/levelup/cli/app.py, src/levelup/core/orchestrator.py, tests/unit/test_ticket_branch_name_metadata.py, tests/unit/test_cli_app.py
+- **Risks:**
+  - If branch_naming is None or empty in PipelineContext, need to handle gracefully with default convention
+  - Manual task entries (not from tickets) should not attempt to record branch name to avoid errors
+  - Multiple metadata fields must coexist properly - existing auto_approve metadata should not be affected
+  - Branch name recording should only happen for tickets, not for manually entered tasks without source_id
+  - Windows path handling in tests may require .replace('\\', '/') for assertions
+  - Need to handle cases where ticket file or ticket number is invalid gracefully
+- **Usage:** 135.4s

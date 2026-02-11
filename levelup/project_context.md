@@ -152,6 +152,24 @@
     - `TestRunnerTool` (`tools/test_runner.py`) can be used by agents to run tests with structured parsing
     - Final test results stored in `PipelineContext.test_results` (list of `TestResult` objects)
 
+### Ticket Completion Flow
+
+- **Location**: `src/levelup/cli/app.py` lines 194-203
+- **Trigger**: After `orchestrator.run()` completes successfully
+- **Current implementation**:
+    ```python
+    if ctx.status.value == "completed" and ctx.task.source == "ticket" and ctx.task.source_id:
+        from levelup.core.tickets import TicketStatus, set_ticket_status
+        try:
+            ticket_num = int(ctx.task.source_id.split(":")[1])
+            set_ticket_status(path, ticket_num, TicketStatus.DONE, settings.project.tickets_file)
+            console.print(f"[green]Ticket #{ticket_num} marked as done.[/green]")
+        except (IndexError, ValueError):
+            pass
+    ```
+- **Branch name access**: Can be reconstructed using `orchestrator._build_branch_name(ctx.branch_naming or "levelup/{run_id}", ctx)`
+- **Extension point**: This is where branch name should be recorded to ticket metadata
+
 ### Testing Patterns
 
 - **Unit tests** in `tests/unit/`
@@ -167,6 +185,8 @@
     - Preserving metadata through status changes and updates
     - Round-trip serialization of metadata
     - Backward compatibility with tickets without metadata
+- **CLI test patterns**: Mock `Orchestrator` and `StateManager` classes, verify function calls and file contents
+- **Branch naming tests**: `tests/unit/test_branch_naming_orchestrator.py` shows how to test branch name generation
 
 ### Key Dependencies
 

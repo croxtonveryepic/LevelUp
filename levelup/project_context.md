@@ -481,6 +481,9 @@
     - `ProjectSettings` - project-specific settings
     - `PipelineSettings` - pipeline behavior
     - `GUISettings` - GUI preferences (theme)
+- **Config Files**: Uses YAML files (levelup.yaml, .levelup.yaml, levelup.yml, .levelup.yml)
+- **Config Loader**: `config/loader.py` provides `find_config_file()`, `load_config_file()`, and `load_settings()`
+- **Setting Persistence**: Config is saved to project's levelup.yaml file
 - **No existing hotkey/keybinding configuration**
 - **Color Mapping** (`src/levelup/gui/resources.py`):
     - Dark theme colors in `TICKET_STATUS_COLORS` dict
@@ -555,6 +558,20 @@
 - MainWindow initializes with `self._current_theme = get_current_theme()` and passes theme to child widgets
 >>>>>>> 7c02951 (levelup(requirements): Add GUI navigation hotkeys)
 
+### PyQt6 Keyboard Shortcut Patterns
+
+- **QShortcut**: Primary mechanism for application-wide hotkeys
+    - Created with `QShortcut(QKeySequence, parent_widget)`
+    - `activated` signal connects to handler function
+    - Context can be Qt.ApplicationShortcut (global) or Qt.WindowShortcut (window-specific)
+- **QKeySequence**: Represents key combinations
+    - Supports platform-independent notation: "Ctrl+N", "F5", "Escape"
+    - Automatically translates Ctrl to Cmd on macOS
+    - Standard keys available via `QKeySequence.StandardKey` enum
+- **keyPressEvent**: Widget-level override for custom key handling
+    - Used in `terminal_emulator.py` for terminal-specific keys (Ctrl+Shift+C/V)
+    - Should call `super().keyPressEvent()` for unhandled keys
+
 ### Testing Patterns
 
 - **Test Location**: Unit tests in `tests/unit/`, integration tests in `tests/integration/`
@@ -562,9 +579,12 @@
 - **QApplication**: Tests create QApplication instance via `_ensure_qapp()` helper or `QApplication.instance() or QApplication([])`
 - **Mocking**: Use `unittest.mock.patch` for GUI components and state managers
 - Unit tests use pytest with PyQt6 fixtures
-- Mock state manager using `MagicMock(spec=StateManager)`
-- Mock terminal emulator with `patch("levelup.gui.terminal_emulator.PtyBackend")`
-- Test files follow pattern: `test_<component>.py` or `test_<component>_<feature>.py`
+- `_can_import_pyqt6()` function checks if PyQt6 is available, tests are skipped if not
+- `_ensure_qapp()` returns `QApplication.instance() or QApplication([])`
+- Mock state manager using `MagicMock(spec=StateManager)` or real StateManager with temp DB
+- Mock MainWindow with patched `_start_refresh_timer` and `_refresh` methods
+- Button click tests: `btn.click()` triggers connected signals
+- Signal tests: Connect test lambdas to signals and verify they receive expected values
 - Button state tests verify enabled/disabled states after state transitions
 - Metadata tests verify round-trip serialization and preservation of non-form fields
 - Integration tests use temporary directories (`tmp_path` fixture) for file operations
@@ -588,6 +608,7 @@
     - Theme switching with preserved run status
     - Multiple runs for same ticket
     - Selection preservation during updates
+- Test files follow pattern: `test_<component>.py` or `test_<component>_<feature>.py`
 
 ### Ticket Sidebar Widget Structure
 
@@ -627,7 +648,6 @@
     - Connect `back_clicked` signal to handler that sets index back to 0
     - Add navigation method to switch to new page (clear sidebar selection, set index)
 
-
 ### Key Conventions
 
 - Windows paths: Use `.replace("\\", "/")` in test assertions
@@ -638,6 +658,8 @@
 - Theme updates propagate via `update_theme(theme)` method
 - Widget signals use PyQt6 `pyqtSignal` for inter-component communication
 - Form controls block signals during programmatic updates to avoid triggering dirty state
+- Object names set with `setObjectName()` for finding widgets in tests (e.g., "backBtn", "addTicketBtn")
+- Tooltips set with `setToolTip()` for user-facing hints
 
 ### Existing Merge Skills
 
@@ -682,6 +704,16 @@
     - Clicking spawns MergeAgent with terminal output displayed
     - On success, calls `set_ticket_status(TicketStatus.MERGED)`
     - Status update triggers ticket sidebar refresh
+
+### Hotkey Implementation Strategy
+
+Based on existing patterns, keyboard shortcuts should be implemented using:
+1. **QShortcut** instances created in MainWindow.__init__() after UI is built
+2. **HotkeySettings** Pydantic model in config/settings.py for keybinding storage
+3. **Platform-aware defaults**: Use "Ctrl" prefix that Qt automatically translates to Cmd on macOS
+4. **Keybinding persistence**: Save to GUISettings in levelup.yaml config file
+5. **Settings UI**: New widget or dialog for customizing keybindings (similar to ticket_detail.py pattern)
+6. **Testing**: Create test_gui_hotkeys.py with tests for each hotkey action
 
 ### Image/Asset Handling
 

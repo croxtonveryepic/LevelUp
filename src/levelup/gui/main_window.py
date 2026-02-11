@@ -178,7 +178,15 @@ class MainWindow(QMainWindow):
         from levelup.core.tickets import read_tickets
 
         tickets = read_tickets(self._project_path, self._tickets_file)
-        self._sidebar.set_tickets(tickets)
+
+        # Create run status mapping for active runs
+        run_status_map: dict[int, str] = {}
+        for run in self._runs:
+            # Only include active run statuses (running or waiting_for_input)
+            if run.ticket_number and run.status in ("running", "waiting_for_input"):
+                run_status_map[run.ticket_number] = run.status
+
+        self._sidebar.set_tickets(tickets, run_status_map=run_status_map)
         self._cached_tickets = tickets
 
     def _update_table(self) -> None:

@@ -94,16 +94,25 @@ TICKET_STATUS_ICONS: dict[str, str] = {
 }
 
 
-def get_ticket_status_color(status: str, theme: Literal["light", "dark"] = "dark") -> str:
+def get_ticket_status_color(
+    status: str,
+    theme: Literal["light", "dark"] = "dark",
+    run_status: str | None = None
+) -> str:
     """Get theme-aware ticket status color.
 
     Args:
         status: Ticket status key (e.g., "pending", "done")
         theme: "light" or "dark"
+        run_status: Optional run status to override color for "in progress" tickets
 
     Returns:
         Hex color string
     """
+    # Only override color for "in progress" tickets with active run statuses
+    if status == "in progress" and run_status in ("running", "waiting_for_input"):
+        return get_status_color(run_status, theme=theme)
+
     if theme == "light":
         return _LIGHT_TICKET_STATUS_COLORS.get(status, "#4C566A")
     else:

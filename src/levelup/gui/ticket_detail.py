@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
@@ -43,6 +45,11 @@ class TicketDetailWidget(QWidget):
         self._project_path: str | None = project_path
         self._db_path: str | None = None
         self._current_theme = theme
+        self._auto_approve_default: bool = False  # Project's default auto_approve setting
+
+        # Load settings if project_path is provided
+        if project_path:
+            self._load_project_settings()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -199,6 +206,8 @@ class TicketDetailWidget(QWidget):
         self._db_path = db_path
         if state_manager is not None:
             self._state_manager_ref = state_manager
+        # Load project settings when context is set
+        self._load_project_settings()
         # Propagate context to all existing terminals
         for terminal in self._terminals.values():
             terminal.set_context(project_path, db_path)
@@ -255,8 +264,9 @@ class TicketDetailWidget(QWidget):
         self._desc_edit.clear()
         self._desc_edit.blockSignals(False)
 
+        # Use project default for new tickets
         self.auto_approve_checkbox.blockSignals(True)
-        self.auto_approve_checkbox.setChecked(False)
+        self.auto_approve_checkbox.setChecked(self._auto_approve_default)
         self.auto_approve_checkbox.blockSignals(False)
 
         self._dirty = False
@@ -291,12 +301,13 @@ class TicketDetailWidget(QWidget):
         self._desc_edit.setMarkdown(ticket.description)
         self._desc_edit.blockSignals(False)
 
-        # Load auto-approve metadata
+        # Load auto-approve metadata, using project default if not specified
         self.auto_approve_checkbox.blockSignals(True)
         if ticket.metadata and "auto_approve" in ticket.metadata:
             self.auto_approve_checkbox.setChecked(bool(ticket.metadata["auto_approve"]))
         else:
-            self.auto_approve_checkbox.setChecked(False)
+            # Use project default when ticket has no metadata or no auto_approve key
+            self.auto_approve_checkbox.setChecked(self._auto_approve_default)
         self.auto_approve_checkbox.blockSignals(False)
 
         self._dirty = False
@@ -317,6 +328,27 @@ class TicketDetailWidget(QWidget):
         self._current_terminal.set_ticket(ticket)
 
     # -- Internal -----------------------------------------------------------
+
+    def _load_project_settings(self) -> None:
+        """Load project settings to get auto_approve default.
+
+        This method loads the project configuration and stores the
+        pipeline.auto_approve default value. This is called when:
+        - Widget is initialized with a project_path
+        - set_project_context() is called
+        """
+        if not self._project_path:
+            # No project path, use safe default
+            self._auto_approve_default = False
+            return
+
+        try:
+            from levelup.config.loader import load_settings
+            settings = load_settings(project_path=Path(self._project_path))
+            self._auto_approve_default = settings.pipeline.auto_approve
+        except Exception:
+            # If settings loading fails (malformed config, etc.), use safe default
+            self._auto_approve_default = False
 
     def _wire_existing_run(self, ticket_number: int) -> None:
         """Query the DB for an existing run for this ticket and update terminal state."""

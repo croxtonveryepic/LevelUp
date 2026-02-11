@@ -11,3 +11,10 @@ Users report that they can't scroll up in integrated terminals to review each st
 ## Step: detect  (04:23:46)
 
 See `levelup/project_context.md` for project details.
+## Step: requirements  (04:25:19)
+
+**Summary:** Fix terminal emulator scrollback to display historical lines when scrolling up
+- 3 requirement(s)
+- 5 assumption(s)
+- 6 out-of-scope item(s)
+- **Usage:** 91.9s

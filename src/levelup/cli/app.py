@@ -49,6 +49,7 @@ def run(
     path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Claude model to use"),
     no_checkpoints: bool = typer.Option(False, "--no-checkpoints", help="Skip user checkpoints"),
+    auto_approve: bool = typer.Option(False, "--auto-approve", help="Auto-approve all checkpoints"),
     max_iterations: Optional[int] = typer.Option(
         None, "--max-iterations", help="Max code iteration cycles"
     ),
@@ -94,6 +95,8 @@ def run(
         overrides.setdefault("pipeline", {})["max_code_iterations"] = max_iterations
     if no_checkpoints:
         overrides.setdefault("pipeline", {})["require_checkpoints"] = False
+    if auto_approve:
+        overrides.setdefault("pipeline", {})["auto_approve"] = True
     if backend:
         overrides.setdefault("llm", {})["backend"] = backend
 
@@ -792,9 +795,10 @@ def instruct(
 
 @app.command()
 def tickets(
-    action: str = typer.Argument("list", help="Action: list, next, start, done, merged, or delete"),
-    ticket_num: Optional[int] = typer.Argument(None, help="Ticket number (for start/done/merged/delete)"),
+    action: str = typer.Argument("list", help="Action: list, next, start, done, merged, delete, or set-metadata"),
+    ticket_num: Optional[int] = typer.Argument(None, help="Ticket number (for start/done/merged/delete/set-metadata)"),
     path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
+    auto_approve_val: Optional[str] = typer.Option(None, "--auto-approve", help="Set auto_approve metadata (true/false/none)"),
 ) -> None:
     """List and manage tickets from the tickets markdown file."""
     from rich.table import Table
@@ -806,6 +810,7 @@ def tickets(
         get_next_ticket,
         read_tickets,
         set_ticket_status,
+        update_ticket,
     )
 
     settings = load_settings(project_path=path)
@@ -872,8 +877,38 @@ def tickets(
             print_error(str(e))
             raise typer.Exit(1)
 
+    elif action == "set-metadata":
+        if ticket_num is None:
+            print_error("Ticket number required: levelup tickets set-metadata <N> --auto-approve <true|false|none>")
+            raise typer.Exit(1)
+        if auto_approve_val is None:
+            print_error("--auto-approve flag required: levelup tickets set-metadata <N> --auto-approve <true|false|none>")
+            raise typer.Exit(1)
+
+        # Parse the auto_approve value
+        auto_approve_val_lower = auto_approve_val.lower()
+        if auto_approve_val_lower in ("true", "1", "yes"):
+            metadata = {"auto_approve": True}
+        elif auto_approve_val_lower in ("false", "0", "no"):
+            metadata = {"auto_approve": False}
+        elif auto_approve_val_lower == "none":
+            metadata = None
+        else:
+            print_error(f"Invalid --auto-approve value: {auto_approve_val}. Use true, false, or none.")
+            raise typer.Exit(1)
+
+        try:
+            update_ticket(path, ticket_num, metadata=metadata, filename=settings.project.tickets_file)
+            if metadata is None:
+                console.print(f"[green]Removed metadata from ticket #{ticket_num}[/green]")
+            else:
+                console.print(f"[green]Updated ticket #{ticket_num} metadata: auto_approve={metadata['auto_approve']}[/green]")
+        except IndexError as e:
+            print_error(str(e))
+            raise typer.Exit(1)
+
     else:
-        print_error(f"Unknown action: {action}. Use list, next, start, done, merged, or delete.")
+        print_error(f"Unknown action: {action}. Use list, next, start, done, merged, delete, or set-metadata.")
         raise typer.Exit(1)
 
 

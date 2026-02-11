@@ -6,7 +6,9 @@ from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget
 
-from levelup.core.tickets import Ticket
+from pathlib import Path
+
+from levelup.core.tickets import Ticket, read_tickets
 from levelup.gui.resources import TICKET_STATUS_COLORS, TICKET_STATUS_ICONS, get_ticket_status_color
 
 
@@ -90,3 +92,31 @@ class TicketSidebarWidget(QWidget):
     def _on_row_changed(self, row: int) -> None:
         if 0 <= row < len(self._tickets):
             self.ticket_selected.emit(self._tickets[row].number)
+
+    @property
+    def ticket_list(self) -> QListWidget:
+        """Get the ticket list widget (for testing)."""
+        return self._list
+
+    def refresh(self) -> None:
+        """Refresh the ticket list (alias for updating with current tickets)."""
+        # Re-render with current tickets
+        self.set_tickets(self._tickets)
+
+
+class TicketSidebar(TicketSidebarWidget):
+    """Alias for TicketSidebarWidget with auto-loading capability."""
+
+    def __init__(self, parent: QWidget | None = None, theme: str = "dark", project_path: Path | None = None) -> None:
+        super().__init__(parent, theme)
+        self._project_path = project_path
+        if project_path:
+            self.refresh()
+
+    def refresh(self) -> None:
+        """Refresh tickets from file."""
+        if self._project_path:
+            tickets = read_tickets(self._project_path)
+            self.set_tickets(tickets)
+        else:
+            super().refresh()

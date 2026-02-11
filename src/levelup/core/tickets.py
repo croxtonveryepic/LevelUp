@@ -5,7 +5,9 @@ from __future__ import annotations
 import enum
 import re
 from pathlib import Path
+from typing import Any
 
+import yaml
 from pydantic import BaseModel
 
 
@@ -21,6 +23,9 @@ _STATUS_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Sentinel value for "not provided" in update_ticket
+_NOT_PROVIDED = object()
+
 
 class Ticket(BaseModel):
     """A single ticket parsed from the markdown file."""
@@ -29,6 +34,7 @@ class Ticket(BaseModel):
     title: str  # Heading text without status tag
     description: str = ""  # Body text below heading
     status: TicketStatus = TicketStatus.PENDING
+    metadata: dict[str, Any] | None = None
 
     def to_task_input(self):
         """Convert to TaskInput for pipeline consumption."""
@@ -54,10 +60,13 @@ def parse_tickets(text: str) -> list[Ticket]:
     in_code_block = False
     current_title: str | None = None
     current_status = TicketStatus.PENDING
+    current_metadata: dict[str, Any] | None = None
     description_lines: list[str] = []
+    in_metadata_block = False
+    metadata_lines: list[str] = []
 
     def _flush():
-        nonlocal current_title, current_status, description_lines
+        nonlocal current_title, current_status, current_metadata, description_lines
         if current_title is not None:
             desc = "".join(description_lines).strip()
             tickets.append(Ticket(
@@ -65,9 +74,11 @@ def parse_tickets(text: str) -> list[Ticket]:
                 title=current_title,
                 description=desc,
                 status=current_status,
+                metadata=current_metadata,
             ))
         current_title = None
         current_status = TicketStatus.PENDING
+        current_metadata = None
         description_lines = []
 
     for line in lines:
@@ -76,13 +87,40 @@ def parse_tickets(text: str) -> list[Ticket]:
         # Track fenced code blocks
         if stripped.lstrip().startswith("```"):
             in_code_block = not in_code_block
-            if current_title is not None:
+            if current_title is not None and not in_metadata_block:
                 description_lines.append(line)
             continue
 
         if in_code_block:
-            if current_title is not None:
+            if current_title is not None and not in_metadata_block:
                 description_lines.append(line)
+            continue
+
+        # Check for metadata block start
+        if current_title is not None and stripped.strip() == "<!--metadata":
+            in_metadata_block = True
+            metadata_lines = []
+            continue
+
+        # Check for metadata block end
+        if in_metadata_block and stripped.strip() == "-->":
+            in_metadata_block = False
+            # Parse metadata YAML
+            if metadata_lines:
+                try:
+                    metadata_text = "\n".join(metadata_lines)
+                    current_metadata = yaml.safe_load(metadata_text)
+                    if not isinstance(current_metadata, dict):
+                        current_metadata = None
+                except yaml.YAMLError:
+                    # Ignore malformed metadata
+                    current_metadata = None
+            metadata_lines = []
+            continue
+
+        # Collect metadata lines
+        if in_metadata_block:
+            metadata_lines.append(stripped)
             continue
 
         # Check for ## heading (but not ### or more)
@@ -207,6 +245,7 @@ def update_ticket(
     *,
     title: str | None = None,
     description: str | None = None,
+    metadata: dict[str, Any] | None | object = _NOT_PROVIDED,  # sentinel for "not provided"
     filename: str | None = None,
 ) -> None:
     """Update the title and/or description of a ticket in-place.
@@ -218,6 +257,22 @@ def update_ticket(
         raise IndexError(f"Tickets file not found: {path}")
 
     text = path.read_text(encoding="utf-8")
+
+    # First, parse to get current ticket data
+    tickets = parse_tickets(text)
+    if ticket_number < 1 or ticket_number > len(tickets):
+        raise IndexError(
+            f"Ticket #{ticket_number} not found (file has {len(tickets)} ticket(s))"
+        )
+
+    current_ticket = tickets[ticket_number - 1]
+
+    # Determine what metadata to use
+    if metadata is _NOT_PROVIDED:  # Not provided
+        new_metadata = current_ticket.metadata
+    else:
+        new_metadata = metadata
+
     lines = text.splitlines(keepends=True)
 
     in_code_block = False
@@ -244,16 +299,17 @@ def update_ticket(
                 next_heading_idx = i
 
     if heading_idx is None:
-        tickets = parse_tickets(text)
-        count = len(tickets)
         raise IndexError(
-            f"Ticket #{ticket_number} not found (file has {count} ticket(s))"
+            f"Ticket #{ticket_number} not found (file has {len(tickets)} ticket(s))"
         )
 
     if next_heading_idx is None:
         next_heading_idx = len(lines)
 
     new_lines = list(lines)
+
+    # Determine if we need to rebuild the body
+    need_rebuild_body = (description is not None) or (metadata is not _NOT_PROVIDED)
 
     # Update heading (title) if requested
     if title is not None:
@@ -270,17 +326,39 @@ def update_ticket(
         ending = old_heading[len(old_heading.rstrip("\r\n")) :]
         new_lines[heading_idx] = new_heading_text + ending
 
-    # Update description if requested
-    if description is not None:
-        # Strip newlines from each individual line (user can pass multiline string)
-        desc_text = description.rstrip("\n\r")
-        if desc_text:
-            desc_lines = [ln + "\n" for ln in desc_text.split("\n")]
-        else:
-            desc_lines = []
-        # Replace everything between heading and next heading
+    # Rebuild body if needed
+    if need_rebuild_body:
         body_start = heading_idx + 1
-        new_lines[body_start:next_heading_idx] = desc_lines
+        body_lines = []
+
+        # Add metadata if present
+        if new_metadata:
+            body_lines.append("<!--metadata\n")
+            body_lines.append(yaml.dump(new_metadata, default_flow_style=False, sort_keys=False))
+            body_lines.append("-->\n")
+
+        # Add description
+        if description is not None:
+            desc_text = description.rstrip("\n\r")
+            if desc_text:
+                body_lines.extend([ln + "\n" for ln in desc_text.split("\n")])
+        else:
+            # Keep existing description if not updating
+            # Need to extract it from the current body
+            current_body_lines = new_lines[body_start:next_heading_idx]
+            in_meta = False
+            for line in current_body_lines:
+                stripped = line.rstrip("\r\n").strip()
+                if stripped == "<!--metadata":
+                    in_meta = True
+                    continue
+                if in_meta and stripped == "-->":
+                    in_meta = False
+                    continue
+                if not in_meta:
+                    body_lines.append(line)
+
+        new_lines[body_start:next_heading_idx] = body_lines
 
     path.write_text("".join(new_lines), encoding="utf-8")
 
@@ -353,6 +431,7 @@ def add_ticket(
     title: str,
     description: str = "",
     filename: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> Ticket:
     """Append a new ticket to the markdown file and return it.
 
@@ -367,6 +446,10 @@ def add_ticket(
 
     # Build the markdown block
     block = f"## {title}\n"
+    if metadata:
+        block += "<!--metadata\n"
+        block += yaml.dump(metadata, default_flow_style=False, sort_keys=False)
+        block += "-->\n"
     if description:
         block += description.rstrip("\n\r") + "\n"
 
@@ -384,4 +467,5 @@ def add_ticket(
         title=title,
         description=description.strip(),
         status=TicketStatus.PENDING,
+        metadata=metadata,
     )

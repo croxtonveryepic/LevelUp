@@ -59,6 +59,8 @@ def load_settings(
     overrides: dict[str, Any] | None = None,
 ) -> LevelUpSettings:
     """Load settings with full layering: defaults -> config file -> env -> overrides."""
+    import os
+
     file_data: dict[str, Any] = {}
     config_file = find_config_file(project_path)
     if config_file:
@@ -76,6 +78,14 @@ def load_settings(
     if project_path and "path" not in project_data:
         project_data["path"] = str(project_path)
 
+    # Merge environment variables for each section
+    # Pydantic doesn't parse env vars when we pass explicit kwargs,
+    # so we need to handle them manually
+    _merge_env_vars(llm_data, "LEVELUP_LLM__")
+    _merge_env_vars(pipeline_data, "LEVELUP_PIPELINE__")
+    _merge_env_vars(project_data, "LEVELUP_PROJECT__")
+    _merge_env_vars(gui_data, "LEVELUP_GUI__")
+
     settings = LevelUpSettings(
         llm=LLMSettings(**llm_data),
         project=ProjectSettings(**project_data),
@@ -84,3 +94,21 @@ def load_settings(
     )
 
     return settings
+
+
+def _merge_env_vars(data: dict[str, Any], prefix: str) -> None:
+    """Merge environment variables with the given prefix into data dict."""
+    import os
+
+    for key, value in os.environ.items():
+        if key.startswith(prefix):
+            field_name = key[len(prefix):].lower()
+            # Parse boolean values
+            if value.lower() in ("true", "1", "yes", "on"):
+                data[field_name] = True
+            elif value.lower() in ("false", "0", "no", "off"):
+                data[field_name] = False
+            elif value.isdigit():
+                data[field_name] = int(value)
+            else:
+                data[field_name] = value

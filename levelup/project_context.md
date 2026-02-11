@@ -389,6 +389,26 @@
     - Passes run_status_map to `TicketSidebarWidget.set_tickets()`
     - Sidebar stores run_status_map internally for theme switching
 
+### Ticket Detail Widget Form Elements
+
+- **Location**: `src/levelup/gui/ticket_detail.py`
+- **Form Layout** (top to bottom):
+    1. Back button + ticket number label
+    2. Title field (`QLineEdit` - single line text, line 74)
+    3. Status label (read-only, line 79)
+    4. Description field (`QPlainTextEdit` - multi-line text editor, line 88)
+    5. Auto-approve checkbox (line 93)
+    6. Button row: Delete, Cancel, Save (lines 103-119)
+- **Description Field Behavior**:
+    - Uses `QPlainTextEdit` widget which by default accepts tab characters
+    - No custom `keyPressEvent` handler currently implemented
+    - Expected focus order: Title → Description → Save button
+    - Current issue: Tab key inserts tab character instead of moving focus
+- **Related Files**:
+    - Tests: `tests/unit/test_gui_create_ticket.py` - tests for create ticket flow
+    - Keyboard handling example: `src/levelup/gui/terminal_emulator.py` (has `keyPressEvent` for special key handling)
+    - Checkpoint dialog: `src/levelup/gui/checkpoint_dialog.py` (also uses `QPlainTextEdit` for feedback input)
+
 ### Testing Patterns
 
 - Unit tests use pytest with PyQt6 fixtures

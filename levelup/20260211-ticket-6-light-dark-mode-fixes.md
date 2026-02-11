@@ -54,3 +54,16 @@ Wrote 2 file(s):
 
 Step `security` completed.
 - **Usage:** 51.1s
+### Checkpoint: security
+
+- **Decision:** approve
+## Step: review  (02:06:01)
+
+Found 7 issue(s):
+- [WARNING] `src/levelup/gui/main_window.py`: Unused import: QComboBox is imported but never used
+- [INFO] `src/levelup/gui/main_window.py`: Broad exception handler silently swallows all errors in _cycle_theme
+- [INFO] `src/levelup/gui/main_window.py`: Potential KeyError if _current_theme_preference is not 'system', 'light', or 'dark'
+- [INFO] `src/levelup/gui/theme_manager.py`: Broad exception handler silently swallows config save failures
+- [INFO] `src/levelup/gui/theme_manager.py`: Type annotation missing for _theme_listeners list
+- [INFO] `src/levelup/gui/theme_manager.py`: Missing type annotation for callback parameter
+- [INFO] `src/levelup/gui/app.py`: set_theme_preference is called with project_path=None but then apply_theme may not reflect saved preference

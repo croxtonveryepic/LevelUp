@@ -20,6 +20,7 @@ class TicketSidebarWidget(QWidget):
         super().__init__(parent)
         self._tickets: list[Ticket] = []
         self._current_theme = theme
+        self._run_status_map: dict[int, str] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -42,8 +43,13 @@ class TicketSidebarWidget(QWidget):
         self._list.currentRowChanged.connect(self._on_row_changed)
         layout.addWidget(self._list)
 
-    def set_tickets(self, tickets: list[Ticket]) -> None:
-        """Populate the list, preserving current selection by ticket number."""
+    def set_tickets(self, tickets: list[Ticket], run_status_map: dict[int, str] | None = None) -> None:
+        """Populate the list, preserving current selection by ticket number.
+
+        Args:
+            tickets: List of tickets to display
+            run_status_map: Optional mapping of ticket number to run status
+        """
         # Remember current selection
         current_number: int | None = None
         current_row = self._list.currentRow()
@@ -51,6 +57,7 @@ class TicketSidebarWidget(QWidget):
             current_number = self._tickets[current_row].number
 
         self._tickets = list(tickets)
+        self._run_status_map = run_status_map or {}
 
         self._list.blockSignals(True)
         self._list.clear()
@@ -59,7 +66,14 @@ class TicketSidebarWidget(QWidget):
         for i, ticket in enumerate(tickets):
             icon = TICKET_STATUS_ICONS.get(ticket.status.value, "")
             item = QListWidgetItem(f"{icon}  #{ticket.number} {ticket.title}")
-            color = get_ticket_status_color(ticket.status.value, theme=self._current_theme)
+
+            # Get run status for this ticket if available
+            run_status = self._run_status_map.get(ticket.number)
+            color = get_ticket_status_color(
+                ticket.status.value,
+                theme=self._current_theme,
+                run_status=run_status
+            )
             item.setForeground(QColor(color))
             self._list.addItem(item)
             if ticket.number == current_number:
@@ -77,9 +91,10 @@ class TicketSidebarWidget(QWidget):
             theme: "light" or "dark"
         """
         self._current_theme = theme
-        # Refresh the list to update colors
+        # Refresh the list to update colors, preserving run status map
         tickets = self._tickets.copy()
-        self.set_tickets(tickets)
+        run_status_map = self._run_status_map.copy()
+        self.set_tickets(tickets, run_status_map=run_status_map)
 
     def clear_selection(self) -> None:
         """Deselect any selected item."""

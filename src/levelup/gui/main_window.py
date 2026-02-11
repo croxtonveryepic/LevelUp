@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._start_refresh_timer()
         self._refresh()
+        self.show()
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -79,24 +80,14 @@ class MainWindow(QMainWindow):
         # Toolbar buttons
         toolbar_layout = QHBoxLayout()
 
-        # Theme switcher
-        theme_label = QLabel("Theme:")
-        toolbar_layout.addWidget(theme_label)
+        # Theme switcher button
+        self._theme_switcher = QPushButton()
+        self._theme_switcher.setObjectName("themeBtn")
+        self._theme_switcher.clicked.connect(self._cycle_theme)
 
-        self._theme_switcher = QComboBox()
-        self._theme_switcher.addItems(["Light", "Dark", "Match System"])
-        self._theme_switcher.setObjectName("themeSwitcher")
-        self._theme_switcher.setToolTip("Select application theme")
-        self._theme_switcher.currentTextChanged.connect(self._on_theme_changed)
-
-        # Set current theme
-        current_pref = get_theme_preference()
-        if current_pref == "light":
-            self._theme_switcher.setCurrentText("Light")
-        elif current_pref == "dark":
-            self._theme_switcher.setCurrentText("Dark")
-        else:
-            self._theme_switcher.setCurrentText("Match System")
+        # Initialize button display based on current theme preference
+        self._current_theme_preference = get_theme_preference()
+        self._update_theme_button()
 
         toolbar_layout.addWidget(self._theme_switcher)
         toolbar_layout.addStretch()
@@ -238,24 +229,50 @@ class MainWindow(QMainWindow):
                 self._stack.setCurrentIndex(1)
                 return
 
-    def _on_theme_changed(self, theme_text: str) -> None:
-        """Handle theme switcher selection change."""
-        # Map UI text to preference value
-        preference_map = {
-            "Light": "light",
-            "Dark": "dark",
-            "Match System": "system",
+    def _cycle_theme(self) -> None:
+        """Cycle through theme preferences: system → light → dark → system."""
+        try:
+            # Cycle order: system → light → dark → system
+            if self._current_theme_preference == "system":
+                new_preference = "light"
+            elif self._current_theme_preference == "light":
+                new_preference = "dark"
+            else:  # dark
+                new_preference = "system"
+
+            self._current_theme_preference = new_preference
+
+            # Save preference
+            set_theme_preference(new_preference, project_path=self._project_path)
+
+            # Apply theme
+            actual_theme = get_current_theme(new_preference)
+            app = QApplication.instance()
+            if app:
+                apply_theme(app, actual_theme)
+
+            # Update button appearance
+            self._update_theme_button()
+        except Exception:
+            # Handle errors gracefully - theme may fail to save or apply
+            # but we shouldn't crash the app
+            pass
+
+    def _update_theme_button(self) -> None:
+        """Update theme button text and tooltip based on current preference."""
+        symbols = {
+            "system": "◐",
+            "light": "☀",
+            "dark": "☾"
         }
-        preference = preference_map.get(theme_text, "system")
+        tooltips = {
+            "system": "Theme: Match System",
+            "light": "Theme: Light",
+            "dark": "Theme: Dark"
+        }
 
-        # Save preference
-        set_theme_preference(preference, project_path=self._project_path)
-
-        # Apply theme
-        actual_theme = get_current_theme(preference)
-        app = QApplication.instance()
-        if app:
-            apply_theme(app, actual_theme)
+        self._theme_switcher.setText(symbols[self._current_theme_preference])
+        self._theme_switcher.setToolTip(tooltips[self._current_theme_preference])
 
     def _on_ticket_back(self) -> None:
         """Return to the runs table view."""

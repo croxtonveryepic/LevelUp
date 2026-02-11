@@ -141,6 +141,21 @@ QPushButton#addTicketBtn {
 QPushButton#addTicketBtn:hover {
     background-color: #27AE60;
 }
+QPushButton#themeBtn {
+    background-color: #45475A;
+    color: #CDD6F4;
+    border: 1px solid #585B70;
+    border-radius: 4px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    font-size: 16px;
+}
+QPushButton#themeBtn:hover {
+    background-color: #585B70;
+}
 QPushButton#backBtn {
     background-color: transparent;
     border: none;
@@ -361,6 +376,21 @@ QPushButton#addTicketBtn {
 }
 QPushButton#addTicketBtn:hover {
     background-color: #229954;
+}
+QPushButton#themeBtn {
+    background-color: #E5E9F0;
+    color: #2E3440;
+    border: 1px solid #D8DEE9;
+    border-radius: 4px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    font-size: 16px;
+}
+QPushButton#themeBtn:hover {
+    background-color: #D8DEE9;
 }
 QPushButton#backBtn {
     background-color: transparent;

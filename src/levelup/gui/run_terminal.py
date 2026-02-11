@@ -183,7 +183,12 @@ class RunTerminalWidget(QWidget):
     def enable_run(self, enabled: bool) -> None:
         """Enable/disable the Run button (e.g. when a ticket is loaded)."""
         if not self._command_running:
-            self._run_btn.setEnabled(enabled)
+            # Only enable if enabled=True and no resumable run exists
+            if enabled and not self._is_resumable():
+                self._run_btn.setEnabled(True)
+            elif not enabled:
+                self._run_btn.setEnabled(False)
+            # else: enabled=True but resumable run exists, so keep disabled
 
     def notify_run_finished(self, exit_code: int = 0) -> None:
         """Called externally (e.g. by DB poller) when the pipeline run completes."""
@@ -208,7 +213,8 @@ class RunTerminalWidget(QWidget):
 
     def _set_running_state(self, running: bool) -> None:
         self._command_running = running
-        self._run_btn.setEnabled(not running)
+        # Only enable run button if not running AND no resumable run exists
+        self._run_btn.setEnabled(not running and not self._is_resumable())
         self._terminate_btn.setEnabled(running)
         self._pause_btn.setEnabled(running)
         self._resume_btn.setEnabled(not running and self._is_resumable())
@@ -218,8 +224,10 @@ class RunTerminalWidget(QWidget):
     def _update_button_states(self) -> None:
         """Refresh button enabled/disabled states based on current state."""
         running = self._command_running
+        # Only enable run button if not running, has context, AND no resumable run exists
         self._run_btn.setEnabled(
             not running and self._ticket_number is not None and self._project_path is not None
+            and not self._is_resumable()
         )
         self._terminate_btn.setEnabled(running)
         self._pause_btn.setEnabled(running)

@@ -653,7 +653,7 @@ class RunTerminalWidget(QWidget):
         """Create a backend instance for running agents."""
         from levelup.agents.backend import ClaudeCodeBackend
         from levelup.agents.claude_code_client import ClaudeCodeClient
-        from levelup.config.settings import load_settings
+        from levelup.config.loader import load_settings
 
         settings = load_settings(Path(self._project_path) if self._project_path else None)
         client = ClaudeCodeClient(

@@ -828,8 +828,12 @@ class Orchestrator:
         """
         from datetime import datetime
 
+        from levelup.core.branch_naming import normalize_branch_convention
+
         if not convention or not convention.strip():
             return f"levelup/{ctx.run_id}"
+
+        convention = normalize_branch_convention(convention)
 
         # Prepare placeholder values
         task_title = self._sanitize_task_title(ctx.task.title)
@@ -852,7 +856,9 @@ class Orchestrator:
 
         header = read_project_context_header(project_path)
         if header and header.get("branch_naming"):
-            return header["branch_naming"]
+            from levelup.core.branch_naming import normalize_branch_convention
+
+            return normalize_branch_convention(header["branch_naming"])
         return "levelup/{run_id}"
 
     def _prompt_branch_naming_if_needed(self, ctx: PipelineContext, project_path: Path) -> str:
@@ -877,7 +883,9 @@ class Orchestrator:
 
         header = read_project_context_header(project_path)
         if header and header.get("branch_naming"):
-            convention = header["branch_naming"]
+            from levelup.core.branch_naming import normalize_branch_convention
+
+            convention = normalize_branch_convention(header["branch_naming"])
             ctx.branch_naming = convention
             return convention
 

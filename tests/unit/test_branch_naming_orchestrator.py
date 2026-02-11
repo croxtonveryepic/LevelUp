@@ -437,3 +437,124 @@ class TestOrchestratorRunPromptsBranchNaming:
 
         # Prompt should NOT have been called
         mock_prompt.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Regression: literal convention strings are normalized before use
+# ---------------------------------------------------------------------------
+
+
+class TestLiteralConventionNormalization:
+    """Regression tests: literal conventions like 'levelup/task-title-in-kebab-case'
+    must be normalized to 'levelup/{task_title}' before placeholder substitution."""
+
+    def test_build_branch_name_normalizes_literal_convention(self, tmp_path):
+        """_build_branch_name normalizes 'levelup/task-title-in-kebab-case'."""
+        settings = _make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+        ctx = _make_context(
+            tmp_path,
+            task=TaskInput(title="Add widget feature"),
+            run_id="abc123",
+        )
+
+        result = orch._build_branch_name("levelup/task-title-in-kebab-case", ctx)
+        assert result == "levelup/add-widget-feature"
+
+    def test_build_branch_name_normalizes_feature_task_title(self, tmp_path):
+        """_build_branch_name normalizes 'feature/task-title'."""
+        settings = _make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+        ctx = _make_context(
+            tmp_path,
+            task=TaskInput(title="Fix Login Bug"),
+        )
+
+        result = orch._build_branch_name("feature/task-title", ctx)
+        assert result == "feature/fix-login-bug"
+
+    def test_build_branch_name_preserves_canonical_placeholders(self, tmp_path):
+        """_build_branch_name still works with canonical {task_title} placeholders."""
+        settings = _make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+        ctx = _make_context(
+            tmp_path,
+            task=TaskInput(title="Add widget feature"),
+        )
+
+        result = orch._build_branch_name("levelup/{task_title}", ctx)
+        assert result == "levelup/add-widget-feature"
+
+    def test_load_branch_naming_normalizes_literal_from_context(self, tmp_path):
+        """_load_branch_naming_from_context normalizes literal conventions."""
+        path = get_project_context_path(tmp_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "# Project Context\n\n"
+            "- **Language:** Python\n"
+            "- **Framework:** none\n"
+            "- **Test runner:** pytest\n"
+            "- **Test command:** pytest\n"
+            "- **Branch naming:** levelup/task-title-in-kebab-case\n",
+            encoding="utf-8",
+        )
+
+        settings = _make_settings(tmp_path)
+        orch = Orchestrator(settings=settings)
+
+        result = orch._load_branch_naming_from_context(tmp_path)
+        assert result == "levelup/{task_title}"
+
+    def test_prompt_branch_naming_normalizes_literal_from_header(self, tmp_path):
+        """_prompt_branch_naming_if_needed normalizes literal from project_context.md."""
+        path = get_project_context_path(tmp_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "# Project Context\n\n"
+            "- **Language:** Python\n"
+            "- **Framework:** none\n"
+            "- **Test runner:** pytest\n"
+            "- **Test command:** pytest\n"
+            "- **Branch naming:** levelup/task-title-in-kebab-case\n",
+            encoding="utf-8",
+        )
+
+        settings = _make_settings(tmp_path, create_git_branch=True)
+        orch = Orchestrator(settings=settings)
+        ctx = _make_context(tmp_path)
+
+        result = orch._prompt_branch_naming_if_needed(ctx, tmp_path)
+        assert result == "levelup/{task_title}"
+        assert ctx.branch_naming == "levelup/{task_title}"
+
+    def test_end_to_end_literal_convention_creates_correct_branch(self, tmp_path):
+        """End-to-end: stored literal convention results in correct branch name."""
+        repo = _init_git_repo(tmp_path)
+
+        # Store the literal (un-normalized) convention in project_context.md
+        path = get_project_context_path(tmp_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "# Project Context\n\n"
+            "- **Language:** Python\n"
+            "- **Framework:** none\n"
+            "- **Test runner:** pytest\n"
+            "- **Test command:** pytest\n"
+            "- **Branch naming:** levelup/task-title-in-kebab-case\n",
+            encoding="utf-8",
+        )
+
+        settings = _make_settings(tmp_path, create_git_branch=True)
+        orch = Orchestrator(settings=settings)
+
+        ctx = _make_context(
+            tmp_path,
+            task=TaskInput(title="Add widget feature"),
+            branch_naming="levelup/task-title-in-kebab-case",
+        )
+
+        orch._create_git_branch(tmp_path, ctx)
+
+        wt_repo = git.Repo(ctx.worktree_path)
+        assert wt_repo.active_branch.name == "levelup/add-widget-feature"
+        repo.git.worktree("remove", str(ctx.worktree_path), "--force")

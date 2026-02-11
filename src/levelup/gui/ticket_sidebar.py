@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget
 
 from pathlib import Path
 
-from levelup.core.tickets import Ticket, read_tickets
+from levelup.core.tickets import Ticket, TicketStatus, read_tickets
 from levelup.gui.resources import TICKET_STATUS_COLORS, TICKET_STATUS_ICONS, get_ticket_status_color
 
 
@@ -21,8 +21,10 @@ class TicketSidebarWidget(QWidget):
     def __init__(self, parent: QWidget | None = None, theme: str = "dark") -> None:
         super().__init__(parent)
         self._tickets: list[Ticket] = []
+        self._filtered_tickets: list[Ticket] = []
         self._current_theme = theme
         self._run_status_map: dict[int, str] = {}
+        self._show_merged = False  # Hide merged by default
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -41,31 +43,47 @@ class TicketSidebarWidget(QWidget):
 
         layout.addLayout(header_layout)
 
+        # Add merged ticket filter checkbox
+        filter_layout = QHBoxLayout()
+        filter_layout.setContentsMargins(8, 0, 8, 8)
+        self._show_merged_checkbox = QCheckBox("Show merged")
+        self._show_merged_checkbox.setObjectName("showMergedCheckbox")
+        self._show_merged_checkbox.setChecked(False)
+        self._show_merged_checkbox.stateChanged.connect(self._on_filter_changed)
+        filter_layout.addWidget(self._show_merged_checkbox)
+        filter_layout.addStretch()
+        layout.addLayout(filter_layout)
+
         self._list = QListWidget()
         self._list.currentRowChanged.connect(self._on_row_changed)
         layout.addWidget(self._list)
 
-    def set_tickets(self, tickets: list[Ticket], run_status_map: dict[int, str] | None = None) -> None:
-        """Populate the list, preserving current selection by ticket number.
+    def _on_filter_changed(self) -> None:
+        """Handle filter checkbox state change."""
+        self._show_merged = self._show_merged_checkbox.isChecked()
+        # Re-render the list with current filter state
+        self._apply_filter()
 
-        Args:
-            tickets: List of tickets to display
-            run_status_map: Optional mapping of ticket number to run status
-        """
-        # Remember current selection
+    def _apply_filter(self) -> None:
+        """Apply filter to ticket list and re-render."""
+        # Remember current selection by ticket number
         current_number: int | None = None
         current_row = self._list.currentRow()
-        if 0 <= current_row < len(self._tickets):
-            current_number = self._tickets[current_row].number
+        if 0 <= current_row < len(self._filtered_tickets):
+            current_number = self._filtered_tickets[current_row].number
 
-        self._tickets = list(tickets)
-        self._run_status_map = run_status_map or {}
+        # Apply filter
+        if self._show_merged:
+            self._filtered_tickets = list(self._tickets)
+        else:
+            self._filtered_tickets = [t for t in self._tickets if t.status != TicketStatus.MERGED]
 
+        # Re-render list
         self._list.blockSignals(True)
         self._list.clear()
 
         restore_row = -1
-        for i, ticket in enumerate(tickets):
+        for i, ticket in enumerate(self._filtered_tickets):
             icon = TICKET_STATUS_ICONS.get(ticket.status.value, "")
             item = QListWidgetItem(f"{icon}  #{ticket.number} {ticket.title}")
 
@@ -81,10 +99,28 @@ class TicketSidebarWidget(QWidget):
             if ticket.number == current_number:
                 restore_row = i
 
+        # Restore selection if the ticket is still visible
         if restore_row >= 0:
             self._list.setCurrentRow(restore_row)
+        else:
+            # Selection was filtered out, clear it
+            self._list.setCurrentRow(-1)
 
         self._list.blockSignals(False)
+
+    def set_tickets(self, tickets: list[Ticket], run_status_map: dict[int, str] | None = None) -> None:
+        """Populate the list, preserving current selection by ticket number.
+
+        Args:
+            tickets: List of tickets to display
+            run_status_map: Optional mapping of ticket number to run status
+        """
+        self._tickets = list(tickets)
+        self._run_status_map = run_status_map or {}
+        self._filtered_tickets = []
+
+        # Apply filter and render
+        self._apply_filter()
 
     def update_theme(self, theme: str) -> None:
         """Update widget styling for theme change.
@@ -105,8 +141,8 @@ class TicketSidebarWidget(QWidget):
         self._list.blockSignals(False)
 
     def _on_row_changed(self, row: int) -> None:
-        if 0 <= row < len(self._tickets):
-            self.ticket_selected.emit(self._tickets[row].number)
+        if 0 <= row < len(self._filtered_tickets):
+            self.ticket_selected.emit(self._filtered_tickets[row].number)
 
     @property
     def ticket_list(self) -> QListWidget:

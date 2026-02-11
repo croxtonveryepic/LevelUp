@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from levelup.gui.checkpoint_dialog import CheckpointDialog
+from levelup.gui.completed_tickets_widget import CompletedTicketsWidget
 from levelup.gui.docs_widget import DocsWidget
 from levelup.gui.resources import STATUS_COLORS, STATUS_LABELS, get_status_color, status_display
 from levelup.gui.ticket_detail import TicketDetailWidget
@@ -55,6 +56,7 @@ class MainWindow(QMainWindow):
         self._db_path = str(state_manager._db_path)
         self._active_run_pids: set[int] = set()
         self._checkpoint_dialog_open = False
+        self._cached_tickets: list = []
 
         # Load tickets_file setting if we have a project path
         if project_path is not None:
@@ -71,6 +73,16 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("LevelUp Dashboard")
         self.setMinimumSize(1000, 550)
         self._build_ui()
+
+        # Load tickets initially if we have a project path
+        if self._project_path is not None:
+            from levelup.core.tickets import read_tickets
+            try:
+                self._cached_tickets = read_tickets(self._project_path, self._tickets_file)
+                self._sidebar.set_tickets(self._cached_tickets)
+            except Exception:
+                pass
+
         self._start_refresh_timer()
         self._refresh()
         self.show()
@@ -99,6 +111,12 @@ class MainWindow(QMainWindow):
         self._docs_btn.setToolTip("Documentation")
         self._docs_btn.clicked.connect(self._on_docs_clicked)
         toolbar_layout.addWidget(self._docs_btn)
+
+        self._completed_btn = QPushButton("\u2713")
+        self._completed_btn.setObjectName("completedTicketsBtn")
+        self._completed_btn.setToolTip("Completed Tickets")
+        self._completed_btn.clicked.connect(self._on_completed_clicked)
+        toolbar_layout.addWidget(self._completed_btn)
 
         toolbar_layout.addStretch()
 
@@ -158,6 +176,12 @@ class MainWindow(QMainWindow):
         self._docs.back_clicked.connect(self._on_docs_back)
         self._stack.addWidget(self._docs)  # index 2
 
+        # Page 3: completed tickets viewer
+        self._completed = CompletedTicketsWidget(theme=self._current_theme)
+        self._completed.back_clicked.connect(self._on_completed_back)
+        self._completed.ticket_selected.connect(self._on_completed_ticket_selected)
+        self._stack.addWidget(self._completed)  # index 3
+
         splitter.addWidget(self._stack)
 
         # Set initial sizes: ~280px sidebar, rest for stack
@@ -203,6 +227,10 @@ class MainWindow(QMainWindow):
 
         self._sidebar.set_tickets(tickets, run_status_map=run_status_map)
         self._cached_tickets = tickets
+
+        # Also update completed tickets page if it's currently being viewed
+        if self._stack.currentIndex() == 3:  # Completed tickets page
+            self._completed.set_tickets(tickets, run_status_map=run_status_map)
 
     def _update_table(self) -> None:
         self._table.setRowCount(len(self._runs))
@@ -292,6 +320,7 @@ class MainWindow(QMainWindow):
             self._sidebar.update_theme(actual_theme)
             self._detail.update_theme(actual_theme)
             self._docs.update_theme(actual_theme)
+            self._completed.update_theme(actual_theme)
 
             # Re-render the runs table with correct status colors
             self._update_table()
@@ -330,6 +359,42 @@ class MainWindow(QMainWindow):
     def _on_docs_back(self) -> None:
         """Return from docs to the runs table view."""
         self._stack.setCurrentIndex(0)
+
+    def _on_completed_clicked(self) -> None:
+        """Switch to the completed tickets viewer."""
+        self._sidebar.clear_selection()
+        # Ensure tickets are loaded before showing completed page
+        if self._project_path is not None and not hasattr(self, "_cached_tickets"):
+            from levelup.core.tickets import read_tickets
+            self._cached_tickets = read_tickets(self._project_path, self._tickets_file)
+
+        # Refresh completed tickets with current ticket list
+        tickets = getattr(self, "_cached_tickets", [])
+        run_status_map: dict[int, str] = {}
+        for run in self._runs:
+            if run.ticket_number and run.status in ("running", "waiting_for_input"):
+                run_status_map[run.ticket_number] = run.status
+        self._completed.set_tickets(tickets, run_status_map=run_status_map)
+        self._stack.setCurrentIndex(3)
+
+    def _on_completed_back(self) -> None:
+        """Return from completed tickets to the runs table view."""
+        self._stack.setCurrentIndex(0)
+
+    def _on_completed_ticket_selected(self, number: int) -> None:
+        """Navigate to ticket detail from completed tickets page."""
+        tickets = getattr(self, "_cached_tickets", [])
+        for t in tickets:
+            if t.number == number:
+                self._detail.set_ticket(t)
+                if self._project_path is not None:
+                    self._detail.set_project_context(
+                        str(self._project_path),
+                        self._db_path,
+                        state_manager=self._state_manager,
+                    )
+                self._stack.setCurrentIndex(1)
+                return
 
     def _on_create_ticket(self) -> None:
         """Open the detail widget in create mode."""

@@ -122,5 +122,8 @@ branch_name: levelup/task-title-in-kebab-case
 -->
 Integrated terminal always has a light theme, even when the application theme is light.
 
-## [in progress] Ticket form has fields that should be run options
+## [done] Ticket form has fields that should be run options
+<!--metadata
+branch_name: levelup/task-title-in-kebab-case
+-->
 Tickets have options for auto-approve checkpoints, model choice, effort level, and whether to use planning. Really, these options are better suited to be associated with a run. Move the options down (to the left of the run button) and wire them up to be submitted when run is clicked. Lock these options while a run exists for the ticket.

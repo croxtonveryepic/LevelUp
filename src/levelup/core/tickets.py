@@ -26,6 +26,9 @@ _STATUS_PATTERN = re.compile(
 # Sentinel value for "not provided" in update_ticket
 _NOT_PROVIDED = object()
 
+# Run options that should be filtered from ticket metadata
+_RUN_OPTION_KEYS = {"model", "effort", "skip_planning"}
+
 
 class Ticket(BaseModel):
     """A single ticket parsed from the markdown file."""
@@ -46,6 +49,14 @@ class Ticket(BaseModel):
             source="ticket",
             source_id=f"ticket:{self.number}",
         )
+
+
+def _filter_run_options(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Remove run option keys from metadata. Returns None if empty after filtering."""
+    if not metadata:
+        return None
+    filtered = {k: v for k, v in metadata.items() if k not in _RUN_OPTION_KEYS}
+    return filtered if filtered else None
 
 
 def get_tickets_path(project_path: Path, filename: str | None = None) -> Path:
@@ -185,14 +196,27 @@ def set_ticket_status(
         raise IndexError(f"Tickets file not found: {path}")
 
     text = path.read_text(encoding="utf-8")
+
+    # Parse to get current ticket data and filter metadata
+    tickets = parse_tickets(text)
+    if ticket_number < 1 or ticket_number > len(tickets):
+        raise IndexError(f"Ticket #{ticket_number} not found (file has {len(tickets)} ticket(s))")
+
+    current_ticket = tickets[ticket_number - 1]
+    # Filter run options from metadata
+    filtered_metadata = _filter_run_options(current_ticket.metadata)
+
     lines = text.splitlines(keepends=True)
 
     in_code_block = False
     ticket_count = 0
     found = False
+    in_metadata_block = False
+    metadata_start_idx: int | None = None
+    metadata_end_idx: int | None = None
 
     new_lines: list[str] = []
-    for line in lines:
+    for i, line in enumerate(lines):
         stripped = line.rstrip("\r\n")
 
         if stripped.lstrip().startswith("```"):
@@ -203,6 +227,25 @@ def set_ticket_status(
         if in_code_block:
             new_lines.append(line)
             continue
+
+        # Track metadata blocks for the target ticket
+        if ticket_count == ticket_number:
+            if stripped.strip() == "<!--metadata" and not in_metadata_block:
+                in_metadata_block = True
+                metadata_start_idx = i
+                continue
+            elif in_metadata_block and stripped.strip() == "-->":
+                in_metadata_block = False
+                metadata_end_idx = i
+                # Write filtered metadata after this ticket's heading
+                if filtered_metadata:
+                    new_lines.append("<!--metadata\n")
+                    new_lines.append(yaml.dump(filtered_metadata, default_flow_style=False, sort_keys=False))
+                    new_lines.append("-->\n")
+                continue
+            elif in_metadata_block:
+                # Skip old metadata lines
+                continue
 
         if stripped.startswith("## ") and not stripped.startswith("### "):
             ticket_count += 1
@@ -267,11 +310,11 @@ def update_ticket(
 
     current_ticket = tickets[ticket_number - 1]
 
-    # Determine what metadata to use
+    # Determine what metadata to use and filter run options
     if metadata is _NOT_PROVIDED:  # Not provided
-        new_metadata = current_ticket.metadata
+        new_metadata = _filter_run_options(current_ticket.metadata)
     else:
-        new_metadata = metadata
+        new_metadata = _filter_run_options(metadata)
 
     lines = text.splitlines(keepends=True)
 
@@ -297,68 +340,58 @@ def update_ticket(
                 heading_idx = i
             elif heading_idx is not None and next_heading_idx is None:
                 next_heading_idx = i
+                break
 
     if heading_idx is None:
-        raise IndexError(
-            f"Ticket #{ticket_number} not found (file has {len(tickets)} ticket(s))"
-        )
+        raise IndexError(f"Ticket #{ticket_number} not found (file has {len(tickets)} ticket(s))")
 
     if next_heading_idx is None:
         next_heading_idx = len(lines)
 
-    new_lines = list(lines)
+    # Extract status from original heading
+    original_heading = lines[heading_idx].rstrip("\r\n")
+    heading_text = original_heading[3:].strip()  # Strip "## "
+    m = _STATUS_PATTERN.match(heading_text)
+    if m:
+        current_status = m.group(1).lower()
+        bare_title = heading_text[m.end():].strip()
+    else:
+        current_status = "pending"
+        bare_title = heading_text
 
-    # Determine if we need to rebuild the body
-    need_rebuild_body = (description is not None) or (metadata is not _NOT_PROVIDED)
+    # Build new heading
+    new_title_text = title if title is not None else bare_title
+    if current_status == "pending":
+        new_heading = f"## {new_title_text}"
+    else:
+        new_heading = f"## [{current_status}] {new_title_text}"
 
-    # Update heading (title) if requested
-    if title is not None:
-        old_heading = lines[heading_idx]
-        stripped_heading = old_heading.rstrip("\r\n")
-        heading_text = stripped_heading[3:].strip()
-        # Preserve existing status tag
-        m = _STATUS_PATTERN.match(heading_text)
-        if m:
-            tag = heading_text[: m.end()]
-            new_heading_text = f"## {tag}{title}"
-        else:
-            new_heading_text = f"## {title}"
-        ending = old_heading[len(old_heading.rstrip("\r\n")) :]
-        new_lines[heading_idx] = new_heading_text + ending
+    # Build new body
+    new_body_lines: list[str] = []
+    if new_metadata:
+        new_body_lines.append("<!--metadata\n")
+        new_body_lines.append(yaml.dump(new_metadata, default_flow_style=False, sort_keys=False))
+        new_body_lines.append("-->\n")
 
-    # Rebuild body if needed
-    if need_rebuild_body:
-        body_start = heading_idx + 1
-        body_lines = []
+    if description is not None:
+        new_body_lines.append(description.rstrip("\n\r") + "\n")
+    else:
+        # Preserve original description
+        in_metadata = False
+        for i in range(heading_idx + 1, next_heading_idx):
+            stripped = lines[i].rstrip("\r\n")
+            if stripped.strip() == "<!--metadata":
+                in_metadata = True
+                continue
+            elif stripped.strip() == "-->":
+                in_metadata = False
+                continue
+            if not in_metadata:
+                new_body_lines.append(lines[i])
 
-        # Add metadata if present
-        if new_metadata:
-            body_lines.append("<!--metadata\n")
-            body_lines.append(yaml.dump(new_metadata, default_flow_style=False, sort_keys=False))
-            body_lines.append("-->\n")
-
-        # Add description
-        if description is not None:
-            desc_text = description.rstrip("\n\r")
-            if desc_text:
-                body_lines.extend([ln + "\n" for ln in desc_text.split("\n")])
-        else:
-            # Keep existing description if not updating
-            # Need to extract it from the current body
-            current_body_lines = new_lines[body_start:next_heading_idx]
-            in_meta = False
-            for line in current_body_lines:
-                stripped = line.rstrip("\r\n").strip()
-                if stripped == "<!--metadata":
-                    in_meta = True
-                    continue
-                if in_meta and stripped == "-->":
-                    in_meta = False
-                    continue
-                if not in_meta:
-                    body_lines.append(line)
-
-        new_lines[body_start:next_heading_idx] = body_lines
+    # Reassemble file
+    ending = lines[heading_idx][len(lines[heading_idx].rstrip("\r\n")):]
+    new_lines = lines[:heading_idx] + [new_heading + ending] + new_body_lines + lines[next_heading_idx:]
 
     path.write_text("".join(new_lines), encoding="utf-8")
 
@@ -368,7 +401,7 @@ def delete_ticket(
     ticket_number: int,
     filename: str | None = None,
 ) -> str:
-    """Remove a ticket from the markdown file. Returns the deleted ticket's title.
+    """Delete a ticket from the markdown file. Returns the deleted ticket's title.
 
     Raises ``IndexError`` if the ticket number is out of range.
     """
@@ -400,6 +433,7 @@ def delete_ticket(
                 heading_idx = i
             elif heading_idx is not None and next_heading_idx is None:
                 next_heading_idx = i
+                break
 
     if heading_idx is None:
         tickets = parse_tickets(text)
@@ -412,18 +446,24 @@ def delete_ticket(
         next_heading_idx = len(lines)
 
     # Extract title from heading
-    heading_text = lines[heading_idx].rstrip("\r\n")[3:].strip()
+    heading_text = lines[heading_idx].rstrip("\r\n")[3:].strip()  # Strip "## "
     m = _STATUS_PATTERN.match(heading_text)
     if m:
-        bare_title = heading_text[m.end():].strip()
+        title = heading_text[m.end():].strip()
     else:
-        bare_title = heading_text
+        title = heading_text
 
-    # Remove the ticket lines
-    new_lines = lines[:heading_idx] + lines[next_heading_idx:]
+    # Delete lines from heading_idx to next_heading_idx (exclusive)
+    # If there's a blank line before the heading, also remove it
+    start_idx = heading_idx
+    if heading_idx > 0 and lines[heading_idx - 1].strip() == "":
+        start_idx = heading_idx - 1
+
+    new_lines = lines[:start_idx] + lines[next_heading_idx:]
+
     path.write_text("".join(new_lines), encoding="utf-8")
 
-    return bare_title
+    return title
 
 
 def add_ticket(
@@ -444,11 +484,14 @@ def add_ticket(
     existing = parse_tickets(path.read_text(encoding="utf-8")) if path.exists() else []
     new_number = len(existing) + 1
 
+    # Filter run options from metadata before writing
+    filtered_metadata = _filter_run_options(metadata)
+
     # Build the markdown block
     block = f"## {title}\n"
-    if metadata:
+    if filtered_metadata:
         block += "<!--metadata\n"
-        block += yaml.dump(metadata, default_flow_style=False, sort_keys=False)
+        block += yaml.dump(filtered_metadata, default_flow_style=False, sort_keys=False)
         block += "-->\n"
     if description:
         block += description.rstrip("\n\r") + "\n"
@@ -457,8 +500,10 @@ def add_ticket(
     if path.exists():
         current = path.read_text(encoding="utf-8")
         if current and not current.endswith("\n"):
-            current += "\n"
-        path.write_text(current + "\n" + block, encoding="utf-8")
+            block = "\n" + block
+        elif current:
+            block = "\n" + block
+        path.write_text(current + block, encoding="utf-8")
     else:
         path.write_text(block, encoding="utf-8")
 
@@ -467,5 +512,5 @@ def add_ticket(
         title=title,
         description=description.strip(),
         status=TicketStatus.PENDING,
-        metadata=metadata,
+        metadata=filtered_metadata,
     )

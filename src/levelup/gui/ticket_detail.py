@@ -97,32 +97,6 @@ class TicketDetailWidget(QWidget):
         self.auto_approve_checkbox.stateChanged.connect(self._mark_dirty)
         form_layout.addWidget(self.auto_approve_checkbox)
 
-        # Adaptive pipeline settings row
-        adaptive_layout = QHBoxLayout()
-
-        # Model combo
-        adaptive_layout.addWidget(QLabel("Model:"))
-        self._model_combo = QComboBox()
-        self._model_combo.addItems(["Default", "Sonnet", "Opus"])
-        self._model_combo.currentIndexChanged.connect(self._mark_dirty)
-        adaptive_layout.addWidget(self._model_combo)
-
-        # Effort combo
-        adaptive_layout.addWidget(QLabel("Effort:"))
-        self._effort_combo = QComboBox()
-        self._effort_combo.addItems(["Default", "Low", "Medium", "High"])
-        self._effort_combo.currentIndexChanged.connect(self._mark_dirty)
-        adaptive_layout.addWidget(self._effort_combo)
-
-        # Skip planning checkbox
-        self._skip_planning_checkbox = QCheckBox("Skip planning")
-        self._skip_planning_checkbox.setToolTip("Skip the planning step for this ticket")
-        self._skip_planning_checkbox.stateChanged.connect(self._mark_dirty)
-        adaptive_layout.addWidget(self._skip_planning_checkbox)
-
-        adaptive_layout.addStretch()
-        form_layout.addLayout(adaptive_layout)
-
         # Buttons
         btn_layout = QHBoxLayout()
 
@@ -280,18 +254,6 @@ class TicketDetailWidget(QWidget):
         self.auto_approve_checkbox.setChecked(False)
         self.auto_approve_checkbox.blockSignals(False)
 
-        self._model_combo.blockSignals(True)
-        self._model_combo.setCurrentIndex(0)
-        self._model_combo.blockSignals(False)
-
-        self._effort_combo.blockSignals(True)
-        self._effort_combo.setCurrentIndex(0)
-        self._effort_combo.blockSignals(False)
-
-        self._skip_planning_checkbox.blockSignals(True)
-        self._skip_planning_checkbox.setChecked(False)
-        self._skip_planning_checkbox.blockSignals(False)
-
         self._dirty = False
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
@@ -329,27 +291,6 @@ class TicketDetailWidget(QWidget):
             self.auto_approve_checkbox.setChecked(False)
         self.auto_approve_checkbox.blockSignals(False)
 
-        # Load model metadata
-        self._model_combo.blockSignals(True)
-        model_val = (ticket.metadata or {}).get("model", "").lower()
-        model_map = {"sonnet": 1, "opus": 2}
-        self._model_combo.setCurrentIndex(model_map.get(model_val, 0))
-        self._model_combo.blockSignals(False)
-
-        # Load effort metadata
-        self._effort_combo.blockSignals(True)
-        effort_val = (ticket.metadata or {}).get("effort", "").lower()
-        effort_map = {"low": 1, "medium": 2, "high": 3}
-        self._effort_combo.setCurrentIndex(effort_map.get(effort_val, 0))
-        self._effort_combo.blockSignals(False)
-
-        # Load skip_planning metadata
-        self._skip_planning_checkbox.blockSignals(True)
-        self._skip_planning_checkbox.setChecked(
-            bool((ticket.metadata or {}).get("skip_planning", False))
-        )
-        self._skip_planning_checkbox.blockSignals(False)
-
         self._dirty = False
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(True)
@@ -359,14 +300,6 @@ class TicketDetailWidget(QWidget):
         assert self._current_terminal is not None
         self._current_terminal.enable_run(
             self._project_path is not None and not self._current_terminal.is_running
-        )
-
-        # Pass adaptive settings to terminal
-        meta = ticket.metadata or {}
-        self._current_terminal.set_ticket_settings(
-            model=meta.get("model"),
-            effort=meta.get("effort"),
-            skip_planning=bool(meta.get("skip_planning", False)),
         )
 
         # Wire existing run from DB for this ticket
@@ -403,37 +336,31 @@ class TicketDetailWidget(QWidget):
         self._current_terminal._update_button_states()
 
     def _build_metadata(self) -> dict | None:
-        """Build metadata dict from all form controls. Returns None if all defaults."""
+        """Build metadata dict from form controls. Returns None if all defaults."""
         metadata: dict = {}
         if self.auto_approve_checkbox.isChecked():
             metadata["auto_approve"] = True
-        model_idx = self._model_combo.currentIndex()
-        if model_idx == 1:
-            metadata["model"] = "sonnet"
-        elif model_idx == 2:
-            metadata["model"] = "opus"
-        effort_idx = self._effort_combo.currentIndex()
-        if effort_idx == 1:
-            metadata["effort"] = "low"
-        elif effort_idx == 2:
-            metadata["effort"] = "medium"
-        elif effort_idx == 3:
-            metadata["effort"] = "high"
-        if self._skip_planning_checkbox.isChecked():
-            metadata["skip_planning"] = True
         return metadata if metadata else None
 
     def _build_save_metadata(self) -> dict | None:
         """Build metadata for saving, merging form values with existing ticket metadata.
 
         Preserves non-form metadata keys (e.g. 'priority') from the existing ticket
-        while applying current form control values.
+        while applying current form control values. Run options (model, effort, skip_planning)
+        are filtered out since they are now run-level controls in the terminal header.
         """
-        form_keys = {"auto_approve", "model", "effort", "skip_planning"}
-        # Start from existing non-form metadata
+        # Run options are no longer in the form
+        form_keys = {"auto_approve"}
+        run_option_keys = {"model", "effort", "skip_planning"}
+
+        # Start from existing non-form metadata, excluding run options
         base: dict = {}
         if self._ticket and self._ticket.metadata:
-            base = {k: v for k, v in self._ticket.metadata.items() if k not in form_keys}
+            base = {
+                k: v
+                for k, v in self._ticket.metadata.items()
+                if k not in form_keys and k not in run_option_keys
+            }
         # Overlay form-controlled values
         form = self._build_metadata() or {}
         base.update(form)

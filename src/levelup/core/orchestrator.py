@@ -111,29 +111,14 @@ class Orchestrator:
     def _read_ticket_settings(self, ctx: PipelineContext) -> dict:
         """Read adaptive pipeline settings from ticket metadata.
 
-        Returns dict with optional keys: model, effort, skip_planning.
-        """
-        if ctx.task.source == "ticket" and ctx.task.source_id:
-            try:
-                ticket_num = int(ctx.task.source_id.split(":")[1])
-                from levelup.core.tickets import read_tickets
+        NOTE: Run options (model, effort, skip_planning) are NO LONGER
+        read from ticket metadata. They are resolved only from CLI flags
+        and config defaults. This method returns an empty dict.
 
-                project_path = self._settings.project.path
-                tickets = read_tickets(project_path, self._settings.project.tickets_file)
-                for ticket in tickets:
-                    if ticket.number == ticket_num:
-                        if ticket.metadata:
-                            result: dict = {}
-                            if "model" in ticket.metadata:
-                                result["model"] = ticket.metadata["model"]
-                            if "effort" in ticket.metadata:
-                                result["effort"] = ticket.metadata["effort"]
-                            if "skip_planning" in ticket.metadata:
-                                result["skip_planning"] = ticket.metadata["skip_planning"]
-                            return result
-                        break
-            except (ValueError, IndexError, Exception):
-                pass
+        Auto-approve is still read via _should_auto_approve().
+        """
+        # Run options have been moved to run-level controls (GUI terminal header)
+        # and are no longer part of ticket metadata
         return {}
 
     def _create_backend(

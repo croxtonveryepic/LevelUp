@@ -13,6 +13,8 @@ import sys
 
 from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -87,12 +89,31 @@ class RunTerminalWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Header: status label + buttons
+        # Header: status label + run options + buttons
         header = QHBoxLayout()
 
         self._status_label = QLabel("Ready")
         self._status_label.setObjectName("terminalStatusLabel")
         header.addWidget(self._status_label)
+        header.addStretch()
+
+        # Run option widgets (moved from ticket form)
+        header.addWidget(QLabel("Model:"))
+        self._model_combo = QComboBox()
+        self._model_combo.addItems(["Default", "Sonnet", "Opus"])
+        self._model_combo.setCurrentIndex(0)
+        header.addWidget(self._model_combo)
+
+        header.addWidget(QLabel("Effort:"))
+        self._effort_combo = QComboBox()
+        self._effort_combo.addItems(["Default", "Low", "Medium", "High"])
+        self._effort_combo.setCurrentIndex(0)
+        header.addWidget(self._effort_combo)
+
+        self._skip_planning_checkbox = QCheckBox("Skip planning")
+        self._skip_planning_checkbox.setChecked(False)
+        header.addWidget(self._skip_planning_checkbox)
+
         header.addStretch()
 
         self._run_btn = QPushButton("Run")
@@ -145,11 +166,6 @@ class RunTerminalWidget(QWidget):
         self._project_path: str | None = None
         self._db_path: str | None = None
 
-        # Adaptive pipeline settings (per-ticket)
-        self._ticket_model: str | None = None
-        self._ticket_effort: str | None = None
-        self._ticket_skip_planning: bool = False
-
         # Run tracking
         self._last_run_id: str | None = None
         self._state_manager: object | None = None  # StateManager instance
@@ -181,18 +197,6 @@ class RunTerminalWidget(QWidget):
         """Store a StateManager reference for pause/resume/forget operations."""
         self._state_manager = sm
 
-    def set_ticket_settings(
-        self,
-        *,
-        model: str | None = None,
-        effort: str | None = None,
-        skip_planning: bool = False,
-    ) -> None:
-        """Store per-ticket adaptive pipeline settings for the next run."""
-        self._ticket_model = model
-        self._ticket_effort = effort
-        self._ticket_skip_planning = skip_planning
-
     def start_run(self, ticket_number: int, project_path: str, db_path: str) -> None:
         """Start a pipeline run for the given ticket."""
         if self._command_running:
@@ -206,11 +210,30 @@ class RunTerminalWidget(QWidget):
         # Ensure the shell is started
         self._ensure_shell()
 
+        # Read run options from widget combos/checkbox
+        model_idx = self._model_combo.currentIndex()
+        model = None
+        if model_idx == 1:
+            model = "sonnet"
+        elif model_idx == 2:
+            model = "opus"
+
+        effort_idx = self._effort_combo.currentIndex()
+        effort = None
+        if effort_idx == 1:
+            effort = "low"
+        elif effort_idx == 2:
+            effort = "medium"
+        elif effort_idx == 3:
+            effort = "high"
+
+        skip_planning = self._skip_planning_checkbox.isChecked()
+
         cmd = build_run_command(
             ticket_number, project_path, db_path,
-            model=self._ticket_model,
-            effort=self._ticket_effort,
-            skip_planning=self._ticket_skip_planning,
+            model=model,
+            effort=effort,
+            skip_planning=skip_planning,
         )
         self._terminal.send_command(cmd)
         self._terminal.setFocus()
@@ -262,6 +285,22 @@ class RunTerminalWidget(QWidget):
         self._forget_btn.setEnabled(not running and self._last_run_id is not None)
         self._status_label.setText("Running..." if running else "Ready")
 
+        # Lock run options while running
+        self._model_combo.setEnabled(not running and self._last_run_id is None)
+        self._effort_combo.setEnabled(not running and self._last_run_id is None)
+        self._skip_planning_checkbox.setEnabled(not running and self._last_run_id is None)
+
+        # Update tooltips when locked
+        if running or self._last_run_id is not None:
+            tooltip = "Run options are locked while a run exists for this ticket. Use 'Forget' to unlock."
+            self._model_combo.setToolTip(tooltip)
+            self._effort_combo.setToolTip(tooltip)
+            self._skip_planning_checkbox.setToolTip(tooltip)
+        else:
+            self._model_combo.setToolTip("")
+            self._effort_combo.setToolTip("")
+            self._skip_planning_checkbox.setToolTip("Skip the planning step for this run")
+
     def _update_button_states(self) -> None:
         """Refresh button enabled/disabled states based on current state."""
         running = self._command_running
@@ -274,6 +313,23 @@ class RunTerminalWidget(QWidget):
         self._pause_btn.setEnabled(running)
         self._resume_btn.setEnabled(not running and self._is_resumable())
         self._forget_btn.setEnabled(not running and self._last_run_id is not None)
+
+        # Lock run options if a run exists (even if not currently running)
+        has_run = self._last_run_id is not None
+        self._model_combo.setEnabled(not running and not has_run)
+        self._effort_combo.setEnabled(not running and not has_run)
+        self._skip_planning_checkbox.setEnabled(not running and not has_run)
+
+        # Update tooltips when locked
+        if has_run:
+            tooltip = "Run options are locked while a run exists for this ticket. Use 'Forget' to unlock."
+            self._model_combo.setToolTip(tooltip)
+            self._effort_combo.setToolTip(tooltip)
+            self._skip_planning_checkbox.setToolTip(tooltip)
+        else:
+            self._model_combo.setToolTip("")
+            self._effort_combo.setToolTip("")
+            self._skip_planning_checkbox.setToolTip("Skip the planning step for this run")
 
     def _is_resumable(self) -> bool:
         """Check if the last run has a resumable status."""

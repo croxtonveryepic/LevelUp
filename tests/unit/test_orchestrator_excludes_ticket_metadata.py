@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from levelup.config.settings import LevelUpSettings, LLMSettings, PipelineSettings, ProjectSettings
-from levelup.core.context import PipelineContext, TaskInfo
+from levelup.core.context import PipelineContext, TaskInput
 
 
 # ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ class TestReadTicketSettingsExcludesRunOptions:
 
         # Create context with ticket
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -103,7 +103,7 @@ class TestReadTicketSettingsExcludesRunOptions:
         orch = Orchestrator(settings)
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -139,7 +139,7 @@ class TestReadTicketSettingsExcludesRunOptions:
         orch = Orchestrator(settings)
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -179,10 +179,12 @@ class TestModelResolutionExcludesTicketMetadata:
             llm=LLMSettings(model="claude-sonnet-4-5-20250929"),  # config default
             pipeline=PipelineSettings(),
         )
-        orch = Orchestrator(settings, model_override="claude-opus-4-6")  # CLI flag
+        # Note: cli_model_override is a bool flag, not the model string itself
+        # The model string is passed via settings.llm.model (set at runtime from CLI)
+        orch = Orchestrator(settings, cli_model_override=True)  # CLI flag
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -192,9 +194,9 @@ class TestModelResolutionExcludesTicketMetadata:
             run_id="test-run-123",
         )
 
-        # Simulate the orchestrator's model resolution logic
-        # CLI flag should win, NOT ticket metadata
-        # The test verifies that ticket metadata is not consulted
+        # Verify ticket metadata is not consulted
+        ticket_settings = orch._read_ticket_settings(ctx)
+        assert "model" not in ticket_settings
 
     def test_model_uses_config_default_when_no_cli_flag(self, tmp_path):
         """AC: Config default used when no CLI flag (ticket metadata NOT consulted)."""
@@ -215,7 +217,7 @@ class TestModelResolutionExcludesTicketMetadata:
         orch = Orchestrator(settings)  # No CLI override
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -247,7 +249,7 @@ class TestModelResolutionExcludesTicketMetadata:
         orch = Orchestrator(settings)
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -286,10 +288,10 @@ class TestEffortResolutionExcludesTicketMetadata:
             llm=LLMSettings(),
             pipeline=PipelineSettings(),
         )
-        orch = Orchestrator(settings, effort="high")  # CLI flag
+        orch = Orchestrator(settings, cli_effort="high")  # CLI flag
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -299,7 +301,9 @@ class TestEffortResolutionExcludesTicketMetadata:
             run_id="test-run-123",
         )
 
-        # CLI flag should win, NOT ticket metadata
+        # Verify ticket metadata is not consulted
+        ticket_settings = orch._read_ticket_settings(ctx)
+        assert "effort" not in ticket_settings
 
     def test_effort_does_not_read_from_ticket_metadata(self, tmp_path):
         """AC: Effort is NOT read from ticket metadata (removed from chain)."""
@@ -320,7 +324,7 @@ class TestEffortResolutionExcludesTicketMetadata:
         orch = Orchestrator(settings)
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -358,10 +362,10 @@ class TestSkipPlanningResolutionExcludesTicketMetadata:
             llm=LLMSettings(),
             pipeline=PipelineSettings(),
         )
-        orch = Orchestrator(settings, skip_planning=True)  # CLI flag
+        orch = Orchestrator(settings, cli_skip_planning=True)  # CLI flag
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -371,7 +375,9 @@ class TestSkipPlanningResolutionExcludesTicketMetadata:
             run_id="test-run-123",
         )
 
-        # CLI flag should win, NOT ticket metadata
+        # Verify ticket metadata is not consulted
+        ticket_settings = orch._read_ticket_settings(ctx)
+        assert "skip_planning" not in ticket_settings
 
     def test_skip_planning_does_not_read_from_ticket_metadata(self, tmp_path):
         """AC: Skip planning is NOT read from ticket metadata (removed from chain)."""
@@ -392,7 +398,7 @@ class TestSkipPlanningResolutionExcludesTicketMetadata:
         orch = Orchestrator(settings)
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -433,7 +439,7 @@ class TestAutoApproveStillReadsTicketMetadata:
         orch = Orchestrator(settings)
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -466,7 +472,7 @@ class TestAutoApproveStillReadsTicketMetadata:
         orch = Orchestrator(settings)
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -497,7 +503,7 @@ class TestAutoApproveStillReadsTicketMetadata:
         orch = Orchestrator(settings)
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -536,10 +542,10 @@ class TestPrecedenceChain:
             llm=LLMSettings(model="claude-sonnet-4-5-20250929"),
             pipeline=PipelineSettings(),
         )
-        orch = Orchestrator(settings, model_override="claude-opus-4-6")
+        orch = Orchestrator(settings, cli_model_override=True)
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -549,7 +555,9 @@ class TestPrecedenceChain:
             run_id="test-run-123",
         )
 
-        # CLI should win (opus), not config (sonnet) or ticket metadata (sonnet)
+        # Verify ticket metadata is not consulted
+        ticket_settings = orch._read_ticket_settings(ctx)
+        assert "model" not in ticket_settings
 
     def test_precedence_config_default_when_no_cli(self, tmp_path):
         """AC: Config defaults used when no CLI flags (ticket metadata ignored)."""
@@ -570,7 +578,7 @@ class TestPrecedenceChain:
         orch = Orchestrator(settings)  # No CLI overrides
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",
@@ -604,7 +612,7 @@ class TestPrecedenceChain:
         orch = Orchestrator(settings)
 
         ctx = PipelineContext(
-            task=TaskInfo(
+            task=TaskInput(
                 title="Test task",
                 description="Description",
                 source="ticket",

@@ -55,3 +55,15 @@ Wrote 6 file(s):
 
 Step `security` completed.
 - **Usage:** 37.3s
+### Checkpoint: security
+
+- **Decision:** approve
+## Step: review  (02:05:55)
+
+Found 6 issue(s):
+- [WARNING] `tests/unit/test_state_db.py`: Test class name 'TestMigrationV4' is misleading - it actually tests migration to v5
+- [WARNING] `tests/unit/test_state_db.py`: Test 'test_runs_table_columns' doesn't verify all columns exist after migration v5
+- [INFO] `src/levelup/state/manager.py`: Token aggregation logic could be extracted to a helper method for reusability
+- [INFO] `src/levelup/gui/main_window.py`: Token formatting logic is duplicated between _update_table and _view_details
+- [INFO] `src/levelup/state/db.py`: CURRENT_SCHEMA_VERSION constant could have a docstring explaining the versioning scheme
+- [INFO] `src/levelup/core/journal.py`: Journal logs total tokens but doesn't break down into input/output like the GUI does

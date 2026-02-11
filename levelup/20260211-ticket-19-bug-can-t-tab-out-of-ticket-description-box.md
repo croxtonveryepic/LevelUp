@@ -52,3 +52,14 @@ Wrote 1 file(s):
 
 Step `security` completed.
 - **Usage:** 56.2s
+### Checkpoint: security
+
+- **Decision:** auto-approved
+## Step: review  (20:56:27)
+
+Found 5 issue(s):
+- [WARNING] `src/levelup/gui/ticket_detail.py`: Modifier comparison uses equality (==) which may fail if additional system modifiers are set (e.g., NumLock on some platforms)
+- [INFO] `tests/unit/test_ticket_description_keyboard_navigation.py`: Test assertion `assert widget.toPlainText() == "" or True` always passes and provides no actual verification
+- [INFO] `src/levelup/gui/ticket_detail.py`: The save_requested signal lacks documentation about when it's emitted
+- [INFO] `src/levelup/gui/ticket_detail.py`: Using plain Enter to save in a multi-line text field deviates from standard UX patterns
+- [INFO] `src/levelup/gui/ticket_detail.py`: Tab order configuration uses setTabOrder but custom keyPressEvent navigation might bypass this in edge cases

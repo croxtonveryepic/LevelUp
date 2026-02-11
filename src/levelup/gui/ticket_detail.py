@@ -305,6 +305,9 @@ class TicketDetailWidget(QWidget):
         # Wire existing run from DB for this ticket
         self._wire_existing_run(ticket.number)
 
+        # Pass ticket to terminal so merge button can enable
+        self._current_terminal.set_ticket(ticket)
+
     # -- Internal -----------------------------------------------------------
 
     def _wire_existing_run(self, ticket_number: int) -> None:

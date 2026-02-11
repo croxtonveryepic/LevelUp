@@ -332,10 +332,10 @@ class TestAutoApproveCorrectness:
         # All agent steps should have run
         assert "requirements" in called_agents
         assert "planning" in called_agents
-        assert "test_writing" in called_agents
-        assert "coding" in called_agents
+        assert "test_writer" in called_agents
+        assert "coder" in called_agents
         assert "security" in called_agents
-        assert "review" in called_agents
+        assert "reviewer" in called_agents
 
     @patch("levelup.core.orchestrator.Orchestrator._run_agent_with_retry")
     @patch("levelup.core.orchestrator.Orchestrator._run_detection")

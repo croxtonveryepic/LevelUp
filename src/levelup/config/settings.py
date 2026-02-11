@@ -37,6 +37,7 @@ class PipelineSettings(BaseModel):
     max_code_iterations: int = 5
     require_checkpoints: bool = True
     create_git_branch: bool = True
+    auto_approve: bool = False
 
 
 class GUISettings(BaseModel):

@@ -5,6 +5,7 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -31,12 +32,12 @@ class TicketDetailWidget(QWidget):
     ticket_deleted = pyqtSignal(int)           # ticket number
     run_pid_changed = pyqtSignal(int, bool)   # pid, active
 
-    def __init__(self, parent: QWidget | None = None, theme: str = "dark") -> None:
+    def __init__(self, parent: QWidget | None = None, theme: str = "dark", project_path: str | None = None) -> None:
         super().__init__(parent)
         self._ticket: Ticket | None = None
         self._dirty = False
         self._create_mode = False
-        self._project_path: str | None = None
+        self._project_path: str | None = project_path
         self._db_path: str | None = None
         self._current_theme = theme
 
@@ -85,6 +86,14 @@ class TicketDetailWidget(QWidget):
         self._desc_edit = QPlainTextEdit()
         self._desc_edit.textChanged.connect(self._mark_dirty)
         form_layout.addWidget(self._desc_edit)
+
+        # Auto-approve checkbox
+        self.auto_approve_checkbox = QCheckBox("Auto-approve checkpoints")
+        self.auto_approve_checkbox.setToolTip(
+            "Automatically approve all checkpoints for this ticket, skipping user prompts"
+        )
+        self.auto_approve_checkbox.stateChanged.connect(self._mark_dirty)
+        form_layout.addWidget(self.auto_approve_checkbox)
 
         # Buttons
         btn_layout = QHBoxLayout()
@@ -232,6 +241,10 @@ class TicketDetailWidget(QWidget):
         self._desc_edit.setPlainText("")
         self._desc_edit.blockSignals(False)
 
+        self.auto_approve_checkbox.blockSignals(True)
+        self.auto_approve_checkbox.setChecked(False)
+        self.auto_approve_checkbox.blockSignals(False)
+
         self._dirty = False
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
@@ -260,6 +273,14 @@ class TicketDetailWidget(QWidget):
         self._desc_edit.blockSignals(True)
         self._desc_edit.setPlainText(ticket.description)
         self._desc_edit.blockSignals(False)
+
+        # Load auto-approve metadata
+        self.auto_approve_checkbox.blockSignals(True)
+        if ticket.metadata and "auto_approve" in ticket.metadata:
+            self.auto_approve_checkbox.setChecked(bool(ticket.metadata["auto_approve"]))
+        else:
+            self.auto_approve_checkbox.setChecked(False)
+        self.auto_approve_checkbox.blockSignals(False)
 
         self._dirty = False
         self._save_btn.setEnabled(False)
@@ -411,3 +432,59 @@ class TicketDetailWidget(QWidget):
     def _on_run_finished(self, exit_code: int) -> None:
         pid = 0  # Process is already gone
         self.run_pid_changed.emit(pid, False)
+
+    # -- Helper methods for tests -------------------------------------------
+
+    def load_ticket(self, ticket: Ticket) -> None:
+        """Load a ticket into the widget (alias for set_ticket)."""
+        self.set_ticket(ticket)
+
+    def save_ticket(self) -> None:
+        """Save the current ticket (programmatically trigger save).
+
+        This method is primarily for testing. It directly updates the ticket
+        file with the current form values including metadata.
+        """
+        if self._project_path is None:
+            return
+
+        from pathlib import Path
+        from levelup.core.tickets import update_ticket
+
+        if self._create_mode:
+            # In create mode, we'd normally emit ticket_created signal
+            # For testing, we'll create the ticket directly
+            from levelup.core.tickets import add_ticket
+            title = self._title_edit.text().replace("\n", " ").strip()
+            description = self._desc_edit.toPlainText()
+            metadata = None
+            if self.auto_approve_checkbox.isChecked():
+                metadata = {"auto_approve": True}
+            add_ticket(Path(self._project_path), title, description, metadata=metadata)
+        elif self._ticket is not None:
+            title = self._title_edit.text().replace("\n", " ").strip()
+            description = self._desc_edit.toPlainText()
+
+            # Build metadata
+            metadata = self._ticket.metadata.copy() if self._ticket.metadata else {}
+            metadata["auto_approve"] = self.auto_approve_checkbox.isChecked()
+
+            update_ticket(
+                Path(self._project_path),
+                self._ticket.number,
+                title=title,
+                description=description,
+                metadata=metadata,
+            )
+
+        self._dirty = False
+        self._save_btn.setEnabled(False)
+
+    @property
+    def project_path(self) -> str | None:
+        """Get the current project path."""
+        return self._project_path
+
+    def set_project_path(self, path: str) -> None:
+        """Set the project path for testing."""
+        self._project_path = path

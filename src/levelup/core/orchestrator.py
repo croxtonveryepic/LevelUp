@@ -77,6 +77,31 @@ class Orchestrator:
         self._agents: dict[str, BaseAgent] = {}
         self._backend: Backend | None = None
 
+    def _should_auto_approve(self, ctx: PipelineContext) -> bool:
+        """Determine if checkpoints should be auto-approved for this run.
+
+        Priority: ticket metadata > project setting
+        """
+        # Check if this is from a ticket with metadata
+        if ctx.task.source == "ticket" and ctx.task.source_id:
+            try:
+                ticket_num = int(ctx.task.source_id.split(":")[1])
+                from levelup.core.tickets import read_tickets
+
+                project_path = self._settings.project.path
+                tickets = read_tickets(project_path, self._settings.project.tickets_file)
+                for ticket in tickets:
+                    if ticket.number == ticket_num:
+                        if ticket.metadata and "auto_approve" in ticket.metadata:
+                            return bool(ticket.metadata["auto_approve"])
+                        break
+            except (ValueError, IndexError, Exception):
+                # If we can't parse ticket info, fall back to project setting
+                pass
+
+        # Fall back to project-level setting
+        return self._settings.pipeline.auto_approve
+
     def _create_backend(self, project_path: Path, ctx: PipelineContext | None = None) -> Backend:
         """Create the appropriate backend based on settings."""
         if self._settings.llm.backend == "claude_code":
@@ -469,39 +494,47 @@ class Orchestrator:
                 step.checkpoint_after
                 and self._settings.pipeline.require_checkpoints
             ):
-                while True:
-                    if self._use_db_checkpoints and self._state_manager is not None:
-                        decision, feedback = self._wait_for_checkpoint_decision(
-                            step.name, ctx
-                        )
-                    else:
-                        decision, feedback = run_checkpoint(step.name, ctx)
-
-                    if decision == CheckpointDecision.INSTRUCT:
-                        self._run_instruct(ctx, feedback, project_path, journal)
-                        continue  # re-prompt checkpoint
-
-                    journal.log_checkpoint(step.name, decision.value, feedback)
-                    break
-
-                if decision == CheckpointDecision.APPROVE:
+                # Check if auto-approve is enabled
+                if self._should_auto_approve(ctx):
+                    # Auto-approve: skip prompt, log decision
+                    journal.log_checkpoint(step.name, "auto-approved", "")
                     if not self._quiet:
-                        print_success(f"Checkpoint '{step.name}' approved.")
-                elif decision == CheckpointDecision.REVISE:
-                    if not self._quiet:
-                        self._console.print(
-                            f"[yellow]Revising {step.name} with feedback...[/yellow]"
-                        )
-                    if step.agent_name:
-                        ctx = self._run_agent_with_feedback(
-                            step.agent_name, ctx, feedback
-                        )
-                        self._git_step_commit(project_path, ctx, step.name, revised=True)
-                elif decision == CheckpointDecision.REJECT:
-                    if not self._quiet:
-                        self._console.print("[red]Pipeline aborted by user.[/red]")
-                    ctx.status = PipelineStatus.ABORTED
-                    break
+                        print_success(f"Checkpoint '{step.name}' auto-approved.")
+                else:
+                    # Normal checkpoint flow
+                    while True:
+                        if self._use_db_checkpoints and self._state_manager is not None:
+                            decision, feedback = self._wait_for_checkpoint_decision(
+                                step.name, ctx
+                            )
+                        else:
+                            decision, feedback = run_checkpoint(step.name, ctx)
+
+                        if decision == CheckpointDecision.INSTRUCT:
+                            self._run_instruct(ctx, feedback, project_path, journal)
+                            continue  # re-prompt checkpoint
+
+                        journal.log_checkpoint(step.name, decision.value, feedback)
+                        break
+
+                    if decision == CheckpointDecision.APPROVE:
+                        if not self._quiet:
+                            print_success(f"Checkpoint '{step.name}' approved.")
+                    elif decision == CheckpointDecision.REVISE:
+                        if not self._quiet:
+                            self._console.print(
+                                f"[yellow]Revising {step.name} with feedback...[/yellow]"
+                            )
+                        if step.agent_name:
+                            ctx = self._run_agent_with_feedback(
+                                step.agent_name, ctx, feedback
+                            )
+                            self._git_step_commit(project_path, ctx, step.name, revised=True)
+                    elif decision == CheckpointDecision.REJECT:
+                        if not self._quiet:
+                            self._console.print("[red]Pipeline aborted by user.[/red]")
+                        ctx.status = PipelineStatus.ABORTED
+                        break
 
         return ctx
 

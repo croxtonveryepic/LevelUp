@@ -38,7 +38,7 @@
   - `checkpoint_dialog.py` - Modal dialog for approving/revising/rejecting pipeline steps
   - `terminal_emulator.py` - Full VT100 terminal emulator with pyte + pywinpty/ptyprocess
   - `ticket_detail.py` - Ticket editing and run terminal view
-  - `ticket_sidebar.py` - Ticket list navigation
+  - `ticket_sidebar.py` - Ticket list navigation (lines 45-72 implement set_tickets() method)
   - `run_terminal.py` - Terminal wrapper for running levelup commands
 - **Resources**: `resources.py` contains status colors, labels, and icons
 
@@ -47,7 +47,12 @@
 - **Runs**: Defined in `src/levelup/state/models.py` with statuses: `pending`, `running`, `waiting_for_input`, `paused`, `completed`, `failed`, `aborted`
 - **Link**: `RunRecord.ticket_number` field links runs to tickets (one-to-many relationship)
 - **Sidebar Display**: `TicketSidebarWidget` currently colors tickets based on ticket status only, not run status
+  - Line 62 in `ticket_sidebar.py`: calls `get_ticket_status_color(ticket.status.value, theme=self._current_theme)`
+  - Color is applied to QListWidgetItem via `setForeground(QColor(color))` on line 63
 - **Main Window Refresh**: `MainWindow._refresh()` loads both runs (`_runs`) and tickets (`_cached_tickets`) but doesn't pass run status to sidebar
+  - Line 174 in `main_window.py`: loads runs via `self._state_manager.list_runs()`
+  - Line 189-190: loads tickets and calls `self._sidebar.set_tickets(tickets)`
+  - No run status information is passed to sidebar
 
 ### Color Scheme (Catppuccin Mocha)
 - **Dark theme colors in `resources.py`**:
@@ -58,6 +63,20 @@
   - Ticket "in progress": `#F39C12` (orange)
   - Run "running": `#3498DB` (blue)
   - Run "waiting_for_input": `#F39C12` (orange)
+
+### Resources Module Color Functions
+- `get_ticket_status_color(status, theme="dark")` - Returns theme-aware color for ticket status (lines 97-110)
+  - Accepts ticket status string ("pending", "in progress", "done", "merged")
+  - Returns hex color from `TICKET_STATUS_COLORS` (dark) or `_LIGHT_TICKET_STATUS_COLORS` (light)
+  - Currently has no awareness of run status
+- `get_status_color(status, theme="dark")` - Returns theme-aware color for run status (lines 50-63)
+  - Accepts run status string ("running", "waiting_for_input", etc.)
+  - Returns hex color from `STATUS_COLORS` (dark) or `_LIGHT_STATUS_COLORS` (light)
+
+### State Manager Query Methods
+- `list_runs(status_filter=None, limit=50)` - Returns list of RunRecord objects (lines 141-159)
+- `get_run_for_ticket(project_path, ticket_number)` - Returns most recent run for a ticket (lines 171-187)
+- `has_active_run_for_ticket(project_path, ticket_number)` - Returns non-completed run for ticket (lines 189+)
 
 ### Configuration
 - Uses Pydantic settings with environment variable support
@@ -89,10 +108,15 @@
 - GUI tests exist for non-Qt components (e.g., `test_gui_tickets.py` tests color/icon resources)
 - Tests use pytest with standard assertions
 - Path normalization needed on Windows: `.replace("\\", "/")` in assertions
+- Existing test patterns:
+  - `test_gui_tickets.py` - Tests ticket status colors and icons without Qt dependencies
+  - `test_theme_aware_resources.py` - Tests theme-aware color functions for both light and dark themes
+  - Tests verify semantic colors (green for success, red for error) preserved across themes
+  - Tests check color readability (luminance) for both light and dark backgrounds
 
 ### Key Dependencies
 - PyQt6 for GUI (installed via `gui` or `dev` optional dependencies)
 - Pydantic for configuration
 - pyte for terminal emulation
 - pywinpty (Windows) / ptyprocess (Unix) for PTY support
-- Would need to add: `darkdetect` for system theme detection
+- darkdetect for system theme detection (already installed)

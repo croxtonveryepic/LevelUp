@@ -525,9 +525,31 @@ class TerminalEmulatorWidget(QWidget):
         # Determine selection range in normalized form
         sel_start, sel_end = self._normalized_selection()
 
+        # Get history length for scrollback calculations
+        history_len = len(screen.history.top)
+        scroll_offset = self._scroll_offset
+
         for row in range(self._rows):
             y = row * ch
-            line = screen.buffer[row]
+
+            # Determine which line to display based on scroll offset
+            if scroll_offset > 0 and row < scroll_offset:
+                # Display from history
+                history_idx = history_len - scroll_offset + row
+                if 0 <= history_idx < history_len:
+                    line = screen.history.top[history_idx]
+                else:
+                    # Out of bounds - use empty line
+                    line = screen.buffer[0]  # Fallback to avoid errors
+            else:
+                # Display from current buffer
+                buffer_row = row - scroll_offset
+                if 0 <= buffer_row < len(screen.buffer):
+                    line = screen.buffer[buffer_row]
+                else:
+                    # Out of bounds - use last buffer line as fallback
+                    line = screen.buffer[-1]
+
             for col in range(self._cols):
                 x = col * cw
 

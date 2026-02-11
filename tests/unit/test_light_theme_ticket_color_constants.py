@@ -23,21 +23,21 @@ class TestLightTicketStatusColorsDictStructure:
         assert isinstance(_LIGHT_TICKET_STATUS_COLORS, dict)
 
     def test_dict_has_all_required_keys(self):
-        """Dict should have all four ticket status keys."""
+        """Dict should have all five ticket status keys."""
         from levelup.gui.resources import _LIGHT_TICKET_STATUS_COLORS
 
-        required_keys = ["pending", "in progress", "done", "merged"]
+        required_keys = ["pending", "in progress", "done", "merged", "declined"]
 
         for key in required_keys:
             assert key in _LIGHT_TICKET_STATUS_COLORS, \
                 f"Missing required key: {key}"
 
-    def test_dict_has_exactly_four_keys(self):
-        """Dict should have exactly four keys (no extras)."""
+    def test_dict_has_exactly_five_keys(self):
+        """Dict should have exactly five keys (no extras)."""
         from levelup.gui.resources import _LIGHT_TICKET_STATUS_COLORS
 
-        assert len(_LIGHT_TICKET_STATUS_COLORS) == 4, \
-            f"Should have 4 keys, got {len(_LIGHT_TICKET_STATUS_COLORS)}"
+        assert len(_LIGHT_TICKET_STATUS_COLORS) == 5, \
+            f"Should have 5 keys, got {len(_LIGHT_TICKET_STATUS_COLORS)}"
 
     def test_all_values_are_hex_colors(self):
         """All values should be valid hex color strings."""
@@ -131,6 +131,7 @@ class TestLightTicketStatusColorsOtherValues:
             "in progress": "#F39C12",
             "done": "#27AE60",
             "merged": "#95A5A6",
+            "declined": "#27AE60",
         }
 
         for status, expected_color in expected.items():
@@ -182,6 +183,7 @@ class TestDarkTicketStatusColorsUnchanged:
             "in progress": "#E6A817",
             "done": "#2ECC71",
             "merged": "#6C7086",
+            "declined": "#2ECC71",
         }
 
         for status, expected_color in expected.items():

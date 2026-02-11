@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from levelup.core.tickets import Ticket
+from levelup.core.tickets import Ticket, TicketStatus
 from levelup.gui.resources import TICKET_STATUS_COLORS, TICKET_STATUS_ICONS, get_ticket_status_color
 from levelup.gui.run_terminal import RunTerminalWidget
 from levelup.gui.terminal_emulator import CatppuccinMochaColors, LightTerminalColors
@@ -83,7 +83,20 @@ class TicketDetailWidget(QWidget):
         self._title_edit.textChanged.connect(self._mark_dirty)
         form_layout.addWidget(self._title_edit)
 
-        # Status
+        # Status dropdown
+        self._status_dropdown_label = QLabel("Status")
+        self._status_dropdown_label.setStyleSheet("font-size: 12px; margin-top: 8px;")
+        form_layout.addWidget(self._status_dropdown_label)
+
+        self.status_dropdown = QComboBox()
+        # Populate with all ticket statuses
+        for status in TicketStatus:
+            display_name = status.value.title()
+            self.status_dropdown.addItem(display_name, status)
+        self.status_dropdown.currentIndexChanged.connect(self._mark_dirty)
+        form_layout.addWidget(self.status_dropdown)
+
+        # Status label (read-only display with icon/color)
         self._status_label = QLabel()
         self._status_label.setStyleSheet("font-size: 13px; margin-top: 4px;")
         form_layout.addWidget(self._status_label)
@@ -258,6 +271,14 @@ class TicketDetailWidget(QWidget):
         self._title_edit.setText("")
         self._title_edit.blockSignals(False)
 
+        # Set dropdown to pending
+        self.status_dropdown.blockSignals(True)
+        for i in range(self.status_dropdown.count()):
+            if self.status_dropdown.itemData(i) == TicketStatus.PENDING:
+                self.status_dropdown.setCurrentIndex(i)
+                break
+        self.status_dropdown.blockSignals(False)
+
         self._status_label.hide()
 
         self._desc_edit.blockSignals(True)
@@ -276,6 +297,10 @@ class TicketDetailWidget(QWidget):
             self._current_terminal.enable_run(False)
         self._title_edit.setFocus()
 
+    def create_new_ticket(self) -> None:
+        """Alias for set_create_mode for backwards compatibility."""
+        self.set_create_mode()
+
     def set_ticket(self, ticket: Ticket) -> None:
         """Load ticket data into the form, clearing the dirty flag."""
         self._create_mode = False
@@ -286,6 +311,14 @@ class TicketDetailWidget(QWidget):
         self._title_edit.blockSignals(True)
         self._title_edit.setText(ticket.title)
         self._title_edit.blockSignals(False)
+
+        # Set status dropdown
+        self.status_dropdown.blockSignals(True)
+        for i in range(self.status_dropdown.count()):
+            if self.status_dropdown.itemData(i) == ticket.status:
+                self.status_dropdown.setCurrentIndex(i)
+                break
+        self.status_dropdown.blockSignals(False)
 
         icon = TICKET_STATUS_ICONS.get(ticket.status.value, "")
         color = get_ticket_status_color(ticket.status.value, theme=self._current_theme)
@@ -470,10 +503,37 @@ class TicketDetailWidget(QWidget):
         if self._ticket is None:
             return
         import json
+        from pathlib import Path
+        from levelup.core.tickets import set_ticket_status, update_ticket
+
+        # Get selected status from dropdown
+        selected_status = self.status_dropdown.currentData()
+
+        # If status changed, update it first (before updating title/description)
+        if selected_status != self._ticket.status and self._project_path:
+            set_ticket_status(Path(self._project_path), self._ticket.number, selected_status)
+
         title = self._title_edit.text().replace("\n", " ").strip()
         # Get markdown with image references
         description = self._desc_edit.toMarkdown()
         metadata = self._build_save_metadata()
+
+        # Call update_ticket directly to persist title/description/metadata
+        # (This preserves the status we just set above)
+        if self._project_path:
+            try:
+                update_ticket(
+                    Path(self._project_path),
+                    self._ticket.number,
+                    title=title,
+                    description=description,
+                    metadata=metadata,
+                )
+            except Exception as e:
+                QMessageBox.critical(self, "Save Error", f"Failed to save ticket: {e}")
+                return
+
+        # Also emit signal for MainWindow to refresh (though update_ticket was already called)
         metadata_json = json.dumps(metadata) if metadata else ""
         self.ticket_saved.emit(self._ticket.number, title, description, metadata_json)
         self._dirty = False
@@ -536,7 +596,7 @@ class TicketDetailWidget(QWidget):
             return
 
         from pathlib import Path
-        from levelup.core.tickets import update_ticket
+        from levelup.core.tickets import update_ticket, set_ticket_status
 
         if self._create_mode:
             # In create mode, we'd normally emit ticket_created signal
@@ -554,6 +614,13 @@ class TicketDetailWidget(QWidget):
             self._desc_edit.set_ticket_number(ticket.number)
             self._desc_edit.commit_images()
         elif self._ticket is not None:
+            # Get selected status from dropdown
+            selected_status = self.status_dropdown.currentData()
+
+            # If status changed, update it first (before updating title/description)
+            if selected_status != self._ticket.status:
+                set_ticket_status(Path(self._project_path), self._ticket.number, selected_status)
+
             title = self._title_edit.text().replace("\n", " ").strip()
 
             # Save pending images and get markdown description

@@ -158,9 +158,9 @@ class TicketSidebarWidget(QWidget):
 class TicketSidebar(TicketSidebarWidget):
     """Alias for TicketSidebarWidget with auto-loading capability."""
 
-    def __init__(self, parent: QWidget | None = None, theme: str = "dark", project_path: Path | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, theme: str = "dark", project_path: Path | str | None = None) -> None:
         super().__init__(parent, theme)
-        self._project_path = project_path
+        self._project_path = Path(project_path) if project_path else None
         if project_path:
             self.refresh()
 

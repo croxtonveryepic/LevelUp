@@ -7,7 +7,7 @@ from levelup.gui.resources import TICKET_STATUS_COLORS, TICKET_STATUS_ICONS
 
 class TestTicketStatusColors:
     def test_all_statuses_present(self):
-        expected = {"pending", "in progress", "done", "merged"}
+        expected = {"pending", "in progress", "done", "merged", "declined"}
         assert set(TICKET_STATUS_COLORS.keys()) == expected
 
     def test_values_are_hex_colors(self):
@@ -25,7 +25,7 @@ class TestTicketStatusColors:
 
 class TestTicketStatusIcons:
     def test_all_statuses_present(self):
-        expected = {"pending", "in progress", "done", "merged"}
+        expected = {"pending", "in progress", "done", "merged", "declined"}
         assert set(TICKET_STATUS_ICONS.keys()) == expected
 
     def test_keys_match_colors(self):

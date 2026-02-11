@@ -16,6 +16,7 @@ class TicketStatus(str, enum.Enum):
     IN_PROGRESS = "in progress"
     DONE = "done"
     MERGED = "merged"
+    DECLINED = "declined"
 
 
 _STATUS_PATTERN = re.compile(

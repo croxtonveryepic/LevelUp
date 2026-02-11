@@ -76,6 +76,7 @@ TICKET_STATUS_COLORS: dict[str, str] = {
     "in progress": "#E6A817",
     "done": "#2ECC71",
     "merged": "#6C7086",
+    "declined": "#2ECC71",
 }
 
 # Light theme ticket status colors
@@ -84,6 +85,7 @@ _LIGHT_TICKET_STATUS_COLORS: dict[str, str] = {
     "in progress": "#F39C12",
     "done": "#27AE60",
     "merged": "#95A5A6",
+    "declined": "#27AE60",
 }
 
 TICKET_STATUS_ICONS: dict[str, str] = {
@@ -91,6 +93,7 @@ TICKET_STATUS_ICONS: dict[str, str] = {
     "in progress": "\u25B6",   # play arrow
     "done": "\u2714",          # checkmark
     "merged": "\u25CF",        # filled circle
+    "declined": "\u2717",      # X
 }
 
 

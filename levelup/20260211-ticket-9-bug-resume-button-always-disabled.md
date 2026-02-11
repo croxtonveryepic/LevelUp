@@ -51,3 +51,17 @@ Wrote 1 file(s):
 
 Step `security` completed.
 - **Usage:** 60.4s
+### Checkpoint: security
+
+- **Decision:** approve
+## Step: review  (02:20:33)
+
+Found 8 issue(s):
+- [INFO] `src/levelup/gui/run_terminal.py`: Command injection vulnerability via os.system() with PID parameter
+- [WARNING] `src/levelup/gui/run_terminal.py`: Direct access to private method _conn() from StateManager violates encapsulation
+- [INFO] `tests/unit/test_run_terminal_button_states.py`: Test docstring states tests should initially fail but implementation appears to already be fixed
+- [INFO] `tests/integration/test_run_resume_forget_workflow.py`: Test docstring states tests should initially fail but implementation appears to already be fixed
+- [INFO] `src/levelup/gui/run_terminal.py`: enable_run() method has unusual control flow with nested conditionals
+- [INFO] `src/levelup/gui/run_terminal.py`: Inefficient fallback path calls list_runs() which may fetch many records unnecessarily
+- [INFO] `src/levelup/gui/ticket_detail.py`: enable_run() call doesn't account for resumable runs
+- [INFO] `src/levelup/gui/run_terminal.py`: Type hint for _state_manager is 'object' rather than proper type

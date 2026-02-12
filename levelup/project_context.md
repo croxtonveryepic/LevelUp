@@ -62,8 +62,11 @@
     - Default values: all numeric fields default to 0
 - **ClaudeCodeBackend**: Returns `AgentResult` with all fields populated from `ClaudeCodeClient`
 - **AnthropicSDKBackend**: Returns `AgentResult` with token counts from `LLMClient.run_tool_loop()`
-    - **KNOWN ISSUE**: Does NOT set `cost_usd` field (defaults to 0.0)
-    - Token counts come from `ToolLoopResult` which accumulates across API calls
+    - **Implementation Details**:
+        - Token counts come from `ToolLoopResult` which accumulates across API calls
+        - Cost calculation needed: access model from `self._llm_client._model`
+        - Calculate cost based on Anthropic API pricing (see Pricing section below)
+        - Return calculated cost in `AgentResult.cost_usd` field
 - **StepUsage model** (`core/context.py`):
     - Fields: `cost_usd`, `input_tokens`, `output_tokens`, `duration_ms`, `num_turns`
     - Stored in `PipelineContext.step_usage` dict (keyed by step name)
@@ -75,10 +78,31 @@
     - Updates `ctx.total_cost_usd` by adding `usage.cost_usd`
     - Called after each successful agent execution
 - **Cost Breakdown Display** (`cli/display.py`):
-    - `print_pipeline_summary()` function displays cost table at end of run
+    - `print_pipeline_summary()` function displays cost table at end of run (line 224)
     - Shows per-step breakdown with cost, tokens, duration, turns
-    - **KNOWN BUG**: Line 279 has syntax error - uses backslash `\` instead of forward slash `/` for division
-    - Bug causes cost breakdown table to fail when displaying duration
+    - Cost breakdown table starts at line 269
+    - Line 279: Duration calculation `f"{usage.duration_ms / 1000:.1f}s"`
+    - Formatting requirements:
+        - Cost: `f"${usage.cost_usd:.4f}"` with 4 decimal places, shows "-" if zero
+        - Tokens: `f"{usage.input_tokens + usage.output_tokens:,}"` with commas, shows "-" if zero
+        - Duration: `f"{usage.duration_ms / 1000:.1f}s"` in seconds with 1 decimal, shows "-" if zero
+        - Turns: `str(usage.num_turns)` as string
+
+### Anthropic API Pricing (2026)
+
+- **Claude 4.5 Sonnet** (`claude-sonnet-4-5-20250929`):
+    - Input: $3.00 per million tokens
+    - Output: $15.00 per million tokens
+    - Long context (>200K): $6.00 input / $22.50 output per million tokens
+- **Claude 4.6 Opus** (`claude-opus-4-6`):
+    - Input: $5.00 per million tokens
+    - Output: $25.00 per million tokens
+- **Claude 4.5 Haiku**:
+    - Input: $1.00 per million tokens
+    - Output: $5.00 per million tokens
+- **Cost Calculation Formula**:
+    - `cost_usd = (input_tokens / 1_000_000 * input_price) + (output_tokens / 1_000_000 * output_price)`
+- **Implementation Note**: For simplicity, use standard pricing (not long-context) as long-context detection would require tracking total context size
 
 ### Git & Branch Management
 

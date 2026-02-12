@@ -50,8 +50,10 @@
 
 - **Git Operations**:
     - `_get_changed_files()` uses `git diff --name-only` to list changed files
-    - GitPython library used for all git operations
+    - GitPython library used for all git operations (gitpython>=3.1.0 in dependencies)
     - Main repository operations should run in project_path, not worktrees
+    - Git diff operations: `repo.git.diff("--name-only", from_sha, to_sha)` returns list of changed files
+    - Git diff with unified format: `repo.git.diff(from_sha, to_sha)` returns full diff output
 
 ### Pipeline Context Storage
 
@@ -86,6 +88,7 @@
     - `DocsWidget`: Uses QTextBrowser to display rendered markdown with theme CSS
     - `TerminalEmulatorWidget`: VT100 terminal with PTY backend
     - `TicketDetailWidget`: Vertical splitter with form (top) and terminal (bottom)
+    - `CompletedTicketsWidget`: Filtered list view showing done/merged tickets
 
 - **Theme System**:
     - Preferences: "light", "dark", "system" (default)
@@ -134,6 +137,9 @@
 - Button state tests verify enabled/disabled states
 - Integration tests use temporary directories (`tmp_path` fixture)
 - Test files follow pattern: `test_<component>.py` or `test_<component>_<feature>.py`
+- Widget tests: check structure (findChild), signals (connect to lambda), and behavior
+- Theme tests: verify color codes in HTML output
+- pytest markers: `@pytest.mark.regression` for exhaustive tests, `@pytest.mark.smoke` for core tests
 
 ### Key Conventions
 
@@ -143,3 +149,5 @@
 - Git worktrees for concurrent runs at `~/.levelup/worktrees/<run_id>/`
 - Parent widgets pass theme to child widgets during construction
 - Theme updates propagate via `update_theme(theme)` method
+- Widget navigation: create → add to stack → connect signals
+- Back buttons return to index 0 (runs table)

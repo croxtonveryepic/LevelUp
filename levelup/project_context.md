@@ -29,402 +29,111 @@
     - `unit/` - Unit tests
     - `integration/` - Integration tests
 
-### Agent Architecture
-
-- **Base Class**: `BaseAgent` (abstract) in `agents/base.py`
-    - Constructor: `__init__(backend: Backend, project_path: Path)`
-    - Abstract methods: `get_system_prompt()`, `get_allowed_tools()`, `run()`
-    - Returns: `tuple[PipelineContext, AgentResult]`
-- **Existing Agents**:
-    - `RequirementsAgent` - Analyzes task and writes requirements
-    - `PlanningAgent` - Creates implementation plan
-    - `TestWriterAgent` - Writes failing tests (TDD red phase)
-    - `CodeAgent` - Implements code to pass tests
-    - `SecurityAgent` - Scans for vulnerabilities and auto-patches
-    - `ReviewAgent` - Final code review
-    - `ReconAgent` - Standalone (not BaseAgent), explores codebase
-- **Agent Pattern**: System prompt + user prompt + allowed tools → Backend.run_agent() → AgentResult
-- **Standalone Agents**: ReconAgent doesn't inherit BaseAgent (no PipelineContext), runs independently
-- **Standalone Agent Use Cases**: Agents that don't participate in the main TDD pipeline (e.g., ReconAgent, MergeAgent)
-
-### Backend & Tool System
-
-- **Backend Protocol**: `Backend` in `agents/backend.py`
-    - Two implementations: `ClaudeCodeBackend` (subprocess), `AnthropicSDKBackend` (API)
-    - Method: `run_agent(system_prompt, user_prompt, allowed_tools, working_directory, ...)`
-- **Tool Names** (Claude Code conventions): Read, Write, Edit, Glob, Grep, Bash
-- **Sandboxing**: All file tools restricted to project directory
-
-### Cost and Token Tracking
-
-- **AgentResult dataclass** (`agents/backend.py`):
-    - Fields: `text`, `cost_usd`, `input_tokens`, `output_tokens`, `duration_ms`, `num_turns`
-    - Default values: all numeric fields default to 0
-- **ClaudeCodeBackend**: Returns `AgentResult` with all fields populated from `ClaudeCodeClient`
-- **AnthropicSDKBackend**: Returns `AgentResult` with token counts from `LLMClient.run_tool_loop()`
-    - **Implementation Details**:
-        - Token counts come from `ToolLoopResult` which accumulates across API calls
-        - Cost calculation needed: access model from `self._llm_client._model`
-        - Calculate cost based on Anthropic API pricing (see Pricing section below)
-        - Return calculated cost in `AgentResult.cost_usd` field
-- **StepUsage model** (`core/context.py`):
-    - Fields: `cost_usd`, `input_tokens`, `output_tokens`, `duration_ms`, `num_turns`
-    - Stored in `PipelineContext.step_usage` dict (keyed by step name)
-- **PipelineContext** (`core/context.py`):
-    - `step_usage: dict[str, StepUsage]` - usage per pipeline step
-    - `total_cost_usd: float` - cumulative cost across all steps
-- **Orchestrator** (`core/orchestrator.py`):
-    - `_capture_usage()` method converts `AgentResult` to `StepUsage` and stores in context
-    - Updates `ctx.total_cost_usd` by adding `usage.cost_usd`
-    - Called after each successful agent execution
-- **Cost Breakdown Display** (`cli/display.py`):
-    - `print_pipeline_summary()` function displays cost table at end of run (line 224)
-    - Shows per-step breakdown with cost, tokens, duration, turns
-    - Cost breakdown table starts at line 269
-    - Line 279: Duration calculation `f"{usage.duration_ms / 1000:.1f}s"`
-    - Formatting requirements:
-        - Cost: `f"${usage.cost_usd:.4f}"` with 4 decimal places, shows "-" if zero
-        - Tokens: `f"{usage.input_tokens + usage.output_tokens:,}"` with commas, shows "-" if zero
-        - Duration: `f"{usage.duration_ms / 1000:.1f}s"` in seconds with 1 decimal, shows "-" if zero
-        - Turns: `str(usage.num_turns)` as string
-
-### Anthropic API Pricing (2026)
-
-- **Claude 4.5 Sonnet** (`claude-sonnet-4-5-20250929`):
-    - Input: $3.00 per million tokens
-    - Output: $15.00 per million tokens
-    - Long context (>200K): $6.00 input / $22.50 output per million tokens
-- **Claude 4.6 Opus** (`claude-opus-4-6`):
-    - Input: $5.00 per million tokens
-    - Output: $25.00 per million tokens
-- **Claude 4.5 Haiku**:
-    - Input: $1.00 per million tokens
-    - Output: $5.00 per million tokens
-- **Cost Calculation Formula**:
-    - `cost_usd = (input_tokens / 1_000_000 * input_price) + (output_tokens / 1_000_000 * output_price)`
-- **Implementation Note**: For simplicity, use standard pricing (not long-context) as long-context detection would require tracking total context size
-
-### Git & Branch Management
+### Git & Version Control
 
 - **Worktrees**: Pipeline runs create git worktrees at `~/.levelup/worktrees/<run_id>/`
-    - **Location**: `~/.levelup/worktrees/<run_id>/`
     - **Purpose**: Enable concurrent pipeline runs on different tickets without conflicts
-    - **Lifecycle**:
-        - Created in `Orchestrator._create_git_branch()` (orchestrator.py line 934)
-        - **Currently removed automatically** in `Orchestrator._cleanup_worktree()` (orchestrator.py lines 949-959) at end of successful runs (lines 353, 466)
-        - Also removed during rollback in `cli/app.py` (line 669) and GUI delete ticket in `main_window.py` (line 417)
-        - Stale worktree cleanup before creating new worktrees (orchestrator.py lines 402 and 929)
-    - **Current automatic cleanup behavior**:
-        - Lines 352-353 in `Orchestrator.run()`: Cleanup after successful/failed/aborted runs (but not paused)
-        - Lines 465-466 in `Orchestrator.resume()`: Cleanup after successful/failed/aborted resume (but not paused)
-    - **Explicit cleanup scenarios** (to preserve):
-        - `cli/app.py` line 669: Worktree cleanup during rollback operations
-        - `main_window.py` line 417: Worktree cleanup during GUI ticket deletion
-        - `orchestrator.py` lines 402, 929: Stale worktree removal before creating new worktrees
-    - **Error handling**: Removal failures are logged as warnings (logger.warning) which appear to users as errors
-    - **Tests**:
-        - `tests/unit/test_concurrent_worktrees.py` - tests for concurrent worktree creation and cleanup
-        - `tests/unit/test_git_completion_message.py` - contains `test_cleanup_worktree_only_removes_directory_not_branch` (line 467)
-        - `tests/unit/test_step_commits.py` - tests cleanup behavior (line 233)
-        - `tests/integration/test_concurrent_pipelines.py` - manually cleans up worktrees in test cleanup (lines 136-146, 198-208)
-    - **Issue**: On Windows, worktree removal often fails with "Permission denied" errors, likely due to file locks from running processes
-- **Branch Naming**: Stored in `ctx.branch_naming` (e.g., `levelup/{task_title}`)
-- **Branch Metadata**: Branch name stored in ticket metadata as `branch_name` after completion
-- **Branch Preservation**: Branches persist in main repo after worktree cleanup (verified in test_git_completion_message.py line 467)
+    - **Location**: `~/.levelup/worktrees/<run_id>/`
+    - Created in `Orchestrator._create_git_branch()` during pipeline initialization
+    - Automatically cleaned up after successful/failed/aborted runs (but not paused)
+    - Branch persists in main repo after worktree cleanup
+
 - **Step Commits**: Each pipeline step gets a commit (when `create_git_branch: true`)
-- **Pre-run SHA**: Stored in `ctx.pre_run_sha` for rollback support
-- **Merge Operations**: Existing rebase-merge skill uses simple git commands, no conflict resolution
-- **Main Repository Operations**: Merge operations should run in the main repository (ctx.project_path), not in worktrees
+    - Stored in `ctx.step_commits` dict mapping step name to commit SHA
+    - Commit messages follow pattern: `levelup({step_name}): {task_title}\n\nRun ID: {run_id}`
+    - Created via `_git_step_commit()` in orchestrator
+
+- **Branch Tracking**:
+    - Branch naming convention stored in `ctx.branch_naming`
+    - Branch name stored in ticket metadata as `branch_name` after completion
+    - Pre-run SHA stored in `ctx.pre_run_sha` for rollback support
+
+- **Git Operations**:
+    - `_get_changed_files()` uses `git diff --name-only` to list changed files
+    - GitPython library used for all git operations
+    - Main repository operations should run in project_path, not worktrees
+
+### Pipeline Context Storage
+
+- **PipelineContext** (`core/context.py`):
+    - All pipeline state stored in Pydantic model
+    - Includes: run_id, task, project info, agent outputs, git tracking, cost tracking
+    - Serialized to JSON and stored in `runs.context_json` column in SQLite
+    - Fields relevant to diff view:
+        - `worktree_path`: Path to git worktree (if used)
+        - `step_commits`: Dict mapping step names to commit SHAs
+        - `pre_run_sha`: Starting commit SHA before run began
+        - `project_path`: Main repository path
+
+- **StateManager** (`state/manager.py`):
+    - `update_run()` serializes full context via `ctx.model_dump_json()`
+    - Context can be deserialized from `RunRecord.context_json`
+    - Provides access to git information for any run
 
 ### GUI Architecture
 
 - **Framework**: PyQt6-based desktop GUI
-- **Location**: `src/levelup/gui/`
 - **Main Window** (`gui/main_window.py`):
-    - Dashboard with runs table and ticket management
-    - QStackedWidget with 3 pages: runs table (index 0), ticket detail (index 1), documentation (index 2)
-    - Ticket sidebar on left, main content on right
+    - QStackedWidget with 4 pages:
+        - Index 0: Runs table
+        - Index 1: Ticket detail
+        - Index 2: Documentation viewer
+        - Index 3: Completed tickets viewer
+    - Page navigation pattern: create widget → add to stack → connect back_clicked signal
     - Auto-refresh timer (REFRESH_INTERVAL_MS = 2000ms)
-    - Tracks GUI-spawned run PIDs for checkpoint dialog auto-opening
-    - No existing keyboard shortcuts implemented (only mouse navigation)
-- **Theme Manager** (`gui/theme_manager.py`): Handles theme preferences (light/dark/system) and applies stylesheets
-- **Terminal Emulator** (`gui/terminal_emulator.py`): VT100 terminal using pyte, supports both `CatppuccinMochaColors` (dark) and `LightTerminalColors` (light) schemes
-- **Key Components**:
-    - `main_window.py`: Main application window that coordinates GUI components
-    - `ticket_sidebar.py`: Displays ticket list with status indicators and color coding
-    - `ticket_detail.py`: Detail view with ticket form (title, description, auto-approve, status label) and embedded RunTerminalWidget
-    - `run_terminal.py`: Wrapper around TerminalEmulatorWidget for running pipeline commands
-    - `terminal_emulator.py`: VT100 terminal using pyte library with scrollback support
-    - `docs_widget.py`: Documentation viewer for markdown files
-    - `checkpoint_dialog.py`: Modal dialog for checkpoint interactions
-    - `theme_manager.py`: Handles theme preferences (light/dark/system) and applies stylesheets
-    - `resources.py`: Defines status-to-color/icon mappings for both dark and light themes
-    - `styles.py`: QSS stylesheets for dark and light themes
 
-### Terminal Emulator Architecture
+- **Key Display Widgets**:
+    - `DocsWidget`: Uses QTextBrowser to display rendered markdown with theme CSS
+    - `TerminalEmulatorWidget`: VT100 terminal with PTY backend
+    - `TicketDetailWidget`: Vertical splitter with form (top) and terminal (bottom)
 
-- **Location**: `src/levelup/gui/terminal_emulator.py`
-- **Terminal Backend**: Uses `pyte` library for VT100 terminal emulation with PTY (pseudo-terminal) backend
-- **Screen State**:
-    - `pyte.HistoryScreen` with 10,000 line scrollback buffer
-    - Current buffer: `self._screen.buffer` (visible screen rows, list of line objects)
-    - History buffer: `self._screen.history.top` (deque of historical lines)
-- **Scrollback System**:
-    - `_scroll_offset`: Number of lines scrolled up from bottom (0 = at bottom)
-    - `wheelEvent()`: Updates scroll offset (±3 lines per wheel event)
-    - `paintEvent()`: Renders composite of history + buffer based on scroll offset
-- **Rendering Logic** (`paintEvent()` lines 513-606):
-    - When `_scroll_offset > 0`: Top rows come from `screen.history.top`, remaining rows from `screen.buffer`
-    - Formula for history lines: `history_idx = len(history.top) - scroll_offset + row`
-    - Formula for buffer lines: `buffer_row = row - scroll_offset`
-    - Transitions from history to buffer at row = `_scroll_offset`
-- **Selection & Copy System**:
-    - Mouse events track selection: `_selection_start` and `_selection_end` (col, row tuples in viewport coordinates)
-    - Selection coordinates are always in viewport space (0 to _rows-1, 0 to _cols-1)
-    - `_get_selected_text()`: Extracts text from selection (lines 761-778)
-    - **CURRENT BUG**: `_get_selected_text()` always reads from `screen.buffer[row]`, ignoring scroll offset
-    - **FIX NEEDED**: Should read from same composite view as `paintEvent()` (history + buffer based on offset)
-    - When `_scroll_offset > 0` and `row < _scroll_offset`: read from history using `history_idx = len(history.top) - scroll_offset + row`
-    - When `_scroll_offset > 0` and `row >= _scroll_offset`: read from buffer using `buffer_row = row - scroll_offset`
-    - When `_scroll_offset == 0`: read from buffer using `buffer[row]` (current behavior)
-- **Copy Shortcuts**:
-    - Ctrl+Shift+C: Copy selection
-    - Ctrl+C with selection: Copy selection
-    - Ctrl+C without selection: Send interrupt to shell
-- **Color Schemes**: `CatppuccinMochaColors` (dark) and `LightTerminalColors` (light)
+- **Theme System**:
+    - Preferences: "light", "dark", "system" (default)
+    - `update_theme(theme)` method propagates theme changes to child widgets
+    - CSS templates for dark and light themes in DocsWidget
+    - Color schemes for terminal emulator
 
-### Terminal Scrollback Copy Bug Details
+- **Widget Communication**:
+    - Signals: PyQt6 `pyqtSignal` for inter-component communication
+    - Navigation: back_clicked signals return to runs table (page 0)
+    - Object names set via `setObjectName()` for testing
 
-- **Issue**: When terminal is scrolled up (`_scroll_offset > 0`), selecting and copying text copies from wrong location
-- **Root Cause**: `_get_selected_text()` method always reads from `self._screen.buffer[row]` regardless of scroll position
-- **Expected Behavior**: Should read from history when `row < scroll_offset`, just like `paintEvent()` does
-- **Test Documentation**: `tests/unit/test_terminal_scrollback_display.py` line 552 documents expected behavior
-- **Impact**: User sees highlighted text from history but clipboard gets text from current buffer at same row position
-- **Edge Cases to Handle**:
-    - Empty history with scroll offset > 0
-    - Scroll offset exceeding history length
-    - Selection spanning both history and buffer regions
-    - Multi-line selections across history/buffer boundary
+### Text Display Patterns
 
-### Ticket System
+- **QTextBrowser** (used in DocsWidget):
+    - Read-only rich text display widget
+    - Supports HTML rendering with custom CSS
+    - `setHtml()` to set content, `setOpenLinks(False)` to handle links manually
+    - `anchorClicked` signal for link handling
+    - Suitable for displaying formatted text like diffs
 
-- **Location**: `src/levelup/core/tickets.py`
-- **Storage**: Markdown-based in `levelup/tickets.md` (configurable via `project.tickets_file`)
-- **Format**:
-    - Level-2 headings (`##`) represent tickets
-    - Description text appears after the heading
-    - Optional YAML metadata in HTML comments: `<!--metadata ... -->`
-    - Status tags in heading: `[in progress]`, `[done]`, `[merged]`
-- **Ticket Model** (`Ticket` class):
-    - `number`: int (1-based ordinal position in file)
-    - `title`: str (heading text without status tag)
-    - `description`: str (body text below heading, currently plain text)
-    - `status`: TicketStatus enum
-    - `metadata`: dict[str, Any] | None (from YAML block)
-- **Ticket Statuses** (TicketStatus enum):
-    - `PENDING = "pending"` (default, no status tag in markdown)
-    - `IN_PROGRESS = "in progress"` (tagged with `[in progress]`)
-    - `DONE = "done"` (tagged with `[done]`)
-    - `MERGED = "merged"` (tagged with `[merged]`)
-- **Parsing**: `_STATUS_PATTERN` regex matches status tags: `^\[(in progress|done|merged)\]\s*` (case-insensitive)
-- **CLI Commands**: `levelup tickets [list|next|start|done|merged|delete]`
-- **Run Integration**: Runs link to tickets via `runs.ticket_number` column in SQLite DB
-- **Branch Name Storage**: After pipeline completion, branch name stored as `branch_name` in ticket metadata
-- **Status Transitions**: CLI automatically transitions pending→in progress on run start, in progress→done on pipeline success
-- **Metadata Filtering**: Run options (model, effort, skip_planning) are filtered from ticket metadata by `_filter_run_options()`
+- **Markdown Rendering**:
+    - Uses `mistune>=3.0.0` library for markdown→HTML conversion
+    - `render_markdown()` function in docs_widget.py
+    - Fallback to escaped plaintext if mistune unavailable
+    - `_wrap_html()` wraps body with theme-specific CSS
 
-### Status Change Flow
+### Diff Display Considerations
 
-- **CLI Status Changes**:
-    - `set_ticket_status()` function in `core/tickets.py` is the primary API
-    - Used by CLI in `cli/app.py` for transitions: pending → in progress (on run start), in progress → done (on completion)
-    - CLI `levelup tickets` command supports manual status changes: `levelup tickets done 5` changes ticket #5 to done
-- **GUI Status Changes**:
-    - Currently no direct status change UI in the GUI - tickets change status only through lifecycle (starting/completing runs)
-    - Ticket detail widget displays status as read-only label with icon and color (lines 79-81 in `ticket_detail.py`)
-    - Status label uses `TICKET_STATUS_ICONS` dict and `get_ticket_status_color()` for theme-aware coloring
-- **Status Persistence**:
-    - Status stored as markdown tag in heading: `## [done] Ticket Title`
-    - PENDING status has no tag (bare heading)
-    - Other statuses use bracketed tags: `[in progress]`, `[done]`, `[merged]`
-
-### Ticket Detail Widget Structure
-
-- Located at `src/levelup/gui/ticket_detail.py`
-- Vertical splitter layout: ticket form (top) | terminal (bottom)
-- **Current ticket form fields** (lines 69-98):
-    - Title: `QLineEdit` (line 74)
-    - **Status label**: QLabel showing icon + status text with theme-aware color (lines 79-81) - READ-ONLY
-    - Description: `QPlainTextEdit` - **plain text editor** (line 88)
-    - Auto-approve checkbox (line 93)
-    - Model combo: Default/Sonnet/Opus (line 105)
-    - Effort combo: Default/Low/Medium/High (line 112)
-    - Skip planning checkbox (line 118)
-- **Form field behavior**:
-    - Fields populate from ticket data in `set_ticket()` method (lines 264, 275-280)
-    - Status label updated with icon, text, and theme-aware color
-    - Changes trigger `_mark_dirty()` to enable Save button
-- Form fields currently save to ticket metadata via `_build_save_metadata()` (line 427)
-- Fields populate from ticket.metadata when ticket loads via `set_ticket()` (line 303)
-- Terminal receives settings via `set_ticket_settings()` call (line 367)
-- **Button layout**: Located in form section, includes Delete/Cancel/Save buttons (lines 100-120)
-- **Save flow** (lines 416-436):
-    - `_on_save()` builds metadata from form via `_build_save_metadata()`
-    - Emits `ticket_saved` signal with number, title, description, metadata_json
-    - MainWindow's `_on_ticket_saved()` handler calls `update_ticket()` to persist changes
-    - After save, `_refresh_tickets()` reloads ticket list and updates detail widget
-
-### Ticket Data Flow
-
-1. **GUI → Storage**:
-   - User edits description in `QPlainTextEdit` (line 88 of `ticket_detail.py`)
-   - On save, `_on_save()` emits `ticket_saved` signal with plain text (line 431)
-   - `MainWindow` handles signal and calls `update_ticket()` in `core/tickets.py`
-   - `update_ticket()` writes description as plain text to markdown file (line 377)
-
-2. **Storage → GUI**:
-   - `parse_tickets()` reads markdown file and extracts description text (line 67 of `tickets.py`)
-   - Description lines accumulated in `description_lines` list (line 75)
-   - Joined as plain string and stored in `Ticket.description` (line 82-86)
-   - `TicketDetailWidget.set_ticket()` loads description into `QPlainTextEdit` (line 283)
-
-3. **CLI Access**:
-   - Agents receive ticket via `Ticket.to_task_input()` (line 42 of `tickets.py`)
-   - Converts to `TaskInput` with description as string field (line 48)
-
-### Run Terminal Widget Structure
-
-- Located at `src/levelup/gui/run_terminal.py`
-- Header layout: status label + Run/Terminate/Pause/Resume/Forget/Clear buttons
-- **Run Options Widgets** (lines 100-115): Model combo, Effort combo, Skip planning checkbox
-- Stores run options in instance variables (lines 140-143):
-    - `_ticket_model: str | None`
-    - `_ticket_effort: str | None`
-    - `_ticket_skip_planning: bool`
-- `set_ticket_settings()` method (line 176) updates these variables
-- `build_run_command()` function (line 31) constructs CLI command with optional flags:
-    - `--model {model}` (line 49)
-    - `--effort {effort}` (line 51)
-    - `--skip-planning` (line 53)
-- Run button click triggers `_on_run_clicked()` → `start_run()` → `build_run_command()`
-
-### Adaptive Pipeline Settings Flow
-
-- **Ticket metadata → Run command**:
-    1. Ticket form saves metadata (model, effort, skip_planning) to tickets.md YAML block
-    2. TicketDetailWidget reads ticket.metadata and calls `terminal.set_ticket_settings()`
-    3. RunTerminalWidget stores settings in `_ticket_*` variables
-    4. When Run clicked, `build_run_command()` adds CLI flags based on stored values
-    5. CLI spawns pipeline with flags: `levelup run --ticket N --model X --effort Y --skip-planning`
-
-- **CLI → Orchestrator**:
-    1. CLI `run()` function accepts `--model`, `--effort`, `--skip-planning` flags
-    2. Orchestrator reads ticket metadata via `_read_ticket_settings()`
-    3. Precedence: CLI flags > ticket metadata > config defaults
-    4. Auto-approve handled separately via `_should_auto_approve()` (orchestrator.py line 89)
-
-### Auto-Approve Special Case
-
-- Currently stored in ticket metadata like other settings
-- Used by orchestrator to skip checkpoint prompts
-- **Not** a run-level setting (applies to all runs of a ticket)
-- Should remain as ticket-level metadata, not moved to run options
-- **Resolution priority** (orchestrator.py `_should_auto_approve()`, line 86):
-    1. Ticket metadata `auto_approve` field (if present)
-    2. Project-level config `pipeline.auto_approve` (default: False)
-- **Current GUI behavior**:
-    - `set_ticket()` (line 286-292): Populates checkbox from ticket metadata, defaults to False if not present
-    - `set_create_mode()` (line 253-255): Always sets checkbox to False for new tickets
-    - **BUG**: Does not respect project's default `pipeline.auto_approve` setting when ticket has no metadata
-- **Config system**:
-    - `PipelineSettings.auto_approve` field in `config/settings.py` (line 40), default: False
-    - Can be set via `levelup.yaml` under `pipeline.auto_approve`
-    - Can be set via environment variable `LEVELUP_PIPELINE__AUTO_APPROVE`
-    - Config loaded via `load_settings()` from `config/loader.py`
-- **Settings loading in GUI**:
-    - `MainWindow.__init__()` loads settings via `load_settings(project_path=project_path)` (main_window.py line 62-67)
-    - Settings are used to get `tickets_file` configuration
-    - `TicketDetailWidget` does NOT currently load settings - needs to be added
-    - `set_project_context()` is the natural place to load settings when project path is set
-
-### Theme System
-
-- Theme preferences: "light", "dark", "system" (default)
-- `get_current_theme()` resolves preference to actual theme ("light" or "dark")
-- `apply_theme(app, theme)` applies stylesheet and notifies listeners via `theme_changed()`
-- Widgets implement `update_theme(theme)` method to respond to theme changes
-- Terminal color schemes are applied via `terminal.set_color_scheme(scheme_class)`
-- Application theme is initialized in `gui/app.py` via `apply_theme(app, actual_theme)` before creating MainWindow
-- MainWindow initializes with `self._current_theme = get_current_theme()` and passes theme to child widgets
-
-### Terminal Initialization Pattern
-
-- **Delayed initialization**: Terminals do NOT start shell automatically when widget is shown (showEvent)
-- Shell is started lazily only when Run or Resume buttons are clicked (via `_ensure_shell()`)
-- This prevents spawning unnecessary PTY processes for tickets that are just being viewed
-- `RunTerminalWidget` creates `TerminalEmulatorWidget` in `__init__` with default dark color scheme
-- Color scheme is changed after creation via `set_color_scheme()` in `TicketDetailWidget._get_or_create_terminal()`
-
-### Button State Management in RunTerminalWidget
-
-- **\_set_running_state(running)**: Updates button states when transitioning between running/not-running
-    - Sets `_command_running` flag
-    - Enables/disables buttons based on running state and resumable run existence
-    - Uses `_is_resumable()` to check if last run can be resumed
-- **\_update_button_states()**: Refreshes all button states based on current conditions
-    - Checks `_command_running`, `_ticket_number`, `_project_path`, and `_is_resumable()`
-    - Ensures consistency with `_set_running_state()`
-- **\_is_resumable()**: Returns True if last_run_id exists and status is in ("failed", "aborted", "paused")
-- **enable_run(enabled)**: External API for enabling/disabling Run button
-    - Respects resumable run state - won't enable if resumable run exists
-- **Run button logic**: Enabled only when not running AND no resumable run exists AND has context
-- **Resume button logic**: Enabled only when not running AND resumable run exists
-- **Forget button logic**: Enabled when not running AND last_run_id exists
-    - After Forget, `_last_run_id` is set to None, which unlocks Run button
-
-### Settings Constants (config/settings.py)
-
-- **MODEL_SHORT_NAMES**: Map short names to full model IDs
-    - `"sonnet"` → `"claude-sonnet-4-5-20250929"`
-    - `"opus"` → `"claude-opus-4-6"`
-- **EFFORT_THINKING_BUDGETS**: Map effort levels to thinking token budgets
-    - `"low"` → `4096`
-    - `"medium"` → `16384`
-    - `"high"` → `32768`
-
-### Orchestrator Settings Resolution (core/orchestrator.py)
-
-- **\_read_ticket_settings(ctx)**: Reads model, effort, skip_planning from ticket metadata (line 111)
-- **Model resolution** (line 301): CLI flag > ticket metadata > config default
-    - CLI flag sets `_cli_model_override=True` to override ticket metadata
-    - If no CLI override, resolves from ticket settings using MODEL_SHORT_NAMES
-- **Effort resolution** (line 308): CLI > ticket metadata > none
-    - Converts to thinking_budget using EFFORT_THINKING_BUDGETS
-- **Skip planning resolution** (line 312): CLI > ticket metadata > false
-- Settings passed to `_create_backend()` (line 315) with model_override and thinking_budget
+- **Git diff output**: Can be obtained via GitPython's `repo.git.diff()`
+- **Diff formats**:
+    - `--name-only`: Just file names (used in `_get_changed_files()`)
+    - Standard unified diff: Shows line-by-line changes with +/- markers
+    - `--stat`: Summary statistics of changes
+- **Syntax highlighting**: Could use HTML/CSS for diff coloring (red/green for -/+)
+- **Per-commit vs branch**:
+    - Per-commit: Use commit SHAs from `step_commits` dict
+    - Whole branch: Diff from `pre_run_sha` to branch HEAD
+- **Live updates**: Diff view needs to refresh while run is in progress
 
 ### Testing Patterns
 
 - Unit tests use pytest with PyQt6 fixtures
+- `_can_import_pyqt6()` check and `@pytest.mark.skipif` decorator
 - Mock state manager using `MagicMock(spec=StateManager)`
-- Mock terminal emulator with `patch("levelup.gui.terminal_emulator.PtyBackend")`
+- Button state tests verify enabled/disabled states
+- Integration tests use temporary directories (`tmp_path` fixture)
 - Test files follow pattern: `test_<component>.py` or `test_<component>_<feature>.py`
-- Button state tests verify enabled/disabled states after state transitions
-- Metadata tests verify round-trip serialization and preservation of non-form fields
-- Integration tests use temporary directories (`tmp_path` fixture) for file operations
-- **PyQt6 keyboard event testing**: Use `QKeyEvent` with `Type.KeyPress`, key code, modifiers, and text
-- **Example from test_terminal_scrollback_display.py**:
-  ```python
-  event = QKeyEvent(
-      QKeyEvent.Type.KeyPress,
-      Qt.Key.Key_Tab,
-      Qt.KeyboardModifier.ShiftModifier,
-      "",
-  )
-  widget.keyPressEvent(event)
-  ```
-- **Focus testing**: Can verify focus state with `widget.hasFocus()` and focus navigation with `focusNextChild()`/`focusPreviousChild()`
-- **Signal testing**: Connect signals to lambda/list to capture emissions, e.g., `widget.signal.connect(lambda: received.append(True))`
 
 ### Key Conventions
 
@@ -434,340 +143,3 @@
 - Git worktrees for concurrent runs at `~/.levelup/worktrees/<run_id>/`
 - Parent widgets pass theme to child widgets during construction
 - Theme updates propagate via `update_theme(theme)` method
-
-### Navigation Flow
-
-- **Runs table view** (page 0): Default view showing all runs
-    - Double-click run → opens checkpoint dialog if status is "waiting_for_input"
-    - Right-click → context menu with View Details/Resume/Forget options
-- **Ticket detail view** (page 1): Selected ticket with embedded terminal
-    - Back button → returns to runs table (page 0)
-    - Ticket sidebar selection triggers `_on_ticket_selected()` → switches to detail view
-- **Documentation view** (page 2): Markdown file viewer
-    - Docs button → switches to documentation
-    - Back button → returns to runs table (page 0)
-- **Ticket sidebar**: Lists all tickets from project
-    - Click ticket → opens ticket detail view
-    - Plus button → creates new ticket
-- **Currently no keyboard shortcuts exist for navigation**
-
-### Ticket System
-
-- **Location**: `src/levelup/core/tickets.py`
-- **Ticket Statuses**:
-    - `PENDING` (default, no status tag in markdown)
-    - `IN_PROGRESS` (tagged with `[in progress]`)
-    - `DONE` (tagged with `[done]`)
-    - `MERGED` (tagged with `[merged]`)
-- **Storage**: Markdown-based in `levelup/tickets.md` (configurable)
-- **Format**: Level-2 headings (`##`) represent tickets
-
-### State Management
-
-- **Location**: `src/levelup/state/`
-- **Run Statuses**: "running", "waiting_for_input", "pending", "failed", "aborted", "paused", "completed"
-- **StateManager** provides methods:
-    - `list_runs()` - returns list of RunRecord objects
-    - `get_pending_checkpoints()` - returns checkpoints needing user input
-    - `mark_dead_runs()` - updates status of runs with dead PIDs
-- **Run filtering**: Can identify runs by status, project, ticket number
-
-### Configuration System
-
-- **Location**: `src/levelup/config/settings.py`
-- **Settings Classes**:
-    - `LevelUpSettings` - root settings container
-    - `LLMSettings` - LLM configuration
-    - `ProjectSettings` - project-specific settings
-    - `PipelineSettings` - pipeline behavior
-    - `GUISettings` - GUI preferences (theme)
-- **Config Files**: Uses YAML files (levelup.yaml, .levelup.yaml, levelup.yml, .levelup.yml)
-- **Config Loader**: `config/loader.py` provides `find_config_file()`, `load_config_file()`, and `load_settings()`
-- **Setting Persistence**: Config is saved to project's levelup.yaml file
-- **No existing hotkey/keybinding configuration**
-- **Color Mapping** (`src/levelup/gui/resources.py`):
-    - Dark theme colors in `TICKET_STATUS_COLORS` dict
-    - Light theme colors in `_LIGHT_TICKET_STATUS_COLORS` dict
-    - Icons in `TICKET_STATUS_ICONS` dict
-    - `get_ticket_status_color(status, theme, run_status)` returns theme-aware color
-    - Dark theme pending tickets: `#CDD6F4` (light lavender)
-    - Light theme pending tickets: `#2E3440` (dark blue-gray) - WCAG AA compliant
-    - Tickets without active runs inherit their status color
-    - "In progress" tickets show dynamic colors based on run status:
-        - Blue (`#4A90D9` dark, `#3498DB` light) when run is "running"
-        - Yellow-orange (`#E6A817` dark, `#F39C12` light) when run is "waiting_for_input"
-    - Merged tickets: `#6C7086` (dark gray, dark theme), `#95A5A6` (medium gray, light theme)
-- **Current Status Colors**:
-    - **Dark theme**: pending `#CDD6F4`, in progress `#E6A817`, done `#2ECC71`, merged `#6C7086`
-    - **Light theme**: pending `#2E3440`, in progress `#F39C12`, done `#27AE60`, merged `#95A5A6`
-- **Accessibility**: Light mode pending ticket color was updated from `#4C566A` to `#2E3440` to meet WCAG AA contrast requirements (4.5:1 minimum) against white background
-- **Color Function**: `get_ticket_status_color()` in `resources.py` accepts three parameters:
-    - `status`: Ticket status string ("pending", "in progress", "done", "merged")
-    - `theme`: Theme mode ("light" or "dark")
-    - `run_status`: Optional run status for dynamic coloring ("running", "waiting_for_input", etc.)
-- **Theme-aware color selection**:
-    - Function uses `_LIGHT_TICKET_STATUS_COLORS` dict for light theme
-    - Function uses `TICKET_STATUS_COLORS` dict for dark theme
-    - Returns default colors for unknown statuses
-- **Run Status Integration** (`main_window.py`):
-    - `MainWindow._refresh_tickets()` creates run_status_map from active runs
-    - Only includes runs with status "running" or "waiting_for_input"
-    - Passes run_status_map to `TicketSidebarWidget.set_tickets()`
-    - Sidebar stores run_status_map internally for theme switching
-
-### Ticket Detail Widget Form Elements
-
-- **Location**: `src/levelup/gui/ticket_detail.py`
-- **Form Layout** (top to bottom):
-    1. Back button + ticket number label
-    2. Title field (`QLineEdit` - single line text, line 74)
-    3. Status label (read-only, line 79)
-    4. Description field (`QPlainTextEdit` - multi-line text editor, line 88)
-    5. Auto-approve checkbox (line 93)
-    6. Button row: Delete, Cancel, Save (lines 103-119)
-- **Description Field Behavior**:
-    - Uses `QPlainTextEdit` widget which by default accepts tab characters
-    - No custom `keyPressEvent` handler currently implemented
-    - Expected focus order: Title → Description → Save button
-    - Current issue: Tab key inserts tab character instead of moving focus
-- **Keyboard Event Handling Pattern**:
-    - Custom widgets can override `keyPressEvent(event: QKeyEvent)` method
-    - Access key code via `event.key()` (e.g., `Qt.Key.Key_Tab`)
-    - Access modifiers via `event.modifiers()` (e.g., `Qt.KeyboardModifier.ShiftModifier`)
-    - Call `event.accept()` to prevent default behavior or `event.ignore()` to allow it
-    - For focus navigation, call `self.focusNextChild()` or `self.focusPreviousChild()`
-    - Example from `terminal_emulator.py` lines 612-622: Custom handling of Ctrl+Shift+C/V for copy/paste
-- **Custom QPlainTextEdit Subclass Approach**:
-    - Create a custom subclass of `QPlainTextEdit` with overridden `keyPressEvent`
-    - Handle Tab, Shift+Tab, Enter, and Shift+Enter specially
-    - Use `self.parent()` or emit signals to communicate with parent widget for save action
-    - Can be reused for other text fields needing similar behavior (e.g., checkpoint dialog)
-- **Related Files**:
-    - Tests: `tests/unit/test_gui_create_ticket.py` - tests for create ticket flow
-    - Keyboard handling example: `src/levelup/gui/terminal_emulator.py` (has `keyPressEvent` for special key handling)
-    - Checkpoint dialog: `src/levelup/gui/checkpoint_dialog.py` (also uses `QPlainTextEdit` for feedback input)
-
-### Theme System
-
-- Theme preferences: "light", "dark", "system" (default)
-- `get_current_theme()` resolves preference to actual theme ("light" or "dark")
-- `apply_theme(app, theme)` applies stylesheet and notifies listeners via `theme_changed()`
-- Widgets implement `update_theme(theme)` method to respond to theme changes
-- Terminal color schemes are applied via `terminal.set_color_scheme(scheme_class)`
-- Application theme is initialized in `gui/app.py` via `apply_theme(app, actual_theme)` before creating MainWindow
-- MainWindow initializes with `self._current_theme = get_current_theme()` and passes theme to child widgets
->>>>>>> 7c02951 (levelup(requirements): Add GUI navigation hotkeys)
-
-### PyQt6 Keyboard Shortcut Patterns
-
-- **QShortcut**: Primary mechanism for application-wide hotkeys
-    - Created with `QShortcut(QKeySequence, parent_widget)`
-    - `activated` signal connects to handler function
-    - Context can be Qt.ApplicationShortcut (global) or Qt.WindowShortcut (window-specific)
-- **QKeySequence**: Represents key combinations
-    - Supports platform-independent notation: "Ctrl+N", "F5", "Escape"
-    - Automatically translates Ctrl to Cmd on macOS
-    - Standard keys available via `QKeySequence.StandardKey` enum
-- **keyPressEvent**: Widget-level override for custom key handling
-    - Used in `terminal_emulator.py` for terminal-specific keys (Ctrl+Shift+C/V)
-    - Should call `super().keyPressEvent()` for unhandled keys
-
-### Testing Patterns
-
-- **Test Location**: Unit tests in `tests/unit/`, integration tests in `tests/integration/`
-- **PyQt6 Tests**: Use `_can_import_pyqt6()` check and `@pytest.mark.skipif` decorator
-- **QApplication**: Tests create QApplication instance via `_ensure_qapp()` helper or `QApplication.instance() or QApplication([])`
-- **Mocking**: Use `unittest.mock.patch` for GUI components and state managers
-- Unit tests use pytest with PyQt6 fixtures
-- `_can_import_pyqt6()` function checks if PyQt6 is available, tests are skipped if not
-- `_ensure_qapp()` returns `QApplication.instance() or QApplication([])`
-- Mock state manager using `MagicMock(spec=StateManager)` or real StateManager with temp DB
-- Mock MainWindow with patched `_start_refresh_timer` and `_refresh` methods
-- Button click tests: `btn.click()` triggers connected signals
-- Signal tests: Connect test lambdas to signals and verify they receive expected values
-- Button state tests verify enabled/disabled states after state transitions
-- Metadata tests verify round-trip serialization and preservation of non-form fields
-- Integration tests use temporary directories (`tmp_path` fixture) for file operations
-- Tests for project settings use `load_settings(project_path=tmp_path)` pattern
-- Config files created as `tmp_path / "levelup.yaml"` with YAML content
-- Auto-approve tests in `test_gui_ticket_metadata.py` verify checkbox behavior
-- Terminal scrollback tests located at `tests/unit/test_terminal_scrollback_display.py` (display logic)
-- Terminal rendering tests located at `tests/unit/test_terminal_scrollback_rendering.py` (rendering details)
-- Terminal copy/selection tests use mock clipboard and simulate mouse/keyboard events
-- Test helper `_fill_history()` in scrollback tests writes lines to push content into history buffer
-- **Specific Test Files**:
-    - `tests/unit/test_ticket_sidebar_run_status_colors.py` - 40+ tests covering color logic
-- **Test Runner**: pytest with PyQt6 integration
-- **Test Dependencies**: Tests use PyQt6 and are skipped if not available
-- **Color Assertion Pattern**: Tests assert exact hex color values (e.g., `assert color == "#CDD6F4"`)
-- **Ticket Parsing Tests**: Cover all statuses, case-insensitivity, edge cases
-- **GUI Tests**: Verify widget initialization, theme updates, button states, metadata persistence
-- **Edge Cases Covered**:
-    - Invalid statuses/themes
-    - None/empty run status values
-    - Theme switching with preserved run status
-    - Multiple runs for same ticket
-    - Selection preservation during updates
-- Test files follow pattern: `test_<component>.py` or `test_<component>_<feature>.py`
-
-### Ticket Sidebar Widget Structure
-
-- **Location**: `src/levelup/gui/ticket_sidebar.py`
-- **Base Class**: `TicketSidebarWidget(QWidget)` - core sidebar implementation
-- **Signals**:
-    - `ticket_selected = pyqtSignal(int)` - emits ticket number when selected
-    - `create_ticket_clicked = pyqtSignal()` - emits when + button clicked
-- **Header Layout**: "Tickets" label + "+" button for creating new tickets
-- **List Widget**: `QListWidget` displaying tickets with status icons and colors
-- **State Variables**:
-    - `_tickets: list[Ticket]` - current ticket list
-    - `_current_theme: str` - "light" or "dark"
-    - `_run_status_map: dict[int, str]` - maps ticket number to run status
-- **Key Methods**:
-    - `set_tickets(tickets, run_status_map)` - updates ticket list, preserves selection
-    - `update_theme(theme)` - changes theme and re-renders colors
-    - `clear_selection()` - deselects any selected item
-    - `refresh()` - re-renders with current tickets
-- **Selection Preservation**: When `set_tickets()` is called, current selection is remembered by ticket number and restored after re-rendering
-- **Alias Class**: `TicketSidebar(TicketSidebarWidget)` - adds auto-loading from file when project_path provided
-
-### MainWindow Stacked Widget Pages
-
-- **Page Management**: `QStackedWidget` at `self._stack` holds multiple pages
-- **Current Pages** (indices 0-2):
-    - **Index 0**: Runs table (`QTableWidget`) - default view showing all pipeline runs
-    - **Index 1**: Ticket detail (`TicketDetailWidget`) - ticket form + terminal
-    - **Index 2**: Documentation viewer (`DocsWidget`) - markdown file browser
-- **Navigation Pattern**:
-    - Each page widget has `back_clicked = pyqtSignal()` signal
-    - MainWindow connects to `_on_<page>_back()` slots that call `self._stack.setCurrentIndex(0)` to return to runs table
-    - Sidebar selection cleared when navigating back
-- **Adding New Pages**:
-    - Create widget with back button and `back_clicked` signal
-    - Add to stack via `self._stack.addWidget(widget)` - returns new index
-    - Connect `back_clicked` signal to handler that sets index back to 0
-    - Add navigation method to switch to new page (clear sidebar selection, set index)
-
-### Key Conventions
-
-- Windows paths: Use `.replace("\\", "/")` in test assertions
-- Test classes named `Test*` (e.g. `TestResult`, `TestRunnerTool`) trigger pytest collection warnings (expected)
-- SQLite WAL mode for multi-process access
-- Git worktrees for concurrent runs at `~/.levelup/worktrees/<run_id>/`
-- Parent widgets pass theme to child widgets during construction
-- Theme updates propagate via `update_theme(theme)` method
-- Widget signals use PyQt6 `pyqtSignal` for inter-component communication
-- Form controls block signals during programmatic updates to avoid triggering dirty state
-- Object names set with `setObjectName()` for finding widgets in tests (e.g., "backBtn", "addTicketBtn")
-- Tooltips set with `setToolTip()` for user-facing hints
-
-### Existing Merge Skills
-
-- **rebase-merge** (`.claude/commands/rebase-merge.md`):
-    - Takes branch name as argument
-    - Rebases branch onto master, merges, deletes branch
-    - Aborts on conflicts with error message
-- **merge-to-master** (`.claude/commands/merge-to-master.md`):
-    - Merges current branch into master
-    - No rebase step
-    - Creates merge commit with `--no-ff`
-- **Note**: Both are CLI skills, not agents. They use simple git commands, no conflict resolution.
-
-### MergeAgent Implementation Requirements
-
-- **Agent Type**: Standalone agent (like ReconAgent) - does not inherit BaseAgent since it doesn't participate in TDD pipeline
-- **Execution Context**: Runs in main repository (project_path), not in worktree
-- **Input**: Retrieves branch_name from ticket metadata
-- **Git Operations Flow**:
-    1. Validate branch exists and has branch_name in metadata
-    2. `git checkout <branch>` to switch to feature branch
-    3. `git rebase master` to rebase onto latest master
-    4. If conflicts detected, enter intelligent resolution mode
-    5. `git checkout master` after successful rebase
-    6. `git merge <branch>` (fast-forward merge)
-    7. Optionally `git branch -d <branch>` to clean up
-- **Conflict Resolution**:
-    - Uses Read tool to examine conflict markers
-    - For project_context.md, intelligently merges Codebase Insights sections
-    - Uses Edit tool to resolve conflicts and remove markers
-    - `git add` resolved files
-    - `git rebase --continue` to proceed
-    - Handles multiple conflict rounds
-- **Error Handling**:
-    - Validates branch_name exists in metadata
-    - Validates git branch exists
-    - Aborts rebase if conflicts cannot be auto-resolved
-    - Returns descriptive errors without leaving partial state
-- **GUI Integration**:
-    - Add "Merge" button to RunTerminalWidget header (alongside Run/Terminate/etc.)
-    - Button enabled when: ticket status is "done" AND branch_name exists in metadata AND not currently running
-    - Clicking spawns MergeAgent with terminal output displayed
-    - On success, calls `set_ticket_status(TicketStatus.MERGED)`
-    - Status update triggers ticket sidebar refresh
-
-### Hotkey Implementation Strategy
-
-Based on existing patterns, keyboard shortcuts should be implemented using:
-1. **QShortcut** instances created in MainWindow.__init__() after UI is built
-2. **HotkeySettings** Pydantic model in config/settings.py for keybinding storage
-3. **Platform-aware defaults**: Use "Ctrl" prefix that Qt automatically translates to Cmd on macOS
-4. **Keybinding persistence**: Save to GUISettings in levelup.yaml config file
-5. **Settings UI**: New widget or dialog for customizing keybindings (similar to ticket_detail.py pattern)
-6. **Testing**: Create test_gui_hotkeys.py with tests for each hotkey action
-
-### Image/Asset Handling
-
-- **Current State**: No existing image handling infrastructure
-- **Markdown Storage**: Tickets stored in plain markdown files (`levelup/tickets.md`)
-- **Description Field**: Currently plain text only (no images, no rich text)
-- **Asset Directory**: Project has one screenshot (`gui-initial.png`) but no dedicated assets folder
-- **Potential Storage Locations**:
-    - `levelup/assets/` or `levelup/ticket-assets/` - new directory for ticket images
-    - Base64 encoding in markdown (standard markdown approach)
-    - External file references with relative paths in markdown
-
-### PyQt6 Rich Text Support
-
-- **QTextEdit vs QPlainTextEdit**:
-    - `QPlainTextEdit`: Plain text only, no formatting, no images (currently used)
-    - `QTextEdit`: Supports rich text HTML, images, formatting
-- **Image Handling in QTextEdit**:
-    - Images can be embedded via HTML `<img>` tags with local file paths or data URIs
-    - `insertFromMimeData()` handles clipboard paste operations
-    - `toHtml()` / `setHtml()` for HTML↔widget conversion
-    - `toPlainText()` / `setPlainText()` for plain text access
-    - `document().addResource()` to manage embedded images
-- **Markdown Conversion**:
-    - Project uses `mistune>=3.0.0` for markdown→HTML (see `docs_widget.py`)
-    - Need bidirectional conversion: HTML (QTextEdit) ↔ Markdown (storage)
-    - Markdown image syntax: `![alt text](path/to/image.png)`
-
-### Ticket Deletion and Cleanup Patterns
-
-- **Deletion Flow** (see `main_window.py:_on_ticket_deleted()`):
-    1. Clean up associated run and git worktree if exists
-    2. Call `delete_ticket()` from `core/tickets.py` to remove from markdown file
-    3. Refresh ticket list and navigate back to main view
-- **Asset Cleanup**: Currently no asset cleanup logic (will need to add for images)
-- **Path Resolution**: Project path passed to widgets via `set_project_context()`
-- **File Operations**: All ticket file operations use `Path.read_text()` / `Path.write_text()`
-
-### Markdown Parsing and Serialization
-
-- **Parser**: Custom parser in `tickets.py` (not using mistune for parsing)
-- **Description Storage**: Currently stored as plain text string in `Ticket.description`
-- **Metadata Storage**: YAML in HTML comments (`<!--metadata ... -->`)
-- **Code Block Handling**: Parser tracks fenced code blocks to avoid false ticket detection
-- **Line Ending Preservation**: Parser preserves original line endings (CRLF/LF)
-- **Update Pattern**: Read entire file, modify relevant sections, write back atomically
-
-### Ticket Sidebar Filtering
-
-- **Filter State**: Sidebar needs to maintain filter state for merged ticket visibility
-- **Default Behavior**: Merged tickets hidden by default from main sidebar list
-- **Toggle Control**: Checkbox or toggle button in sidebar header to show/hide merged tickets
-- **Filter Logic**: Applied in `set_tickets()` method or new filter method
-- **Statuses Shown by Default**: pending, in progress, done (merged hidden)
-- **Selection Preservation**: If selected ticket is filtered out, selection should be cleared or moved to nearest visible ticket
-- **Theme Integration**: Filtered tickets should respect theme colors when shown
-- **Run Status Integration**: Filtered tickets should still show correct colors based on run status when visible

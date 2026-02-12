@@ -11,3 +11,10 @@ Users should be able to review changes from within the LevelUp GUI. Changes shou
 ## Step: detect  (17:50:44)
 
 See `levelup/project_context.md` for project details.
+## Step: requirements  (17:53:02)
+
+**Summary:** Add a rich diff view widget to the LevelUp GUI that allows users to review code changes from pipeline runs on a per-commit basis (individual steps) or for the entire branch, with live updates during active runs
+- 8 requirement(s)
+- 5 assumption(s)
+- 7 out-of-scope item(s)
+- **Usage:** 135.2s

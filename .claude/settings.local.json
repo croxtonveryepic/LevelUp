@@ -46,7 +46,13 @@
       "Bash(while read f)",
       "Bash(do echo \"$f\")",
       "Bash(done)",
-      "WebFetch(domain:developer.atlassian.com)"
+      "WebFetch(domain:developer.atlassian.com)",
+      "Bash(QT_QPA_PLATFORM=offscreen .venv/Scripts/python.exe -m pytest:*)",
+      "Bash(xxd:*)",
+      "Bash(# Modify the combined file to have a simpler test\ncat tests/unit/test_ticket_sidebar_filtering.py > /tmp/test_combined2.py\ncat >> /tmp/test_combined2.py << 'PYEOF'\n\n\n@pytest.mark.skipif\\(not _can_import_pyqt6\\(\\), reason=\"PyQt6 not available\"\\)\nclass TestJiraBtnSimple:\n    def test_jira_button_attr\\(self\\):\n        _ensure_qapp\\(\\)\n        from levelup.gui.ticket_sidebar import TicketSidebarWidget\n        widget = TicketSidebarWidget\\(\\)\n        assert hasattr\\(widget, '_jira_btn'\\)\nPYEOF\ncp /tmp/test_combined2.py tests/unit/test_gui_jira_copy_test.py\n.venv/Scripts/python.exe -m pytest tests/unit/test_gui_jira_copy_test.py::TestJiraBtnSimple -v 2>&1)",
+      "Bash(/tmp/test_narrow.py << 'PYEOF'\n\n\n@pytest.mark.skipif\\(not _can_import_pyqt6\\(\\), reason=\"PyQt6 not available\"\\)\nclass TestJiraBtnSimple:\n    def test_qapp\\(self\\):\n        _ensure_qapp\\(\\)\n        assert True\nPYEOF)",
+      "Bash(/tmp/test_narrow2.py << 'PYEOF'\n\n\n@pytest.mark.skipif\\(not _can_import_pyqt6\\(\\), reason=\"PyQt6 not available\"\\)\nclass TestJiraBtnSimple:\n    def test_widget_create\\(self\\):\n        _ensure_qapp\\(\\)\n        from levelup.gui.ticket_sidebar import TicketSidebarWidget\n        widget = TicketSidebarWidget\\(\\)\n        assert widget is not None\nPYEOF)",
+      "Bash(git stash:*)"
     ]
   }
 }

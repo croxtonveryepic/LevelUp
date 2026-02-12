@@ -17,6 +17,7 @@ class TicketSidebarWidget(QWidget):
 
     ticket_selected = pyqtSignal(int)  # emits ticket number
     create_ticket_clicked = pyqtSignal()
+    jira_import_clicked = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None, theme: str = "dark") -> None:
         super().__init__(parent)
@@ -40,6 +41,13 @@ class TicketSidebarWidget(QWidget):
         add_btn.setToolTip("Create new ticket")
         add_btn.clicked.connect(lambda: self.create_ticket_clicked.emit())
         header_layout.addWidget(add_btn)
+
+        self._jira_btn = QPushButton("J")
+        self._jira_btn.setObjectName("jiraImportBtn")
+        self._jira_btn.setToolTip("Import tickets from Jira")
+        self._jira_btn.clicked.connect(lambda: self.jira_import_clicked.emit())
+        self._jira_btn.setVisible(False)
+        header_layout.addWidget(self._jira_btn)
 
         layout.addLayout(header_layout)
 
@@ -153,6 +161,18 @@ class TicketSidebarWidget(QWidget):
         """Refresh the ticket list (alias for updating with current tickets)."""
         # Re-render with current tickets
         self.set_tickets(self._tickets)
+
+    def set_jira_enabled(self, enabled: bool) -> None:
+        """Show or hide the Jira import button."""
+        self._jira_btn.setVisible(enabled)
+
+    def set_jira_importing(self, importing: bool) -> None:
+        """Disable the Jira button and update tooltip during import."""
+        self._jira_btn.setEnabled(not importing)
+        if importing:
+            self._jira_btn.setToolTip("Importing from Jira...")
+        else:
+            self._jira_btn.setToolTip("Import tickets from Jira")
 
 
 class TicketSidebar(TicketSidebarWidget):

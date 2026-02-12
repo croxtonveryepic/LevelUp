@@ -350,6 +350,26 @@ QPushButton#addProjectBtn {
 QPushButton#addProjectBtn:hover {
     background-color: #27AE60;
 }
+QPushButton#jiraImportBtn {
+    background-color: #4A90D9;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 4px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    font-size: 14px;
+    font-weight: bold;
+}
+QPushButton#jiraImportBtn:hover {
+    background-color: #3A7BC8;
+}
+QPushButton#jiraImportBtn:disabled {
+    background-color: #45475A;
+    color: #6C7086;
+}
 """
 
 LIGHT_THEME = """
@@ -699,6 +719,26 @@ QPushButton#addProjectBtn {
 }
 QPushButton#addProjectBtn:hover {
     background-color: #229954;
+}
+QPushButton#jiraImportBtn {
+    background-color: #3498DB;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 4px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    font-size: 14px;
+    font-weight: bold;
+}
+QPushButton#jiraImportBtn:hover {
+    background-color: #2980B9;
+}
+QPushButton#jiraImportBtn:disabled {
+    background-color: #E5E9F0;
+    color: #A0A8B8;
 }
 """
 

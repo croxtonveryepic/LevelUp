@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -50,8 +50,8 @@ class HotkeySettings(BaseModel):
     open_documentation: str = "F1"
     focus_terminal: str = "Ctrl+`"
 
-    # Human-readable action descriptions
-    ACTION_DESCRIPTIONS: dict[str, str] = {
+    # Human-readable action descriptions (class variable, not a model field)
+    ACTION_DESCRIPTIONS: ClassVar[dict[str, str]] = {
         "next_waiting_ticket": "Next waiting ticket",
         "back_to_runs": "Back to runs",
         "toggle_theme": "Toggle theme",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QThread, QTimer, Qt
 from PyQt6.QtGui import QAction, QColor, QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -46,6 +46,60 @@ from levelup.state.models import RunRecord
 REFRESH_INTERVAL_MS = 2000
 COLUMNS = ["Run ID", "Task", "Project", "Status", "Tokens", "Step", "Started"]
 
+JIRA_IMPORT_JQL = "assignee = currentUser() AND statusCategory != Done"
+
+
+class _JiraImportThread(QThread):
+    """Background thread for importing Jira tickets."""
+
+    from PyQt6.QtCore import pyqtSignal as _signal
+
+    finished = _signal(list, list)  # (imported_tickets, warnings)
+    error = _signal(str)
+
+    def __init__(
+        self,
+        jira_url: str,
+        jira_email: str,
+        jira_token: str,
+        project_path: str,
+        db_path: str,
+    ) -> None:
+        super().__init__()
+        self._jira_url = jira_url
+        self._jira_email = jira_email
+        self._jira_token = jira_token
+        self._project_path = project_path
+        self._db_path = db_path
+
+    def run(self) -> None:
+        try:
+            from levelup.integrations.jira import (
+                JiraAuthError,
+                JiraClient,
+                JiraConnectionError,
+                JiraNotFoundError,
+                import_jira_issues_by_jql,
+            )
+
+            client = JiraClient(self._jira_url, self._jira_email, self._jira_token)
+            imported, warnings = import_jira_issues_by_jql(
+                client,
+                JIRA_IMPORT_JQL,
+                Path(self._project_path),
+                db_path=Path(self._db_path),
+                max_results=50,
+            )
+            self.finished.emit(imported, warnings)
+        except JiraAuthError as exc:
+            self.error.emit(f"Jira authentication failed: {exc}")
+        except JiraConnectionError as exc:
+            self.error.emit(f"Cannot connect to Jira: {exc}")
+        except JiraNotFoundError as exc:
+            self.error.emit(f"Jira resource not found: {exc}")
+        except Exception as exc:
+            self.error.emit(f"Jira import error: {exc}")
+
 
 class MainWindow(QMainWindow):
     """Dashboard window showing all LevelUp runs and tickets."""
@@ -65,6 +119,7 @@ class MainWindow(QMainWindow):
         self._checkpoint_dialog_open = False
         self._cached_tickets: list = []
         self._shortcuts: list[QShortcut] = []
+        self._jira_import_thread: _JiraImportThread | None = None
 
         # Load settings including hotkeys
         self._hotkey_settings = HotkeySettings()
@@ -182,6 +237,8 @@ class MainWindow(QMainWindow):
         self._sidebar.setMaximumWidth(400)
         self._sidebar.ticket_selected.connect(self._on_ticket_selected)
         self._sidebar.create_ticket_clicked.connect(self._on_create_ticket)
+        self._sidebar.jira_import_clicked.connect(self._on_jira_import)
+        self._update_jira_button_visibility()
         splitter.addWidget(self._sidebar)
 
         # Right: stacked widget (page 0 = runs table, page 1 = ticket detail)
@@ -316,6 +373,7 @@ class MainWindow(QMainWindow):
         else:
             self.setWindowTitle("LevelUp Dashboard")
 
+        self._update_jira_button_visibility()
         self._refresh()
 
     def _start_refresh_timer(self) -> None:
@@ -824,9 +882,80 @@ class MainWindow(QMainWindow):
             self._refresh()
 
     def closeEvent(self, event: object) -> None:
-        """Clean up all PTY shells before closing."""
+        """Clean up all PTY shells and background threads before closing."""
+        if self._jira_import_thread is not None and self._jira_import_thread.isRunning():
+            self._jira_import_thread.wait(3000)
         self._detail.cleanup_all_terminals()
         super().closeEvent(event)  # type: ignore[arg-type]
+
+    # -- Jira import --------------------------------------------------------
+
+    def _is_jira_configured(self) -> bool:
+        """Check if Jira credentials are fully configured."""
+        try:
+            settings = load_settings(project_path=self._project_path)
+            jira = settings.jira
+            return bool(jira.url and jira.email and jira.token)
+        except Exception:
+            return False
+
+    def _update_jira_button_visibility(self) -> None:
+        """Show or hide the Jira import button based on config."""
+        self._sidebar.set_jira_enabled(self._is_jira_configured())
+
+    def _on_jira_import(self) -> None:
+        """Start a Jira import in a background thread."""
+        if self._project_path is None:
+            return
+        if self._jira_import_thread is not None and self._jira_import_thread.isRunning():
+            return
+
+        try:
+            settings = load_settings(project_path=self._project_path)
+            jira = settings.jira
+            if not (jira.url and jira.email and jira.token):
+                QMessageBox.warning(
+                    self, "Jira Not Configured",
+                    "Jira credentials are not fully configured.\n"
+                    "Set url, email, and token in levelup.yaml or environment variables.",
+                )
+                return
+        except Exception as e:
+            QMessageBox.critical(self, "Settings Error", f"Failed to load settings: {e}")
+            return
+
+        self._sidebar.set_jira_importing(True)
+
+        self._jira_import_thread = _JiraImportThread(
+            jira_url=jira.url,
+            jira_email=jira.email,
+            jira_token=jira.token,
+            project_path=str(self._project_path),
+            db_path=self._db_path,
+        )
+        self._jira_import_thread.finished.connect(self._on_jira_import_finished)
+        self._jira_import_thread.error.connect(self._on_jira_import_error)
+        self._jira_import_thread.start()
+
+    def _on_jira_import_finished(self, imported: list, warnings: list) -> None:
+        """Handle successful Jira import."""
+        self._sidebar.set_jira_importing(False)
+        self._refresh_tickets()
+
+        parts = []
+        if imported:
+            parts.append(f"Imported {len(imported)} ticket(s).")
+        if warnings:
+            parts.append(f"{len(warnings)} skipped/warning(s):\n" + "\n".join(warnings))
+        if not imported and not warnings:
+            parts.append("No new tickets to import.")
+
+        QMessageBox.information(self, "Jira Import", "\n\n".join(parts))
+
+    def _on_jira_import_error(self, msg: str) -> None:
+        """Handle Jira import failure."""
+        self._sidebar.set_jira_importing(False)
+        QMessageBox.critical(self, "Jira Import Error", msg)
 
     # -- Hotkey methods -----------------------------------------------------
 

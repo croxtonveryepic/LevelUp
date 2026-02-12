@@ -222,6 +222,19 @@ Configure GitHub Actions.
 
 The `--ticket-next` / `-T` flag on `levelup run` auto-picks the next pending ticket and marks it in progress. On successful pipeline completion, the ticket is automatically marked as done.
 
+### `levelup make-tickets` — Import tickets from markdown
+
+Import tickets from a markdown file into the database. By default reads `levelup/tickets.md` and deletes it after a successful import. Pass an explicit filename to import from any file (which is kept after import).
+
+```bash
+levelup make-tickets                       # import from levelup/tickets.md (deleted after)
+levelup make-tickets path/to/backlog.md    # import from a specific file (kept)
+levelup make-tickets --path /project       # specify project path
+levelup make-tickets --db-path /tmp/s.db   # custom state DB
+```
+
+Ticket statuses (`[in progress]`, `[done]`, `[merged]`) and `<!--metadata … -->` blocks are preserved during import.
+
 ### `levelup detect` — Detect project info
 
 Analyzes a project directory and reports what it found. Useful for verifying detection before running the full pipeline.

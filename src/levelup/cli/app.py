@@ -954,6 +954,53 @@ def tickets(
 
 
 @app.command()
+def make_tickets(
+    filename: Optional[str] = typer.Argument(None, help="Markdown file to import (default: levelup/tickets.md)"),
+    path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
+    db_path: Optional[Path] = typer.Option(None, "--db-path", help="Override state DB path"),
+) -> None:
+    """Import tickets from a markdown file into the database."""
+    from levelup.core.tickets import (
+        TicketStatus,
+        add_ticket,
+        get_tickets_path,
+        parse_tickets,
+        set_ticket_status,
+    )
+
+    used_default = filename is None
+    file_path = get_tickets_path(path, filename)
+
+    if not file_path.exists():
+        print_error(f"File not found: {file_path}")
+        raise typer.Exit(1)
+
+    text = file_path.read_text(encoding="utf-8")
+    parsed = parse_tickets(text)
+
+    if not parsed:
+        console.print("[dim]No tickets found in file.[/dim]")
+        return
+
+    for ticket in parsed:
+        created = add_ticket(
+            path,
+            ticket.title,
+            ticket.description,
+            metadata=ticket.metadata,
+            db_path=db_path,
+        )
+        if ticket.status != TicketStatus.PENDING:
+            set_ticket_status(path, created.number, ticket.status, db_path=db_path)
+
+    console.print(f"[green]Imported {len(parsed)} ticket(s) from {file_path}[/green]")
+
+    if used_default:
+        file_path.unlink()
+        console.print(f"[dim]Deleted {file_path}[/dim]")
+
+
+@app.command()
 def recon(
     path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path to explore"),
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Claude model to use"),

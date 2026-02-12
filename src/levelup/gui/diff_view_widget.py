@@ -473,6 +473,9 @@ class DiffViewWidget(QWidget):
             self._load_context()
             if self._context:
                 self._display_diff()
+        elif run_id and not state_manager:
+            # Run ID provided but no state manager - show error
+            self._show_error("No state manager available for loading run context")
 
     def _build_ui(self) -> None:
         """Build the widget UI."""
@@ -516,6 +519,8 @@ class DiffViewWidget(QWidget):
         if not self._run_id or not self._state_manager:
             # Still populate empty selector if context is None
             self._populate_step_selector()
+            # Show info message when no run is selected
+            self._show_info("No run selected")
             return
 
         try:
@@ -548,6 +553,8 @@ class DiffViewWidget(QWidget):
 
     def _populate_step_selector(self) -> None:
         """Populate the step selector with available steps."""
+        # Block signals while repopulating to avoid triggering _on_step_changed
+        self._step_selector.blockSignals(True)
         self._step_selector.clear()
 
         # Add "All Changes" option
@@ -565,6 +572,9 @@ class DiffViewWidget(QWidget):
                 if self._step_selector.itemData(i) == self._step_name:
                     self._step_selector.setCurrentIndex(i)
                     break
+
+        # Re-enable signals
+        self._step_selector.blockSignals(False)
 
     def _on_step_changed(self, text: str) -> None:
         """Handle step selector change."""
@@ -618,7 +628,10 @@ class DiffViewWidget(QWidget):
 
         # Get step commit SHA
         if self._step_name not in self._context.step_commits:
-            self._show_error(f"No commit found for step: {self._step_name}")
+            # Show error message for missing step
+            html_content = f'<div class="error-message"><strong>Error:</strong> No commit found for step: {html.escape(self._step_name)}</div>'
+            full_html = _wrap_html(html_content, self._theme)
+            self._browser.setHtml(full_html)
             return
 
         step_sha = self._context.step_commits[self._step_name]

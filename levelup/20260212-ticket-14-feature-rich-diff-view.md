@@ -56,3 +56,21 @@ Wrote 1 file(s):
 
 Step `security` completed.
 - **Usage:** 66.8s
+### Checkpoint: security
+
+- **Decision:** auto-approved
+## Step: review  (18:18:09)
+
+Found 12 issue(s):
+- [WARNING] `src/levelup/gui/diff_view_widget.py`: PipelineStatus is imported but never used in the implementation
+- [WARNING] `src/levelup/gui/diff_view_widget.py`: Path is imported but never used in the implementation
+- [WARNING] `src/levelup/gui/diff_view_widget.py`: Empty except block that re-raises without adding context - exception 'e' is caught but not used
+- [WARNING] `src/levelup/gui/diff_view_widget.py`: get_parent_sha() doesn't handle exceptions - will crash if git operation fails
+- [WARNING] `src/levelup/gui/diff_view_widget.py`: get_branch_head() doesn't handle exceptions - will crash if branch doesn't exist
+- [INFO] `src/levelup/gui/diff_view_widget.py`: Redundant git.Repo() instantiation in get_diff_stats() - repo is created twice
+- [INFO] `src/levelup/gui/diff_view_widget.py`: Nested try-except blocks make control flow hard to follow
+- [INFO] `src/levelup/gui/diff_view_widget.py`: Type ignore comments (# type: ignore) used without specific error codes
+- [INFO] `src/levelup/gui/diff_view_widget.py`: Git command execution with user-provided commit SHAs
+- [INFO] `src/levelup/gui/diff_view_widget.py`: Hardcoded pipeline step order could get out of sync with actual pipeline
+- [INFO] `src/levelup/gui/diff_view_widget.py`: Exception catching is too broad - catches both IndexError and AttributeError when looking for branch
+- [INFO] `src/levelup/gui/diff_view_widget.py`: Long HTML string building could benefit from a template approach

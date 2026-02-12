@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import Mock, patch
 from PyQt6.QtGui import QColor
+import pytest
 
+pytestmark = pytest.mark.regression
 
 class TestTerminalEmulatorThemeSupport:
     """Test that terminal emulator supports dynamic theme switching."""

@@ -10,6 +10,7 @@ import yaml
 from levelup.config.loader import load_settings
 from levelup.config.settings import GUISettings, LevelUpSettings
 
+pytestmark = pytest.mark.regression
 
 class TestGUISettings:
     """Test GUISettings model."""

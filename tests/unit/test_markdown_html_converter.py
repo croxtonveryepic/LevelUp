@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pathlib import Path
 
+pytestmark = pytest.mark.regression
 
 class TestMarkdownToHtml:
     """Test converting markdown to HTML for QTextEdit display."""

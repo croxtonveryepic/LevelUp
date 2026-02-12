@@ -5,7 +5,9 @@ from __future__ import annotations
 from unittest.mock import Mock, patch
 
 from PyQt6.QtWidgets import QApplication
+import pytest
 
+pytestmark = pytest.mark.regression
 
 class TestThemeManagerModule:
     """Test that theme manager module exists and has required functions."""

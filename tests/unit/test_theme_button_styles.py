@@ -1,7 +1,9 @@
 """Tests for theme button styling in both light and dark themes."""
 
 from __future__ import annotations
+import pytest
 
+pytestmark = pytest.mark.regression
 
 class TestThemeButtonDarkThemeStyles:
     """Test that theme button has proper styles in dark theme."""

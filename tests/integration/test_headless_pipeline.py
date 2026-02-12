@@ -24,6 +24,8 @@ from levelup.core.context import (
 from levelup.core.orchestrator import Orchestrator
 from levelup.state.manager import StateManager
 
+pytestmark = pytest.mark.regression
+
 
 def _make_settings(tmp_path: Path) -> LevelUpSettings:
     return LevelUpSettings(

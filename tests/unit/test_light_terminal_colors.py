@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from PyQt6.QtGui import QColor
+import pytest
 
+pytestmark = pytest.mark.regression
 
 class TestLightTerminalColorsClass:
     """Test that LightTerminalColors class exists and is properly defined."""

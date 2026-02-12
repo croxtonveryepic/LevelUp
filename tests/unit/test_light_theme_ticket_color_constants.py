@@ -10,7 +10,9 @@ has been updated correctly with the new pending color value:
 """
 
 from __future__ import annotations
+import pytest
 
+pytestmark = pytest.mark.regression
 
 class TestLightTicketStatusColorsDictStructure:
     """Test _LIGHT_TICKET_STATUS_COLORS dict structure and contents."""

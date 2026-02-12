@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
+import pytest
 
+pytestmark = pytest.mark.regression
 
 class TestAppThemeInitialization:
     """Test that app.py applies theme on startup."""

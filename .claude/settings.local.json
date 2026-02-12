@@ -40,7 +40,12 @@
       "Bash(C:/Users/jccvae/LevelUp/.venv/Scripts/python.exe -m pytest:*)",
       "Bash(.venv\\\\Scripts\\\\python.exe -m uv pip install:*)",
       "mcp__playwright__browser_take_screenshot",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(python.exe -m pytest:*)",
+      "Bash(python.exe:*)",
+      "Bash(while read f)",
+      "Bash(do echo \"$f\")",
+      "Bash(done)"
     ]
   }
 }

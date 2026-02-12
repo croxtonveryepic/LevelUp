@@ -8,6 +8,7 @@ import pytest
 
 from levelup.core.tickets import add_ticket, delete_ticket
 
+pytestmark = pytest.mark.regression
 
 class TestTicketDeletionCleanup:
     """Test that delete_ticket cleans up associated images."""

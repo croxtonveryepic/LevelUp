@@ -7,6 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+pytestmark = pytest.mark.regression
+
 pytest.importorskip("PyQt6")
 
 from PyQt6.QtCore import QMimeData

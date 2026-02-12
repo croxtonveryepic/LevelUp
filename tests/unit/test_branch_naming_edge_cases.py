@@ -17,6 +17,8 @@ from levelup.core.project_context import (
     write_project_context_preserving,
 )
 
+pytestmark = pytest.mark.regression
+
 
 # ---------------------------------------------------------------------------
 # Helpers

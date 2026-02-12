@@ -9,6 +9,7 @@ import pytest
 
 from levelup.gui.run_terminal import build_run_command, build_resume_command
 
+pytestmark = pytest.mark.regression
 
 def _can_import_pyqt6() -> bool:
     try:

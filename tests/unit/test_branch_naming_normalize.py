@@ -6,6 +6,7 @@ import pytest
 
 from levelup.core.branch_naming import normalize_branch_convention
 
+pytestmark = pytest.mark.regression
 
 class TestPassthrough:
     """Existing {placeholder} patterns return unchanged."""

@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.regression
+
 # GUI tests require PyQt6
 pytest.importorskip("PyQt6")
 

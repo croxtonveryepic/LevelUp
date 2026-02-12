@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.regression
 
 def _can_import_pyqt6() -> bool:
     try:

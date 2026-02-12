@@ -15,6 +15,7 @@ import pytest
 
 from levelup.core.tickets import add_ticket
 
+pytestmark = pytest.mark.regression
 
 def _can_import_pyqt6() -> bool:
     """Check if PyQt6 is available."""

@@ -22,6 +22,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytestmark = pytest.mark.regression
+
 # Skip all tests if PyQt6 not available
 pytest.importorskip("PyQt6")
 

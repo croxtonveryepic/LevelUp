@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import Mock, patch
+import pytest
 
+pytestmark = pytest.mark.regression
 
 class TestThemeSwitcherControl:
     """Test that theme switcher control exists in main window."""

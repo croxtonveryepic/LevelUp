@@ -7,6 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.regression
+
 # GUI tests require PyQt6
 pytest.importorskip("PyQt6")
 

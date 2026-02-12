@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pytest
 
+pytestmark = pytest.mark.regression
 
 class TestPendingTicketLightModeColorContrast:
     """Test pending ticket color meets WCAG AA contrast requirements in light mode."""

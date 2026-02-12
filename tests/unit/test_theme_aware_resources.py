@@ -1,7 +1,9 @@
 """Tests for theme-aware color resources in gui/resources.py."""
 
 from __future__ import annotations
+import pytest
 
+pytestmark = pytest.mark.regression
 
 class TestThemeAwareStatusColors:
     """Test that status colors work in both light and dark themes."""

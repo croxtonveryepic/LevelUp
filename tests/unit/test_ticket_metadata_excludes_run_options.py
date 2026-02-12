@@ -28,6 +28,8 @@ from levelup.core.tickets import (
     update_ticket,
 )
 
+pytestmark = pytest.mark.regression
+
 
 # ---------------------------------------------------------------------------
 # AC: Ticket metadata excludes run options

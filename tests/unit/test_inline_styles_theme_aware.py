@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import Mock, patch
+import pytest
 
+pytestmark = pytest.mark.regression
 
 class TestTicketDetailInlineStyles:
     """Test that ticket_detail.py inline styles are theme-aware."""

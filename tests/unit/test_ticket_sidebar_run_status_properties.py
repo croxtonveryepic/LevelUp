@@ -13,6 +13,7 @@ import random
 
 import pytest
 
+pytestmark = pytest.mark.regression
 
 def _can_import_pyqt6() -> bool:
     """Check if PyQt6 is available."""

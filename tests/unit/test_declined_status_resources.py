@@ -1,7 +1,9 @@
 """Unit tests for declined status colors and icons in GUI resources."""
 
 from __future__ import annotations
+import pytest
 
+pytestmark = pytest.mark.regression
 
 class TestDeclinedStatusColors:
     """Test that declined status has proper color definitions."""

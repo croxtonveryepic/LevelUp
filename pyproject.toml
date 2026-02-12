@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "levelup"
-version = "1.0.14"
+version = "1.0.15"
 description = "AI-Powered TDD Development Tool"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -53,6 +53,10 @@ packages = ["src/levelup"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "smoke: Core functionality tests run during development",
+    "regression: Exhaustive edge-case, theme, accessibility, and stress tests",
+]
 
 [tool.ruff]
 src = ["src"]

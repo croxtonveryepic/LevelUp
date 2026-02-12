@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.regression
+
 pytest.importorskip("PyQt6")
 
 from PyQt6.QtCore import QMimeData

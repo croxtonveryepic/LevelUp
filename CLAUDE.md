@@ -15,6 +15,8 @@ LevelUp is an AI-Powered TDD Development Tool (Python CLI). It orchestrates Clau
 - **Python:** 3.13, Windows
 - **Install:** `python -m uv pip install -e ".[dev]" --python .venv/Scripts/python.exe`
 - **Run tests:** `.venv/Scripts/python.exe -m pytest tests/ -v`
+- **Smoke tests:** `.venv/Scripts/python.exe -m pytest tests/ -m smoke -v` (~1-2 min)
+- **Regression tests:** `.venv/Scripts/python.exe -m pytest tests/ -m regression -v` (~10-20 min)
 - **Type check:** `.venv/Scripts/python.exe -m mypy src/`
 - **Lint:** `.venv/Scripts/python.exe -m ruff check src/`
 

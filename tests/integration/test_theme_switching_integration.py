@@ -6,7 +6,9 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import tempfile
 import yaml
+import pytest
 
+pytestmark = pytest.mark.regression
 
 class TestThemeSwitchingEndToEnd:
     """Test complete theme switching workflow from UI to persistence."""

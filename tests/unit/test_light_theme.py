@@ -5,7 +5,9 @@ from __future__ import annotations
 import re
 
 from levelup.gui.styles import LIGHT_THEME
+import pytest
 
+pytestmark = pytest.mark.regression
 
 class TestLightThemeExists:
     """Test that LIGHT_THEME constant is defined."""

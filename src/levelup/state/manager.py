@@ -340,16 +340,11 @@ class StateManager:
     # -- Project CRUD -------------------------------------------------------
 
     def list_known_projects(self) -> list[str]:
-        """Return all known project paths from projects, runs, and tickets tables."""
+        """Return explicitly registered project paths."""
         conn = self._conn()
         try:
             rows = conn.execute(
-                """SELECT project_path FROM projects
-                   UNION
-                   SELECT DISTINCT project_path FROM runs
-                   UNION
-                   SELECT DISTINCT project_path FROM tickets
-                   ORDER BY project_path"""
+                "SELECT project_path FROM projects ORDER BY project_path"
             ).fetchall()
             return [row[0] for row in rows]
         finally:

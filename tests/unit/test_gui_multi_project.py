@@ -165,7 +165,8 @@ class TestListKnownProjects:
         assert "/a" in projects
         assert "/b" in projects
 
-    def test_from_runs_table(self, mgr: StateManager, db_path: Path) -> None:
+    def test_runs_not_auto_detected(self, mgr: StateManager, db_path: Path) -> None:
+        """Projects with only runs (not explicitly added) should NOT appear."""
         conn = get_connection(db_path)
         try:
             conn.execute(
@@ -175,30 +176,12 @@ class TestListKnownProjects:
             conn.commit()
         finally:
             conn.close()
-        assert "/from/runs" in mgr.list_known_projects()
+        assert "/from/runs" not in mgr.list_known_projects()
 
-    def test_from_tickets_table(self, mgr: StateManager, db_path: Path) -> None:
+    def test_tickets_not_auto_detected(self, mgr: StateManager, db_path: Path) -> None:
+        """Projects with only tickets (not explicitly added) should NOT appear."""
         mgr.add_ticket("/from/tickets", "Test ticket")
-        assert "/from/tickets" in mgr.list_known_projects()
-
-    def test_deduplication(self, mgr: StateManager, db_path: Path) -> None:
-        """Same project_path in multiple tables should appear only once."""
-        shared_path = "/shared/project"
-        mgr.add_project(shared_path)
-        mgr.add_ticket(shared_path, "Test ticket")
-        conn = get_connection(db_path)
-        try:
-            conn.execute(
-                """INSERT INTO runs (run_id, task_title, project_path, status, started_at, updated_at)
-                   VALUES ('r1', 'task', ?, 'completed', datetime('now'), datetime('now'))""",
-                (shared_path,),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-        projects = mgr.list_known_projects()
-        assert projects.count(shared_path) == 1
+        assert "/from/tickets" not in mgr.list_known_projects()
 
     def test_sorted_order(self, mgr: StateManager) -> None:
         mgr.add_project("/z")

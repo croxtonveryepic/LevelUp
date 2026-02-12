@@ -268,8 +268,9 @@ class TestAnthropicSDKBackendTokenFields:
         assert result.num_turns == 2
 
     def test_cost_usd_defaults_to_zero(self):
-        """AnthropicSDKBackend does not set cost_usd (it comes from token counts)."""
+        """AnthropicSDKBackend calculates cost_usd from token counts."""
         mock_llm = MagicMock(spec=LLMClient)
+        mock_llm._model = "claude-sonnet-4-5-20250929"
         mock_llm.run_tool_loop.return_value = ToolLoopResult(
             text="ok", input_tokens=100, output_tokens=50, num_turns=1,
         )
@@ -285,7 +286,11 @@ class TestAnthropicSDKBackendTokenFields:
             working_directory="/tmp",
         )
 
-        assert result.cost_usd == 0.0
+        # Cost should be calculated from token usage
+        # Input: 100 * ($3.00 / 1M) = $0.0003
+        # Output: 50 * ($15.00 / 1M) = $0.00075
+        # Total: $0.00105
+        assert result.cost_usd == pytest.approx(0.00105, abs=0.000001)
 
     def test_maps_tool_names_correctly(self):
         """Allowed tools should be mapped from Claude Code names to LevelUp names."""

@@ -13,6 +13,23 @@ from levelup.tools.base import ToolRegistry
 logger = logging.getLogger(__name__)
 
 
+# Anthropic API pricing per million tokens (USD)
+ANTHROPIC_PRICING: dict[str, dict[str, float]] = {
+    "claude-sonnet-4-5-20250929": {
+        "input": 3.00,
+        "output": 15.00,
+    },
+    "claude-opus-4-6": {
+        "input": 5.00,
+        "output": 25.00,
+    },
+    "claude-3-5-haiku-20241022": {
+        "input": 1.00,
+        "output": 5.00,
+    },
+}
+
+
 @dataclass
 class AgentResult:
     """Result from running an agent, including usage metrics."""
@@ -113,6 +130,26 @@ class AnthropicSDKBackend:
     def tool_registry(self) -> ToolRegistry:
         return self._tool_registry
 
+    def _calculate_cost(self, input_tokens: int, output_tokens: int) -> float:
+        """Calculate cost in USD based on token usage.
+
+        Args:
+            input_tokens: Number of input tokens consumed.
+            output_tokens: Number of output tokens consumed.
+
+        Returns:
+            Cost in USD.
+        """
+        # Get model-specific pricing, default to Sonnet if model not found
+        model = self._llm_client._model
+        pricing = ANTHROPIC_PRICING.get(model, ANTHROPIC_PRICING["claude-sonnet-4-5-20250929"])
+
+        # Calculate cost: (tokens / 1M) * price_per_million
+        input_cost = (input_tokens / 1_000_000) * pricing["input"]
+        output_cost = (output_tokens / 1_000_000) * pricing["output"]
+
+        return input_cost + output_cost
+
     def run_agent(
         self,
         system_prompt: str,
@@ -141,8 +178,13 @@ class AnthropicSDKBackend:
             tool_registry=self._tool_registry,
             thinking_budget=effective,
         )
+
+        # Calculate cost from token usage
+        cost_usd = self._calculate_cost(loop_result.input_tokens, loop_result.output_tokens)
+
         return AgentResult(
             text=loop_result.text,
+            cost_usd=cost_usd,
             input_tokens=loop_result.input_tokens,
             output_tokens=loop_result.output_tokens,
             num_turns=loop_result.num_turns,

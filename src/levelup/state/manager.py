@@ -337,6 +337,45 @@ class StateManager:
         finally:
             conn.close()
 
+    # -- Project CRUD -------------------------------------------------------
+
+    def list_known_projects(self) -> list[str]:
+        """Return all known project paths from projects, runs, and tickets tables."""
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                """SELECT project_path FROM projects
+                   UNION
+                   SELECT DISTINCT project_path FROM runs
+                   UNION
+                   SELECT DISTINCT project_path FROM tickets
+                   ORDER BY project_path"""
+            ).fetchall()
+            return [row[0] for row in rows]
+        finally:
+            conn.close()
+
+    def add_project(self, project_path: str, display_name: str | None = None) -> None:
+        """Register a project. Idempotent (INSERT OR IGNORE)."""
+        conn = self._conn()
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO projects (project_path, display_name, added_at) VALUES (?, ?, ?)",
+                (project_path, display_name, _now_iso()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def remove_project(self, project_path: str) -> None:
+        """Remove a project from the projects table (does not delete runs/tickets)."""
+        conn = self._conn()
+        try:
+            conn.execute("DELETE FROM projects WHERE project_path = ?", (project_path,))
+            conn.commit()
+        finally:
+            conn.close()
+
     # -- Ticket CRUD --------------------------------------------------------
 
     def add_ticket(

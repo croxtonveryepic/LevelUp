@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDialog,
+    QFileDialog,
     QHeaderView,
     QLabel,
     QMainWindow,
@@ -57,6 +58,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._state_manager = state_manager
         self._runs: list[RunRecord] = []
+        self._visible_runs: list[RunRecord] = []
         self._project_path = project_path
         self._db_path = str(state_manager._db_path)
         self._active_run_pids: set[int] = set()
@@ -76,7 +78,10 @@ class MainWindow(QMainWindow):
 
         self._current_theme = get_current_theme()
 
-        self.setWindowTitle("LevelUp Dashboard")
+        if project_path:
+            self.setWindowTitle(f"LevelUp Dashboard \u2014 {project_path.name}")
+        else:
+            self.setWindowTitle("LevelUp Dashboard")
         self.setMinimumSize(1000, 550)
         self._build_ui()
 
@@ -111,6 +116,21 @@ class MainWindow(QMainWindow):
         self._update_theme_button()
 
         toolbar_layout.addWidget(self._theme_switcher)
+
+        # Project selector
+        self._project_selector = QComboBox()
+        self._project_selector.setObjectName("projectSelector")
+        self._project_selector.setMinimumWidth(250)
+        self._project_selector.setToolTip("Select project")
+        self._populate_project_selector(str(self._project_path) if self._project_path else None)
+        self._project_selector.currentIndexChanged.connect(self._on_project_selector_changed)
+        toolbar_layout.addWidget(self._project_selector)
+
+        self._add_project_btn = QPushButton("+")
+        self._add_project_btn.setObjectName("addProjectBtn")
+        self._add_project_btn.setToolTip("Add project directory")
+        self._add_project_btn.clicked.connect(self._on_add_project)
+        toolbar_layout.addWidget(self._add_project_btn)
 
         self._docs_btn = QPushButton("\U0001F4C4")
         self._docs_btn.setObjectName("docsBtn")
@@ -224,6 +244,80 @@ class MainWindow(QMainWindow):
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
 
+    # -- Project selector ----------------------------------------------------
+
+    def _populate_project_selector(self, select_path: str | None = None) -> None:
+        """Refresh the project combobox from the DB."""
+        self._project_selector.blockSignals(True)
+        self._project_selector.clear()
+        self._project_selector.addItem("All Projects", "")
+
+        projects = self._state_manager.list_known_projects()
+        select_index = 0
+        for i, proj_path in enumerate(projects):
+            dirname = Path(proj_path).name
+            self._project_selector.addItem(f"{dirname}  ({proj_path})", proj_path)
+            if select_path and proj_path == select_path:
+                select_index = i + 1  # +1 for "All Projects" item
+
+        self._project_selector.setCurrentIndex(select_index)
+        self._project_selector.blockSignals(False)
+
+    def _on_project_selector_changed(self, index: int) -> None:
+        """Handle project selector combobox change."""
+        data = self._project_selector.itemData(index)
+        if data:
+            self._switch_project(Path(data))
+        else:
+            self._switch_project(None)
+
+    def _on_add_project(self) -> None:
+        """Open a directory chooser to add a new project."""
+        dir_path = QFileDialog.getExistingDirectory(self, "Select Project Directory")
+        if not dir_path:
+            return
+        resolved = str(Path(dir_path).resolve())
+        self._state_manager.add_project(resolved)
+        self._populate_project_selector(resolved)
+        self._switch_project(Path(resolved))
+
+    def _switch_project(self, project_path: Path | None) -> None:
+        """Switch the active project context."""
+        self._project_path = project_path
+
+        # Clean up stale PTY sessions
+        self._detail.cleanup_all_terminals()
+
+        # Reset to runs table
+        self._stack.setCurrentIndex(0)
+        self._sidebar.clear_selection()
+
+        # Reload tickets for the new project (or clear if None)
+        if project_path is not None:
+            from levelup.core.tickets import read_tickets
+            try:
+                self._cached_tickets = read_tickets(project_path, db_path=Path(self._db_path))
+                self._sidebar.set_tickets(self._cached_tickets)
+            except Exception:
+                self._cached_tickets = []
+                self._sidebar.set_tickets([])
+        else:
+            self._cached_tickets = []
+            self._sidebar.set_tickets([])
+
+        # Update child widgets
+        self._detail._project_path = project_path
+        self._diff_view._project_path = str(project_path) if project_path else None
+        self._docs.set_project_path(project_path)
+
+        # Update window title
+        if project_path:
+            self.setWindowTitle(f"LevelUp Dashboard \u2014 {project_path.name}")
+        else:
+            self.setWindowTitle("LevelUp Dashboard")
+
+        self._refresh()
+
     def _start_refresh_timer(self) -> None:
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh)
@@ -274,9 +368,15 @@ class MainWindow(QMainWindow):
             self._completed.set_tickets(tickets, run_status_map=run_status_map)
 
     def _update_table(self) -> None:
-        self._table.setRowCount(len(self._runs))
+        if self._project_path is not None:
+            proj = str(self._project_path)
+            self._visible_runs = [r for r in self._runs if r.project_path == proj]
+        else:
+            self._visible_runs = list(self._runs)
 
-        for row, run in enumerate(self._runs):
+        self._table.setRowCount(len(self._visible_runs))
+
+        for row, run in enumerate(self._visible_runs):
             self._table.setItem(row, 0, QTableWidgetItem(run.run_id[:12]))
             self._table.setItem(row, 1, QTableWidgetItem(run.task_title))
             self._table.setItem(row, 2, QTableWidgetItem(run.project_path))
@@ -595,10 +695,10 @@ class MainWindow(QMainWindow):
     def _on_double_click(self, index: object) -> None:
         """Open checkpoint dialog if the run is waiting for input."""
         row = index.row()  # type: ignore[union-attr]
-        if row < 0 or row >= len(self._runs):
+        if row < 0 or row >= len(self._visible_runs):
             return
 
-        run = self._runs[row]
+        run = self._visible_runs[row]
         if run.status != "waiting_for_input":
             return
 
@@ -618,10 +718,10 @@ class MainWindow(QMainWindow):
             return
 
         row = index.row()
-        if row < 0 or row >= len(self._runs):
+        if row < 0 or row >= len(self._visible_runs):
             return
 
-        run = self._runs[row]
+        run = self._visible_runs[row]
 
         menu = QMenu(self)
 
@@ -706,8 +806,8 @@ class MainWindow(QMainWindow):
         self._refresh()
 
     def _cleanup_runs(self) -> None:
-        """Remove all completed, failed, and aborted runs."""
-        to_remove = [r for r in self._runs if r.status in ("completed", "failed", "aborted")]
+        """Remove all completed, failed, and aborted runs (filtered to current project)."""
+        to_remove = [r for r in self._visible_runs if r.status in ("completed", "failed", "aborted")]
         if not to_remove:
             QMessageBox.information(self, "Clean Up", "No runs to clean up.")
             return

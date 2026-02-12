@@ -18,15 +18,12 @@ def launch_gui(
     project_path: Path | None = None,
 ) -> None:
     """Create QApplication and show the main window."""
-    if project_path is None:
-        project_path = Path.cwd()
-
     app = QApplication(sys.argv)
     app.setApplicationName("LevelUp Dashboard")
 
     # Load settings and apply theme
     try:
-        settings = load_settings(project_path=project_path)
+        settings = load_settings(project_path=project_path or Path.cwd())
         theme_preference = settings.gui.theme
         # Store preference globally for theme manager
         set_theme_preference(theme_preference, project_path=None)  # Don't save, just set in memory
@@ -41,6 +38,10 @@ def launch_gui(
     if db_path:
         mgr_kwargs["db_path"] = db_path
     state_manager = StateManager(**mgr_kwargs)
+
+    # Register explicitly provided project so it appears in the selector
+    if project_path is not None:
+        state_manager.add_project(str(project_path.resolve()))
 
     window = MainWindow(state_manager, project_path=project_path)
     window.show()

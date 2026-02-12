@@ -41,7 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 CREATE INDEX IF NOT EXISTS idx_cp_pending ON checkpoint_requests(run_id, status);
 """
 
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 # List of (target_version, sql) tuples. Each migration upgrades from target_version-1.
 MIGRATIONS: list[tuple[int, str]] = [
@@ -105,6 +105,18 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX IF NOT EXISTS idx_tickets_project ON tickets(project_path);
         CREATE INDEX IF NOT EXISTS idx_tickets_project_status ON tickets(project_path, status);
         UPDATE schema_version SET version = 6, applied_at = datetime('now') WHERE rowid = 1;
+        """,
+    ),
+    (
+        7,
+        """
+        CREATE TABLE IF NOT EXISTS projects (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_path TEXT NOT NULL UNIQUE,
+            display_name TEXT,
+            added_at     TEXT NOT NULL
+        );
+        UPDATE schema_version SET version = 7, applied_at = datetime('now') WHERE rowid = 1;
         """,
     ),
 ]

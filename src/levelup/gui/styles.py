@@ -331,6 +331,25 @@ QTextBrowser#docsBrowser {
     font-family: -apple-system, "Segoe UI", sans-serif;
     font-size: 14px;
 }
+QComboBox#projectSelector {
+    min-width: 250px;
+}
+QPushButton#addProjectBtn {
+    background-color: #2ECC71;
+    color: #1E1E2E;
+    border: none;
+    border-radius: 4px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    font-size: 18px;
+    font-weight: bold;
+}
+QPushButton#addProjectBtn:hover {
+    background-color: #27AE60;
+}
 """
 
 LIGHT_THEME = """
@@ -661,6 +680,25 @@ QTextBrowser#docsBrowser {
     border: 1px solid #D8DEE9;
     font-family: -apple-system, "Segoe UI", sans-serif;
     font-size: 14px;
+}
+QComboBox#projectSelector {
+    min-width: 250px;
+}
+QPushButton#addProjectBtn {
+    background-color: #27AE60;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 4px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    font-size: 18px;
+    font-weight: bold;
+}
+QPushButton#addProjectBtn:hover {
+    background-color: #229954;
 }
 """
 

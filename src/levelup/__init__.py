@@ -1,3 +1,3 @@
 """LevelUp - AI-Powered TDD Development Tool."""
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"

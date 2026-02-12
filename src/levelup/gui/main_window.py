@@ -31,6 +31,7 @@ from levelup.config.settings import HotkeySettings
 from levelup.config.loader import load_settings, save_settings
 from levelup.gui.checkpoint_dialog import CheckpointDialog
 from levelup.gui.completed_tickets_widget import CompletedTicketsWidget
+from levelup.gui.diff_view_widget import DiffViewWidget
 from levelup.gui.docs_widget import DocsWidget
 from levelup.gui.hotkey_settings_dialog import HotkeySettingsDialog
 from levelup.gui.keyboard_shortcuts_help import KeyboardShortcutsHelp
@@ -203,6 +204,15 @@ class MainWindow(QMainWindow):
         self._completed.ticket_selected.connect(self._on_completed_ticket_selected)
         self._stack.addWidget(self._completed)  # index 3
 
+        # Page 4: diff view
+        self._diff_view = DiffViewWidget(
+            state_manager=self._state_manager,
+            theme=self._current_theme,
+            project_path=str(self._project_path) if self._project_path else None,
+        )
+        self._diff_view.back_clicked.connect(self._on_diff_view_back)
+        self._stack.addWidget(self._diff_view)  # index 4
+
         splitter.addWidget(self._stack)
 
         # Set initial sizes: ~280px sidebar, rest for stack
@@ -227,6 +237,16 @@ class MainWindow(QMainWindow):
         self._refresh_tickets()
         self._update_status_bar()
         self._check_gui_run_checkpoints()
+
+        # Refresh diff view if it's currently displayed and viewing an active run
+        if self._stack.currentIndex() == 4:
+            if hasattr(self._diff_view, '_run_id') and self._diff_view._run_id:
+                # Check if run is still active
+                for run in self._runs:
+                    if run.run_id == self._diff_view._run_id:
+                        if run.status in ("running", "waiting_for_input"):
+                            self._diff_view.refresh()
+                        break
 
     def _refresh_tickets(self) -> None:
         """Reload ticket list from DB. Skip if detail widget has unsaved edits."""
@@ -342,6 +362,7 @@ class MainWindow(QMainWindow):
             self._detail.update_theme(actual_theme)
             self._docs.update_theme(actual_theme)
             self._completed.update_theme(actual_theme)
+            self._diff_view.update_theme(actual_theme)
 
             # Re-render the runs table with correct status colors
             self._update_table()
@@ -400,6 +421,22 @@ class MainWindow(QMainWindow):
 
     def _on_completed_back(self) -> None:
         """Return from completed tickets to the runs table view."""
+        self._stack.setCurrentIndex(0)
+
+    def _on_diff_view_clicked(self, run_id: str, step_name: str | None = None) -> None:
+        """Navigate to diff view for a specific run."""
+        self._sidebar.clear_selection()
+
+        # Load the run and display diff
+        self._diff_view._run_id = run_id
+        self._diff_view._step_name = step_name
+        self._diff_view._load_context()
+        self._diff_view._display_diff()
+
+        self._stack.setCurrentIndex(4)
+
+    def _on_diff_view_back(self) -> None:
+        """Return from diff view to the runs table."""
         self._stack.setCurrentIndex(0)
 
     def _on_completed_ticket_selected(self, number: int) -> None:
@@ -591,6 +628,17 @@ class MainWindow(QMainWindow):
         view_action = QAction("View Details", self)
         view_action.triggered.connect(lambda: self._view_details(run))
         menu.addAction(view_action)
+
+        # Add "View Changes" option if run has git tracking
+        from levelup.core.context import PipelineContext
+        try:
+            ctx = PipelineContext.model_validate_json(run.context_json)
+            if ctx.pre_run_sha:
+                view_changes_action = QAction("View Changes", self)
+                view_changes_action.triggered.connect(lambda: self._on_diff_view_clicked(run.run_id))
+                menu.addAction(view_changes_action)
+        except Exception:
+            pass
 
         if run.status in ("failed", "aborted", "paused"):
             resume_action = QAction("Resume", self)

@@ -71,14 +71,15 @@ class StateManager:
 
         assert isinstance(ctx, PipelineContext)
         ticket_number = self._extract_ticket_number(ctx)
+        context_json = ctx.model_dump_json()
         conn = self._conn()
         try:
             conn.execute(
                 """INSERT INTO runs
                    (run_id, task_title, task_description, project_path, status,
                     current_step, language, framework, test_runner, started_at,
-                    updated_at, pid, ticket_number)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    updated_at, pid, ticket_number, context_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     ctx.run_id,
                     ctx.task.title,
@@ -93,6 +94,7 @@ class StateManager:
                     _now_iso(),
                     os.getpid(),
                     ticket_number,
+                    context_json,
                 ),
             )
             conn.commit()

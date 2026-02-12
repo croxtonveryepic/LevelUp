@@ -159,13 +159,6 @@ class TestParseBranchNameMetadata:
 class TestWriteBranchNameMetadata:
     """Test serializing branch_name to ticket metadata."""
 
-    def _write(self, tmp_path: Path, content: str) -> Path:
-        d = tmp_path / "levelup"
-        d.mkdir(exist_ok=True)
-        p = d / "tickets.md"
-        p.write_text(content, encoding="utf-8")
-        return p
-
     def test_add_ticket_with_branch_name(self, tmp_path: Path):
         """add_ticket should accept and serialize branch_name."""
         t = add_ticket(
@@ -183,7 +176,7 @@ class TestWriteBranchNameMetadata:
 
     def test_update_ticket_set_branch_name(self, tmp_path: Path):
         """update_ticket should be able to set branch_name."""
-        self._write(tmp_path, "## Original title\nDescription\n")
+        add_ticket(tmp_path, "Original title", "Description")
 
         update_ticket(
             tmp_path,
@@ -196,13 +189,11 @@ class TestWriteBranchNameMetadata:
 
     def test_update_ticket_add_branch_name_to_existing_metadata(self, tmp_path: Path):
         """Should add branch_name to ticket that already has auto_approve."""
-        self._write(
+        add_ticket(
             tmp_path,
-            "## Task\n"
-            "<!--metadata\n"
-            "auto_approve: true\n"
-            "-->\n"
-            "Description\n",
+            "Task",
+            "Description",
+            metadata={"auto_approve": True},
         )
 
         # Add branch_name to existing metadata
@@ -218,13 +209,11 @@ class TestWriteBranchNameMetadata:
 
     def test_update_ticket_overwrite_existing_branch_name(self, tmp_path: Path):
         """Should overwrite existing branch_name on subsequent updates."""
-        self._write(
+        add_ticket(
             tmp_path,
-            "## Task\n"
-            "<!--metadata\n"
-            "branch_name: levelup/old-branch\n"
-            "-->\n"
-            "Description\n",
+            "Task",
+            "Description",
+            metadata={"branch_name": "levelup/old-branch"},
         )
 
         update_ticket(
@@ -238,13 +227,11 @@ class TestWriteBranchNameMetadata:
 
     def test_set_ticket_status_preserves_branch_name(self, tmp_path: Path):
         """set_ticket_status should preserve branch_name metadata."""
-        self._write(
+        add_ticket(
             tmp_path,
-            "## Task\n"
-            "<!--metadata\n"
-            "branch_name: levelup/abc123\n"
-            "-->\n"
-            "Description\n",
+            "Task",
+            "Description",
+            metadata={"branch_name": "levelup/abc123"},
         )
 
         set_ticket_status(tmp_path, 1, TicketStatus.DONE)
@@ -253,8 +240,8 @@ class TestWriteBranchNameMetadata:
         assert tickets[0].status == TicketStatus.DONE
         assert tickets[0].metadata["branch_name"] == "levelup/abc123"
 
-    def test_branch_name_format_in_file(self, tmp_path: Path):
-        """Written branch_name should be human-readable in HTML comment."""
+    def test_branch_name_stored_in_db(self, tmp_path: Path):
+        """Written branch_name should be stored in the DB."""
         add_ticket(
             tmp_path,
             "Task",
@@ -262,11 +249,9 @@ class TestWriteBranchNameMetadata:
             metadata={"branch_name": "feature/my-feature"},
         )
 
-        path = tmp_path / "levelup" / "tickets.md"
-        content = path.read_text()
-        assert "<!--metadata" in content
-        assert "branch_name: feature/my-feature" in content
-        assert "-->" in content
+        tickets = read_tickets(tmp_path)
+        assert tickets[0].metadata is not None
+        assert tickets[0].metadata["branch_name"] == "feature/my-feature"
 
     def test_round_trip_branch_name_metadata(self, tmp_path: Path):
         """branch_name should survive multiple read/write cycles."""

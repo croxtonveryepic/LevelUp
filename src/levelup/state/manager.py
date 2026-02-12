@@ -9,7 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from levelup.state.db import DEFAULT_DB_PATH, get_connection, init_db
-from levelup.state.models import CheckpointRequestRecord, RunRecord
+from levelup.state.models import CheckpointRequestRecord, RunRecord, TicketRecord
+
+
+_SENTINEL = object()
 
 
 def _now_iso() -> str:
@@ -329,5 +332,169 @@ class StateManager:
                     count += 1
             conn.commit()
             return count
+        finally:
+            conn.close()
+
+    # -- Ticket CRUD --------------------------------------------------------
+
+    def add_ticket(
+        self,
+        project_path: str,
+        title: str,
+        description: str = "",
+        metadata_json: str | None = None,
+    ) -> TicketRecord:
+        """Insert a new ticket. Computes next ticket_number for the project."""
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(ticket_number), 0) FROM tickets WHERE project_path = ?",
+                (project_path,),
+            ).fetchone()
+            next_num = row[0] + 1
+            now = _now_iso()
+            cursor = conn.execute(
+                """INSERT INTO tickets
+                   (project_path, ticket_number, title, description, status, metadata_json, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)""",
+                (project_path, next_num, title, description, metadata_json, now, now),
+            )
+            conn.commit()
+            return TicketRecord(
+                id=cursor.lastrowid,
+                project_path=project_path,
+                ticket_number=next_num,
+                title=title,
+                description=description,
+                status="pending",
+                metadata_json=metadata_json,
+                created_at=now,
+                updated_at=now,
+            )
+        finally:
+            conn.close()
+
+    def list_tickets(
+        self, project_path: str, status_filter: str | None = None
+    ) -> list[TicketRecord]:
+        """List tickets for a project, ordered by ticket_number ASC."""
+        conn = self._conn()
+        try:
+            if status_filter:
+                rows = conn.execute(
+                    "SELECT * FROM tickets WHERE project_path = ? AND status = ? ORDER BY ticket_number ASC",
+                    (project_path, status_filter),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM tickets WHERE project_path = ? ORDER BY ticket_number ASC",
+                    (project_path,),
+                ).fetchall()
+            return [TicketRecord(**dict(r)) for r in rows]
+        finally:
+            conn.close()
+
+    def get_ticket(
+        self, project_path: str, ticket_number: int
+    ) -> TicketRecord | None:
+        """Get a single ticket by project path and ticket number."""
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM tickets WHERE project_path = ? AND ticket_number = ?",
+                (project_path, ticket_number),
+            ).fetchone()
+            if row is None:
+                return None
+            return TicketRecord(**dict(row))
+        finally:
+            conn.close()
+
+    def get_next_pending_ticket(self, project_path: str) -> TicketRecord | None:
+        """Return the first pending ticket for the project."""
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM tickets WHERE project_path = ? AND status = 'pending' ORDER BY ticket_number ASC LIMIT 1",
+                (project_path,),
+            ).fetchone()
+            if row is None:
+                return None
+            return TicketRecord(**dict(row))
+        finally:
+            conn.close()
+
+    def set_ticket_status(
+        self, project_path: str, ticket_number: int, status: str
+    ) -> None:
+        """Update the status of a ticket. Raises IndexError if not found."""
+        conn = self._conn()
+        try:
+            cursor = conn.execute(
+                "UPDATE tickets SET status = ?, updated_at = ? WHERE project_path = ? AND ticket_number = ?",
+                (status, _now_iso(), project_path, ticket_number),
+            )
+            conn.commit()
+            if cursor.rowcount == 0:
+                raise IndexError(f"Ticket #{ticket_number} not found for project {project_path}")
+        finally:
+            conn.close()
+
+    def update_ticket(
+        self,
+        project_path: str,
+        ticket_number: int,
+        *,
+        title: str | None = None,
+        description: str | None = None,
+        metadata_json: str | object = _SENTINEL,
+    ) -> None:
+        """Partial update of a ticket. Raises IndexError if not found."""
+        sets: list[str] = []
+        params: list[object] = []
+        if title is not None:
+            sets.append("title = ?")
+            params.append(title)
+        if description is not None:
+            sets.append("description = ?")
+            params.append(description)
+        if metadata_json is not _SENTINEL:
+            sets.append("metadata_json = ?")
+            params.append(metadata_json)
+        if not sets:
+            return
+        sets.append("updated_at = ?")
+        params.append(_now_iso())
+        params.append(project_path)
+        params.append(ticket_number)
+        sql = f"UPDATE tickets SET {', '.join(sets)} WHERE project_path = ? AND ticket_number = ?"
+        conn = self._conn()
+        try:
+            cursor = conn.execute(sql, params)
+            conn.commit()
+            if cursor.rowcount == 0:
+                raise IndexError(f"Ticket #{ticket_number} not found for project {project_path}")
+        finally:
+            conn.close()
+
+    def delete_ticket(
+        self, project_path: str, ticket_number: int
+    ) -> str:
+        """Delete a ticket. Returns the title. Raises IndexError if not found."""
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                "SELECT title FROM tickets WHERE project_path = ? AND ticket_number = ?",
+                (project_path, ticket_number),
+            ).fetchone()
+            if row is None:
+                raise IndexError(f"Ticket #{ticket_number} not found for project {project_path}")
+            title = row["title"]
+            conn.execute(
+                "DELETE FROM tickets WHERE project_path = ? AND ticket_number = ?",
+                (project_path, ticket_number),
+            )
+            conn.commit()
+            return title
         finally:
             conn.close()

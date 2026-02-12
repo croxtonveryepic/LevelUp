@@ -1,14 +1,17 @@
-"""Markdown-based ticketing system — parse, read, and update tickets."""
+"""DB-backed ticketing system with markdown parsing utilities preserved."""
 
 from __future__ import annotations
 
 import enum
+import json
 import re
 from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import BaseModel
+
+from levelup.state.db import DEFAULT_DB_PATH
 
 
 class TicketStatus(str, enum.Enum):
@@ -32,11 +35,11 @@ _RUN_OPTION_KEYS = {"model", "effort", "skip_planning"}
 
 
 class Ticket(BaseModel):
-    """A single ticket parsed from the markdown file."""
+    """A single ticket."""
 
-    number: int  # 1-based ordinal in file
-    title: str  # Heading text without status tag
-    description: str = ""  # Body text below heading
+    number: int  # stable ticket_number (not positional)
+    title: str
+    description: str = ""
     status: TicketStatus = TicketStatus.PENDING
     metadata: dict[str, Any] | None = None
 
@@ -52,6 +55,11 @@ class Ticket(BaseModel):
         )
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
 def _filter_run_options(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
     """Remove run option keys from metadata. Returns None if empty after filtering."""
     if not metadata:
@@ -60,13 +68,59 @@ def _filter_run_options(metadata: dict[str, Any] | None) -> dict[str, Any] | Non
     return filtered if filtered else None
 
 
+def _record_to_ticket(rec: object) -> Ticket:
+    """Convert a TicketRecord (from StateManager) to a Ticket model."""
+    from levelup.state.models import TicketRecord
+
+    assert isinstance(rec, TicketRecord)
+    metadata: dict[str, Any] | None = None
+    if rec.metadata_json:
+        try:
+            metadata = json.loads(rec.metadata_json)
+        except (json.JSONDecodeError, TypeError):
+            metadata = None
+
+    # Map DB status strings to TicketStatus enum
+    status = TicketStatus(rec.status)
+
+    return Ticket(
+        number=rec.ticket_number,
+        title=rec.title,
+        description=rec.description,
+        status=status,
+        metadata=metadata,
+    )
+
+
+def _get_state_manager(db_path: Path | None = None):
+    """Create a StateManager for the given db_path."""
+    from levelup.state.manager import StateManager
+
+    if db_path is not None:
+        return StateManager(db_path=db_path)
+    return StateManager()
+
+
+def _normalize_project_path(project_path: Path) -> str:
+    """Normalize project path to a consistent string for DB storage."""
+    return str(project_path.resolve())
+
+
+# ---------------------------------------------------------------------------
+# Markdown parsing (preserved for future migration command)
+# ---------------------------------------------------------------------------
+
+
 def get_tickets_path(project_path: Path, filename: str | None = None) -> Path:
-    """Return the path to the tickets file."""
+    """Return the path to the tickets markdown file (for migration use)."""
     return project_path / (filename or "levelup/tickets.md")
 
 
 def parse_tickets(text: str) -> list[Ticket]:
-    """Parse a markdown string into a list of Tickets."""
+    """Parse a markdown string into a list of Tickets.
+
+    Preserved for future markdown-to-DB migration command.
+    """
     lines = text.splitlines(keepends=True)
     tickets: list[Ticket] = []
     in_code_block = False
@@ -151,8 +205,6 @@ def parse_tickets(text: str) -> list[Ticket]:
             # H1 heading — ignored, but flush any current ticket
             if current_title is not None:
                 description_lines.append(line)
-            # Actually, H1 should not be part of description — skip it
-            # But only if we're not already in a ticket body
             continue
         else:
             if current_title is not None:
@@ -164,123 +216,53 @@ def parse_tickets(text: str) -> list[Ticket]:
     return tickets
 
 
-def read_tickets(project_path: Path, filename: str | None = None) -> list[Ticket]:
-    """Read tickets from the markdown file. Returns [] if file is missing."""
-    path = get_tickets_path(project_path, filename)
-    if not path.exists():
-        return []
-    text = path.read_text(encoding="utf-8")
-    return parse_tickets(text)
+# ---------------------------------------------------------------------------
+# DB-backed public API
+# ---------------------------------------------------------------------------
 
 
-def get_next_ticket(project_path: Path, filename: str | None = None) -> Ticket | None:
+def read_tickets(project_path: Path, *, db_path: Path | None = None) -> list[Ticket]:
+    """Read all tickets for a project from the database."""
+    sm = _get_state_manager(db_path)
+    records = sm.list_tickets(_normalize_project_path(project_path))
+    return [_record_to_ticket(r) for r in records]
+
+
+def get_ticket(project_path: Path, ticket_number: int, *, db_path: Path | None = None) -> Ticket | None:
+    """Get a single ticket by number. Returns None if not found."""
+    sm = _get_state_manager(db_path)
+    rec = sm.get_ticket(_normalize_project_path(project_path), ticket_number)
+    if rec is None:
+        return None
+    return _record_to_ticket(rec)
+
+
+def get_next_ticket(project_path: Path, *, db_path: Path | None = None) -> Ticket | None:
     """Return the first pending ticket, or None."""
-    tickets = read_tickets(project_path, filename)
-    for t in tickets:
-        if t.status == TicketStatus.PENDING:
-            return t
-    return None
+    sm = _get_state_manager(db_path)
+    rec = sm.get_next_pending_ticket(_normalize_project_path(project_path))
+    if rec is None:
+        return None
+    return _record_to_ticket(rec)
 
 
 def set_ticket_status(
     project_path: Path,
     ticket_number: int,
     new_status: TicketStatus,
-    filename: str | None = None,
+    *,
+    db_path: Path | None = None,
 ) -> None:
-    """Update the status tag of a ticket in-place in the file.
+    """Update the status of a ticket.
 
-    Raises ``IndexError`` if the ticket number is out of range.
+    Raises ``IndexError`` if the ticket number is not found.
     """
-    path = get_tickets_path(project_path, filename)
-    if not path.exists():
-        raise IndexError(f"Tickets file not found: {path}")
-
-    text = path.read_text(encoding="utf-8")
-
-    # Parse to get current ticket data and filter metadata
-    tickets = parse_tickets(text)
-    if ticket_number < 1 or ticket_number > len(tickets):
-        raise IndexError(f"Ticket #{ticket_number} not found (file has {len(tickets)} ticket(s))")
-
-    current_ticket = tickets[ticket_number - 1]
-    # Filter run options from metadata
-    filtered_metadata = _filter_run_options(current_ticket.metadata)
-
-    lines = text.splitlines(keepends=True)
-
-    in_code_block = False
-    ticket_count = 0
-    found = False
-    in_metadata_block = False
-    metadata_start_idx: int | None = None
-    metadata_end_idx: int | None = None
-
-    new_lines: list[str] = []
-    for i, line in enumerate(lines):
-        stripped = line.rstrip("\r\n")
-
-        if stripped.lstrip().startswith("```"):
-            in_code_block = not in_code_block
-            new_lines.append(line)
-            continue
-
-        if in_code_block:
-            new_lines.append(line)
-            continue
-
-        # Track metadata blocks for the target ticket
-        if ticket_count == ticket_number:
-            if stripped.strip() == "<!--metadata" and not in_metadata_block:
-                in_metadata_block = True
-                metadata_start_idx = i
-                continue
-            elif in_metadata_block and stripped.strip() == "-->":
-                in_metadata_block = False
-                metadata_end_idx = i
-                # Write filtered metadata after this ticket's heading
-                if filtered_metadata:
-                    new_lines.append("<!--metadata\n")
-                    new_lines.append(yaml.dump(filtered_metadata, default_flow_style=False, sort_keys=False))
-                    new_lines.append("-->\n")
-                continue
-            elif in_metadata_block:
-                # Skip old metadata lines
-                continue
-
-        if stripped.startswith("## ") and not stripped.startswith("### "):
-            ticket_count += 1
-            if ticket_count == ticket_number:
-                found = True
-                heading_text = stripped[3:].strip()
-                # Strip existing status tag
-                m = _STATUS_PATTERN.match(heading_text)
-                if m:
-                    bare_title = heading_text[m.end():].strip()
-                else:
-                    bare_title = heading_text
-
-                # Build new heading
-                if new_status == TicketStatus.PENDING:
-                    new_heading = f"## {bare_title}"
-                else:
-                    new_heading = f"## [{new_status.value}] {bare_title}"
-
-                # Preserve original line ending
-                ending = line[len(line.rstrip("\r\n")):]
-                new_lines.append(new_heading + ending)
-                continue
-
-        new_lines.append(line)
-
-    if not found:
-        tickets = parse_tickets(text)
-        count = len(tickets)
-        raise IndexError(
-            f"Ticket #{ticket_number} not found (file has {count} ticket(s))"
-        )
-
-    path.write_text("".join(new_lines), encoding="utf-8")
+    sm = _get_state_manager(db_path)
+    sm.set_ticket_status(
+        _normalize_project_path(project_path),
+        ticket_number,
+        new_status.value,
+    )
 
 
 def update_ticket(
@@ -289,125 +271,93 @@ def update_ticket(
     *,
     title: str | None = None,
     description: str | None = None,
-    metadata: dict[str, Any] | None | object = _NOT_PROVIDED,  # sentinel for "not provided"
-    filename: str | None = None,
+    metadata: dict[str, Any] | None | object = _NOT_PROVIDED,
+    db_path: Path | None = None,
 ) -> None:
-    """Update the title and/or description of a ticket in-place.
+    """Update the title, description, and/or metadata of a ticket.
 
-    Raises ``IndexError`` if the ticket number is out of range.
+    Raises ``IndexError`` if the ticket number is not found.
     """
-    path = get_tickets_path(project_path, filename)
-    if not path.exists():
-        raise IndexError(f"Tickets file not found: {path}")
+    sm = _get_state_manager(db_path)
+    proj = _normalize_project_path(project_path)
 
-    text = path.read_text(encoding="utf-8")
+    # Determine metadata_json to pass
+    from levelup.state.manager import _SENTINEL
 
-    # First, parse to get current ticket data
-    tickets = parse_tickets(text)
-    if ticket_number < 1 or ticket_number > len(tickets):
-        raise IndexError(
-            f"Ticket #{ticket_number} not found (file has {len(tickets)} ticket(s))"
-        )
-
-    current_ticket = tickets[ticket_number - 1]
-
-    # Determine what metadata to use and filter run options
-    if metadata is _NOT_PROVIDED:  # Not provided
-        new_metadata = _filter_run_options(current_ticket.metadata)
+    if metadata is _NOT_PROVIDED:
+        metadata_json: str | object = _SENTINEL  # don't update
+    elif metadata is None:
+        metadata_json = None
     else:
-        new_metadata = _filter_run_options(metadata)
+        filtered = _filter_run_options(metadata)
+        metadata_json = json.dumps(filtered) if filtered else None
 
-    lines = text.splitlines(keepends=True)
+    sm.update_ticket(
+        proj,
+        ticket_number,
+        title=title,
+        description=description,
+        metadata_json=metadata_json,
+    )
 
-    in_code_block = False
-    ticket_count = 0
-    heading_idx: int | None = None
-    # Index of the first line after the heading that belongs to the next ticket (or EOF)
-    next_heading_idx: int | None = None
 
-    for i, line in enumerate(lines):
-        stripped = line.rstrip("\r\n")
+def delete_ticket(
+    project_path: Path,
+    ticket_number: int,
+    *,
+    db_path: Path | None = None,
+) -> str:
+    """Delete a ticket. Returns the deleted ticket's title.
 
-        if stripped.lstrip().startswith("```"):
-            in_code_block = not in_code_block
-            continue
+    Raises ``IndexError`` if the ticket number is not found.
+    """
+    sm = _get_state_manager(db_path)
+    title = sm.delete_ticket(_normalize_project_path(project_path), ticket_number)
 
-        if in_code_block:
-            continue
+    # Clean up associated images
+    cleanup_ticket_images(ticket_number, project_path)
 
-        if stripped.startswith("## ") and not stripped.startswith("### "):
-            ticket_count += 1
-            if ticket_count == ticket_number:
-                heading_idx = i
-            elif heading_idx is not None and next_heading_idx is None:
-                next_heading_idx = i
-                break
+    return title
 
-    if heading_idx is None:
-        raise IndexError(f"Ticket #{ticket_number} not found (file has {len(tickets)} ticket(s))")
 
-    if next_heading_idx is None:
-        next_heading_idx = len(lines)
+def add_ticket(
+    project_path: Path,
+    title: str,
+    description: str = "",
+    *,
+    metadata: dict[str, Any] | None = None,
+    db_path: Path | None = None,
+) -> Ticket:
+    """Create a new ticket and return it."""
+    sm = _get_state_manager(db_path)
 
-    # Extract status from original heading
-    original_heading = lines[heading_idx].rstrip("\r\n")
-    heading_text = original_heading[3:].strip()  # Strip "## "
-    m = _STATUS_PATTERN.match(heading_text)
-    if m:
-        current_status = m.group(1).lower()
-        bare_title = heading_text[m.end():].strip()
-    else:
-        current_status = "pending"
-        bare_title = heading_text
+    # Filter run options from metadata before storing
+    filtered_metadata = _filter_run_options(metadata)
+    metadata_json = json.dumps(filtered_metadata) if filtered_metadata else None
 
-    # Build new heading
-    new_title_text = title if title is not None else bare_title
-    if current_status == "pending":
-        new_heading = f"## {new_title_text}"
-    else:
-        new_heading = f"## [{current_status}] {new_title_text}"
+    rec = sm.add_ticket(
+        _normalize_project_path(project_path),
+        title,
+        description.strip(),
+        metadata_json=metadata_json,
+    )
+    return _record_to_ticket(rec)
 
-    # Build new body
-    new_body_lines: list[str] = []
-    if new_metadata:
-        new_body_lines.append("<!--metadata\n")
-        new_body_lines.append(yaml.dump(new_metadata, default_flow_style=False, sort_keys=False))
-        new_body_lines.append("-->\n")
 
-    if description is not None:
-        new_body_lines.append(description.rstrip("\n\r") + "\n")
-    else:
-        # Preserve original description
-        in_metadata = False
-        for i in range(heading_idx + 1, next_heading_idx):
-            stripped = lines[i].rstrip("\r\n")
-            if stripped.strip() == "<!--metadata":
-                in_metadata = True
-                continue
-            elif stripped.strip() == "-->":
-                in_metadata = False
-                continue
-            if not in_metadata:
-                new_body_lines.append(lines[i])
-
-    # Reassemble file
-    ending = lines[heading_idx][len(lines[heading_idx].rstrip("\r\n")):]
-    new_lines = lines[:heading_idx] + [new_heading + ending] + new_body_lines + lines[next_heading_idx:]
-
-    path.write_text("".join(new_lines), encoding="utf-8")
+# ---------------------------------------------------------------------------
+# File-based utilities (kept as-is)
+# ---------------------------------------------------------------------------
 
 
 def cleanup_ticket_images(
     ticket_number: int,
     project_path: Path,
-    filename: str | None = None,
 ) -> None:
     """Remove all images associated with a ticket.
 
     Args:
         ticket_number: Ticket number to clean up
         project_path: Project root path
-        filename: Tickets filename (unused, for compatibility)
     """
     asset_dir = project_path / "levelup" / "ticket-assets"
 
@@ -423,126 +373,3 @@ def cleanup_ticket_images(
         except Exception:
             # Ignore errors (file may be locked, etc.)
             pass
-
-
-def delete_ticket(
-    project_path: Path,
-    ticket_number: int,
-    filename: str | None = None,
-) -> str:
-    """Delete a ticket from the markdown file. Returns the deleted ticket's title.
-
-    Raises ``IndexError`` if the ticket number is out of range.
-    """
-    path = get_tickets_path(project_path, filename)
-    if not path.exists():
-        raise IndexError(f"Tickets file not found: {path}")
-
-    text = path.read_text(encoding="utf-8")
-    lines = text.splitlines(keepends=True)
-
-    in_code_block = False
-    ticket_count = 0
-    heading_idx: int | None = None
-    next_heading_idx: int | None = None
-
-    for i, line in enumerate(lines):
-        stripped = line.rstrip("\r\n")
-
-        if stripped.lstrip().startswith("```"):
-            in_code_block = not in_code_block
-            continue
-
-        if in_code_block:
-            continue
-
-        if stripped.startswith("## ") and not stripped.startswith("### "):
-            ticket_count += 1
-            if ticket_count == ticket_number:
-                heading_idx = i
-            elif heading_idx is not None and next_heading_idx is None:
-                next_heading_idx = i
-                break
-
-    if heading_idx is None:
-        tickets = parse_tickets(text)
-        count = len(tickets)
-        raise IndexError(
-            f"Ticket #{ticket_number} not found (file has {count} ticket(s))"
-        )
-
-    if next_heading_idx is None:
-        next_heading_idx = len(lines)
-
-    # Extract title from heading
-    heading_text = lines[heading_idx].rstrip("\r\n")[3:].strip()  # Strip "## "
-    m = _STATUS_PATTERN.match(heading_text)
-    if m:
-        title = heading_text[m.end():].strip()
-    else:
-        title = heading_text
-
-    # Delete lines from heading_idx to next_heading_idx (exclusive)
-    # If there's a blank line before the heading, also remove it
-    start_idx = heading_idx
-    if heading_idx > 0 and lines[heading_idx - 1].strip() == "":
-        start_idx = heading_idx - 1
-
-    new_lines = lines[:start_idx] + lines[next_heading_idx:]
-
-    path.write_text("".join(new_lines), encoding="utf-8")
-
-    # Clean up associated images
-    cleanup_ticket_images(ticket_number, project_path, filename)
-
-    return title
-
-
-def add_ticket(
-    project_path: Path,
-    title: str,
-    description: str = "",
-    filename: str | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> Ticket:
-    """Append a new ticket to the markdown file and return it.
-
-    Creates the parent directory and file if they don't exist.
-    """
-    path = get_tickets_path(project_path, filename)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Read existing tickets to determine next number
-    existing = parse_tickets(path.read_text(encoding="utf-8")) if path.exists() else []
-    new_number = len(existing) + 1
-
-    # Filter run options from metadata before writing
-    filtered_metadata = _filter_run_options(metadata)
-
-    # Build the markdown block
-    block = f"## {title}\n"
-    if filtered_metadata:
-        block += "<!--metadata\n"
-        block += yaml.dump(filtered_metadata, default_flow_style=False, sort_keys=False)
-        block += "-->\n"
-    if description:
-        block += description.rstrip("\n\r") + "\n"
-
-    # Append with a blank-line separator
-    if path.exists():
-        current = path.read_text(encoding="utf-8")
-        if current and not current.endswith("\n"):
-            block = "\n" + block
-        elif current:
-            block = "\n" + block
-        path.write_text(current + block, encoding="utf-8")
-    else:
-        path.write_text(block, encoding="utf-8")
-
-    return Ticket(
-        number=new_number,
-        title=title,
-        description=description.strip(),
-        status=TicketStatus.PENDING,
-        metadata=filtered_metadata,
-    )

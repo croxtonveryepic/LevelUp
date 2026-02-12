@@ -231,8 +231,8 @@ class TestCleanupHelperFunction:
         img = asset_dir / "ticket-1-test.png"
         img.write_bytes(b"img")
 
-        # Cleanup with custom filename parameter
-        cleanup_ticket_images(ticket_number=1, project_path=tmp_path, filename="custom-tickets.md")
+        # Cleanup with default parameters
+        cleanup_ticket_images(ticket_number=1, project_path=tmp_path)
 
         # Should still delete the image
         assert not img.exists()

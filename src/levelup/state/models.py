@@ -29,6 +29,20 @@ class RunRecord(BaseModel):
     output_tokens: int = 0
 
 
+class TicketRecord(BaseModel):
+    """Represents a row in the tickets table."""
+
+    id: int | None = None
+    project_path: str
+    ticket_number: int
+    title: str
+    description: str = ""
+    status: str = "pending"
+    metadata_json: str | None = None
+    created_at: str
+    updated_at: str
+
+
 class CheckpointRequestRecord(BaseModel):
     """Represents a row in the checkpoint_requests table."""
 

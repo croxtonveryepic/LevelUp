@@ -13,6 +13,8 @@ import time
 
 import pytest
 
+from levelup.core.tickets import add_ticket, set_ticket_status, TicketStatus
+
 
 def _can_import_pyqt6() -> bool:
     """Check if PyQt6 is available."""
@@ -301,13 +303,12 @@ class TestMainWindowIntegration:
         # Create project with tickets
         project_path = tmp_path / "project"
         project_path.mkdir()
-        levelup_dir = project_path / "levelup"
-        levelup_dir.mkdir()
-        (levelup_dir / "tickets.md").write_text(
-            "## [in progress] Running ticket\n\n"
-            "## [in progress] Waiting ticket\n\n"
-            "## [in progress] No run ticket\n"
-        )
+        add_ticket(project_path, "Running ticket")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
+        add_ticket(project_path, "Waiting ticket")
+        set_ticket_status(project_path, 2, TicketStatus.IN_PROGRESS)
+        add_ticket(project_path, "No run ticket")
+        set_ticket_status(project_path, 3, TicketStatus.IN_PROGRESS)
 
         # Create real runs in the database
         ctx1 = PipelineContext(
@@ -364,12 +365,10 @@ class TestMainWindowIntegration:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        levelup_dir = project_path / "levelup"
-        levelup_dir.mkdir()
-        (levelup_dir / "tickets.md").write_text(
-            "## [in progress] Ticket 1\n\n"
-            "## [in progress] Ticket 2\n"
-        )
+        add_ticket(project_path, "Ticket 1")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
+        add_ticket(project_path, "Ticket 2")
+        set_ticket_status(project_path, 2, TicketStatus.IN_PROGRESS)
 
         # Create running run for ticket 1
         ctx1 = PipelineContext(

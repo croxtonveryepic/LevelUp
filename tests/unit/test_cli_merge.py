@@ -8,6 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from levelup.cli.app import app
+from levelup.core.tickets import add_ticket, set_ticket_status, update_ticket, TicketStatus
 
 runner = CliRunner()
 
@@ -50,16 +51,10 @@ class TestMergeCommand:
     ):
         from levelup.agents.backend import AgentResult
 
-        # Create tickets.md with a ticket that has branch_name metadata
-        tickets_md = tmp_path / "levelup" / "tickets.md"
-        tickets_md.parent.mkdir(parents=True, exist_ok=True)
-        tickets_md.write_text(
-            "## [done] Test task\n"
-            "<!--metadata\n"
-            "branch_name: feature/test\n"
-            "-->\n"
-            "Some description\n"
-        )
+        # Create ticket with branch_name metadata in DB
+        (tmp_path / "levelup").mkdir(parents=True, exist_ok=True)
+        add_ticket(tmp_path, "Test task", "Some description", metadata={"branch_name": "feature/test"})
+        set_ticket_status(tmp_path, 1, TicketStatus.DONE)
 
         mock_agent = MagicMock()
         mock_agent.run.return_value = AgentResult(
@@ -148,17 +143,12 @@ class TestMergeCommand:
         tmp_path,
     ):
         from levelup.agents.backend import AgentResult
+        from levelup.core.tickets import read_tickets
 
-        # Create tickets.md with a ticket that has branch_name metadata
-        tickets_md = tmp_path / "levelup" / "tickets.md"
-        tickets_md.parent.mkdir(parents=True, exist_ok=True)
-        tickets_md.write_text(
-            "## [done] Test task\n"
-            "<!--metadata\n"
-            "branch_name: feature/test\n"
-            "-->\n"
-            "Some description\n"
-        )
+        # Create ticket with branch_name metadata in DB
+        (tmp_path / "levelup").mkdir(parents=True, exist_ok=True)
+        add_ticket(tmp_path, "Test task", "Some description", metadata={"branch_name": "feature/test"})
+        set_ticket_status(tmp_path, 1, TicketStatus.DONE)
 
         mock_agent = MagicMock()
         mock_agent.run.return_value = AgentResult(
@@ -176,9 +166,9 @@ class TestMergeCommand:
         assert result.exit_code == 0
         assert "merged" in result.output.lower()
 
-        # Verify ticket file was updated
-        content = tickets_md.read_text()
-        assert "[merged]" in content
+        # Verify ticket was updated in DB
+        tickets = read_tickets(tmp_path)
+        assert tickets[0].status == TicketStatus.MERGED
 
     @patch("levelup.agents.merge.MergeAgent")
     @patch("levelup.agents.claude_code_client.ClaudeCodeClient")
@@ -211,10 +201,8 @@ class TestMergeCommand:
 
     def test_merge_ticket_not_found(self, tmp_path):
         """Bad ticket number → exit 1."""
-        # Create empty tickets.md
-        tickets_md = tmp_path / "levelup" / "tickets.md"
-        tickets_md.parent.mkdir(parents=True, exist_ok=True)
-        tickets_md.write_text("")
+        (tmp_path / "levelup").mkdir(parents=True, exist_ok=True)
+        # No tickets created in DB
 
         result = runner.invoke(app, ["merge", "--ticket", "999", "--path", str(tmp_path)])
         assert result.exit_code == 1
@@ -222,12 +210,9 @@ class TestMergeCommand:
 
     def test_merge_ticket_no_branch(self, tmp_path):
         """Ticket with no branch_name metadata → exit 1."""
-        tickets_md = tmp_path / "levelup" / "tickets.md"
-        tickets_md.parent.mkdir(parents=True, exist_ok=True)
-        tickets_md.write_text(
-            "## [done] Test task\n"
-            "Some description\n"
-        )
+        (tmp_path / "levelup").mkdir(parents=True, exist_ok=True)
+        add_ticket(tmp_path, "Test task", "Some description")
+        set_ticket_status(tmp_path, 1, TicketStatus.DONE)
 
         result = runner.invoke(app, ["merge", "--ticket", "1", "--path", str(tmp_path)])
         assert result.exit_code == 1

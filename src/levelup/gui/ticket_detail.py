@@ -506,12 +506,14 @@ class TicketDetailWidget(QWidget):
         from pathlib import Path
         from levelup.core.tickets import set_ticket_status, update_ticket
 
+        db_path = Path(self._db_path) if self._db_path else None
+
         # Get selected status from dropdown
         selected_status = self.status_dropdown.currentData()
 
         # If status changed, update it first (before updating title/description)
         if selected_status != self._ticket.status and self._project_path:
-            set_ticket_status(Path(self._project_path), self._ticket.number, selected_status)
+            set_ticket_status(Path(self._project_path), self._ticket.number, selected_status, db_path=db_path)
 
         title = self._title_edit.text().replace("\n", " ").strip()
         # Get markdown with image references
@@ -528,6 +530,7 @@ class TicketDetailWidget(QWidget):
                     title=title,
                     description=description,
                     metadata=metadata,
+                    db_path=db_path,
                 )
             except Exception as e:
                 QMessageBox.critical(self, "Save Error", f"Failed to save ticket: {e}")
@@ -590,13 +593,15 @@ class TicketDetailWidget(QWidget):
         """Save the current ticket (programmatically trigger save).
 
         This method is primarily for testing. It directly updates the ticket
-        file with the current form values including metadata.
+        in the DB with the current form values including metadata.
         """
         if self._project_path is None:
             return
 
         from pathlib import Path
         from levelup.core.tickets import update_ticket, set_ticket_status
+
+        db_path = Path(self._db_path) if self._db_path else None
 
         if self._create_mode:
             # In create mode, we'd normally emit ticket_created signal
@@ -608,7 +613,7 @@ class TicketDetailWidget(QWidget):
             description = self._save_images_and_get_markdown()
 
             metadata = self._build_metadata()
-            ticket = add_ticket(Path(self._project_path), title, description, metadata=metadata)
+            ticket = add_ticket(Path(self._project_path), title, description, metadata=metadata, db_path=db_path)
 
             # Set ticket number and clear pending images
             self._desc_edit.set_ticket_number(ticket.number)
@@ -619,7 +624,7 @@ class TicketDetailWidget(QWidget):
 
             # If status changed, update it first (before updating title/description)
             if selected_status != self._ticket.status:
-                set_ticket_status(Path(self._project_path), self._ticket.number, selected_status)
+                set_ticket_status(Path(self._project_path), self._ticket.number, selected_status, db_path=db_path)
 
             title = self._title_edit.text().replace("\n", " ").strip()
 
@@ -638,6 +643,7 @@ class TicketDetailWidget(QWidget):
                 title=title,
                 description=description,
                 metadata=metadata,
+                db_path=db_path,
             )
 
             # Clear pending images
@@ -670,7 +676,8 @@ class TicketDetailWidget(QWidget):
                     # This will be fixed when we get the actual ticket number
                     # For now, just use 1 (will be corrected on next save)
                     from levelup.core.tickets import read_tickets
-                    tickets = read_tickets(Path(self._project_path))
+                    db_path_for_images = Path(self._db_path) if self._db_path else None
+                    tickets = read_tickets(Path(self._project_path), db_path=db_path_for_images)
                     ticket_num = len(tickets) + 1
 
                 saved_path = save_image(image_data, ticket_num, Path(self._project_path), extension)

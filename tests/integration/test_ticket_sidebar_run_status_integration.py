@@ -13,6 +13,8 @@ import time
 
 import pytest
 
+from levelup.core.tickets import add_ticket, set_ticket_status, TicketStatus
+
 
 def _can_import_pyqt6() -> bool:
     """Check if PyQt6 is available."""
@@ -46,9 +48,9 @@ class TestEndToEndRunStatusColorFlow:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        levelup_dir = project_path / "levelup"
-        levelup_dir.mkdir()
-        (levelup_dir / "tickets.md").write_text("## [in progress] Test ticket\n")
+        (project_path / "levelup").mkdir()
+        add_ticket(project_path, "Test ticket")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
 
         # Create window
         with patch.object(MainWindow, "_start_refresh_timer"), \
@@ -88,9 +90,9 @@ class TestEndToEndRunStatusColorFlow:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        levelup_dir = project_path / "levelup"
-        levelup_dir.mkdir()
-        (levelup_dir / "tickets.md").write_text("## [in progress] Test ticket\n")
+        (project_path / "levelup").mkdir()
+        add_ticket(project_path, "Test ticket")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -136,14 +138,15 @@ class TestEndToEndRunStatusColorFlow:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        levelup_dir = project_path / "levelup"
-        levelup_dir.mkdir()
-        (levelup_dir / "tickets.md").write_text(
-            "## [in progress] Running ticket\n\n"
-            "## [in progress] Waiting ticket\n\n"
-            "## [in progress] No run ticket\n\n"
-            "## [done] Completed ticket\n"
-        )
+        (project_path / "levelup").mkdir()
+        add_ticket(project_path, "Running ticket")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
+        add_ticket(project_path, "Waiting ticket")
+        set_ticket_status(project_path, 2, TicketStatus.IN_PROGRESS)
+        add_ticket(project_path, "No run ticket")
+        set_ticket_status(project_path, 3, TicketStatus.IN_PROGRESS)
+        add_ticket(project_path, "Completed ticket")
+        set_ticket_status(project_path, 4, TicketStatus.DONE)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -182,9 +185,9 @@ class TestEndToEndRunStatusColorFlow:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        levelup_dir = project_path / "levelup"
-        levelup_dir.mkdir()
-        (levelup_dir / "tickets.md").write_text("## [in progress] Test ticket\n")
+        (project_path / "levelup").mkdir()
+        add_ticket(project_path, "Test ticket")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -233,9 +236,9 @@ class TestRefreshCycle:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        levelup_dir = project_path / "levelup"
-        levelup_dir.mkdir()
-        (levelup_dir / "tickets.md").write_text("## [in progress] Test ticket\n")
+        (project_path / "levelup").mkdir()
+        add_ticket(project_path, "Test ticket")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -275,9 +278,9 @@ class TestRefreshCycle:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        levelup_dir = project_path / "levelup"
-        levelup_dir.mkdir()
-        (levelup_dir / "tickets.md").write_text("## [in progress] Test ticket\n")
+        (project_path / "levelup").mkdir()
+        add_ticket(project_path, "Test ticket")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -315,12 +318,14 @@ class TestMultiProjectScenarios:
         project1 = tmp_path / "project1"
         project1.mkdir()
         (project1 / "levelup").mkdir()
-        (project1 / "levelup" / "tickets.md").write_text("## [in progress] Ticket 1\n")
+        add_ticket(project1, "Ticket 1")
+        set_ticket_status(project1, 1, TicketStatus.IN_PROGRESS)
 
         project2 = tmp_path / "project2"
         project2.mkdir()
         (project2 / "levelup").mkdir()
-        (project2 / "levelup" / "tickets.md").write_text("## [in progress] Ticket 1\n")
+        add_ticket(project2, "Ticket 1")
+        set_ticket_status(project2, 1, TicketStatus.IN_PROGRESS)
 
         # Create runs for both projects
         ctx1 = PipelineContext(run_id="run1", task="Task 1", project_path=str(project1), ticket_number=1)
@@ -358,8 +363,8 @@ class TestMultiProjectScenarios:
 class TestErrorRecovery:
     """Test error recovery and resilience."""
 
-    def test_refresh_continues_on_malformed_ticket_file(self, tmp_path):
-        """Refresh should handle malformed ticket files gracefully."""
+    def test_refresh_continues_on_empty_ticket_db(self, tmp_path):
+        """Refresh should handle empty ticket DB gracefully."""
         app = _ensure_qapp()
         from levelup.gui.main_window import MainWindow
         from levelup.state.manager import StateManager
@@ -369,11 +374,8 @@ class TestErrorRecovery:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        levelup_dir = project_path / "levelup"
-        levelup_dir.mkdir()
-
-        # Create malformed tickets file
-        (levelup_dir / "tickets.md").write_text("This is not valid markdown\n###Invalid heading\n")
+        (project_path / "levelup").mkdir()
+        # No tickets created -- empty DB
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -383,10 +385,10 @@ class TestErrorRecovery:
         try:
             window._refresh()
         except Exception as e:
-            pytest.fail(f"Refresh raised exception on malformed tickets: {e}")
+            pytest.fail(f"Refresh raised exception on empty ticket DB: {e}")
 
-    def test_refresh_handles_missing_ticket_file(self, tmp_path):
-        """Refresh should handle missing ticket files gracefully."""
+    def test_refresh_handles_no_levelup_dir(self, tmp_path):
+        """Refresh should handle missing levelup directory gracefully."""
         app = _ensure_qapp()
         from levelup.gui.main_window import MainWindow
         from levelup.state.manager import StateManager
@@ -396,9 +398,7 @@ class TestErrorRecovery:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        levelup_dir = project_path / "levelup"
-        levelup_dir.mkdir()
-        # Don't create tickets.md
+        # Don't create levelup dir or any tickets
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -408,7 +408,7 @@ class TestErrorRecovery:
         try:
             window._refresh()
         except Exception as e:
-            pytest.fail(f"Refresh raised exception on missing tickets: {e}")
+            pytest.fail(f"Refresh raised exception on missing levelup dir: {e}")
 
     def test_run_status_map_handles_invalid_ticket_numbers(self, tmp_path):
         """Run status mapping should handle invalid ticket numbers gracefully."""
@@ -422,9 +422,9 @@ class TestErrorRecovery:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        levelup_dir = project_path / "levelup"
-        levelup_dir.mkdir()
-        (levelup_dir / "tickets.md").write_text("## [in progress] Ticket 1\n")
+        (project_path / "levelup").mkdir()
+        add_ticket(project_path, "Ticket 1")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -475,14 +475,12 @@ class TestPerformanceIntegration:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        levelup_dir = project_path / "levelup"
-        levelup_dir.mkdir()
+        (project_path / "levelup").mkdir()
 
         # Create 100 tickets
-        tickets_md = "\n\n".join([
-            f"## [in progress] Ticket {i}" for i in range(1, 101)
-        ])
-        (levelup_dir / "tickets.md").write_text(tickets_md)
+        for i in range(1, 101):
+            add_ticket(project_path, f"Ticket {i}")
+            set_ticket_status(project_path, i, TicketStatus.IN_PROGRESS)
 
         # Create 50 runs
         for i in range(1, 51):

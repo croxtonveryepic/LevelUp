@@ -18,6 +18,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import pytest
 
+from levelup.core.tickets import add_ticket, set_ticket_status, TicketStatus
+
 
 def _can_import_pyqt6() -> bool:
     """Check if PyQt6 is available."""
@@ -36,7 +38,7 @@ class TestSidebarFilteringWorkflow:
         """When a ticket changes to merged status, it should be filtered from view."""
         from levelup.gui.main_window import MainWindow
         from levelup.state.manager import StateManager
-        from levelup.core.tickets import update_ticket, read_tickets, TicketStatus
+        from levelup.core.tickets import read_tickets
         from PyQt6.QtWidgets import QApplication
 
         app = QApplication.instance() or QApplication([])
@@ -46,9 +48,9 @@ class TestSidebarFilteringWorkflow:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        tickets_file = project_path / "levelup" / "tickets.md"
-        tickets_file.write_text("## [done] Ticket 1\n## Ticket 2\n")
+        add_ticket(project_path, "Ticket 1")
+        set_ticket_status(project_path, 1, TicketStatus.DONE)
+        add_ticket(project_path, "Ticket 2")
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -60,7 +62,7 @@ class TestSidebarFilteringWorkflow:
 
         # Change ticket 1 to merged status
         tickets = read_tickets(project_path)
-        update_ticket(project_path, tickets[0].number, status=TicketStatus.MERGED)
+        set_ticket_status(project_path, tickets[0].number, TicketStatus.MERGED)
 
         # Refresh tickets
         window._refresh_tickets()
@@ -74,7 +76,7 @@ class TestSidebarFilteringWorkflow:
         """When toggle is on, newly merged tickets should appear."""
         from levelup.gui.main_window import MainWindow
         from levelup.state.manager import StateManager
-        from levelup.core.tickets import update_ticket, read_tickets, TicketStatus
+        from levelup.core.tickets import read_tickets
         from PyQt6.QtWidgets import QApplication, QCheckBox
 
         app = QApplication.instance() or QApplication([])
@@ -84,9 +86,9 @@ class TestSidebarFilteringWorkflow:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        tickets_file = project_path / "levelup" / "tickets.md"
-        tickets_file.write_text("## [done] Ticket 1\n## Ticket 2\n")
+        add_ticket(project_path, "Ticket 1")
+        set_ticket_status(project_path, 1, TicketStatus.DONE)
+        add_ticket(project_path, "Ticket 2")
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -101,7 +103,7 @@ class TestSidebarFilteringWorkflow:
 
         # Change ticket 1 to merged status
         tickets = read_tickets(project_path)
-        update_ticket(project_path, tickets[0].number, status=TicketStatus.MERGED)
+        set_ticket_status(project_path, tickets[0].number, TicketStatus.MERGED)
 
         # Refresh tickets
         window._refresh_tickets()
@@ -115,7 +117,6 @@ class TestSidebarFilteringWorkflow:
         """Filter state should persist when creating new tickets."""
         from levelup.gui.main_window import MainWindow
         from levelup.state.manager import StateManager
-        from levelup.core.tickets import create_ticket, TicketStatus
         from PyQt6.QtWidgets import QApplication, QCheckBox
 
         app = QApplication.instance() or QApplication([])
@@ -125,9 +126,8 @@ class TestSidebarFilteringWorkflow:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        tickets_file = project_path / "levelup" / "tickets.md"
-        tickets_file.write_text("## [merged] Merged ticket\n")
+        add_ticket(project_path, "Merged ticket")
+        set_ticket_status(project_path, 1, TicketStatus.MERGED)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -141,7 +141,7 @@ class TestSidebarFilteringWorkflow:
         assert checkbox.isChecked() is False
 
         # Create a new pending ticket
-        create_ticket(project_path, "New ticket", "Description")
+        add_ticket(project_path, "New ticket", "Description")
 
         # Refresh tickets
         window._refresh_tickets()
@@ -167,9 +167,11 @@ class TestSidebarFilteringWorkflow:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        tickets_file = project_path / "levelup" / "tickets.md"
-        tickets_file.write_text("## Pending\n## [merged] Merged\n## [done] Done\n")
+        add_ticket(project_path, "Pending")
+        add_ticket(project_path, "Merged")
+        set_ticket_status(project_path, 2, TicketStatus.MERGED)
+        add_ticket(project_path, "Done")
+        set_ticket_status(project_path, 3, TicketStatus.DONE)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -208,9 +210,9 @@ class TestSidebarFilteringWorkflow:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        tickets_file = project_path / "levelup" / "tickets.md"
-        tickets_file.write_text("## Pending\n## [merged] Merged\n")
+        add_ticket(project_path, "Pending")
+        add_ticket(project_path, "Merged")
+        set_ticket_status(project_path, 2, TicketStatus.MERGED)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -253,12 +255,10 @@ class TestFilteringWithRunStatus:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        tickets_file = project_path / "levelup" / "tickets.md"
-        tickets_file.write_text(
-            "## [in progress] Running ticket\n"
-            "## [merged] Merged ticket\n"
-        )
+        add_ticket(project_path, "Running ticket")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
+        add_ticket(project_path, "Merged ticket")
+        set_ticket_status(project_path, 2, TicketStatus.MERGED)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -302,12 +302,10 @@ class TestFilteringWithRunStatus:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        tickets_file = project_path / "levelup" / "tickets.md"
-        tickets_file.write_text(
-            "## [in progress] Running\n"
-            "## [merged] Merged\n"
-        )
+        add_ticket(project_path, "Running")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
+        add_ticket(project_path, "Merged")
+        set_ticket_status(project_path, 2, TicketStatus.MERGED)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -360,9 +358,9 @@ class TestFilteringWithTheme:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        tickets_file = project_path / "levelup" / "tickets.md"
-        tickets_file.write_text("## Pending\n## [merged] Merged\n")
+        add_ticket(project_path, "Pending")
+        add_ticket(project_path, "Merged")
+        set_ticket_status(project_path, 2, TicketStatus.MERGED)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -398,9 +396,9 @@ class TestFilteringWithTheme:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        tickets_file = project_path / "levelup" / "tickets.md"
-        tickets_file.write_text("## Pending\n## [merged] Merged\n")
+        add_ticket(project_path, "Pending")
+        add_ticket(project_path, "Merged")
+        set_ticket_status(project_path, 2, TicketStatus.MERGED)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -435,9 +433,9 @@ class TestFilteringWithTheme:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        tickets_file = project_path / "levelup" / "tickets.md"
-        tickets_file.write_text("## Pending\n## [merged] Merged\n")
+        add_ticket(project_path, "Pending")
+        add_ticket(project_path, "Merged")
+        set_ticket_status(project_path, 2, TicketStatus.MERGED)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -472,9 +470,10 @@ class TestFilteringEdgeCases:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        tickets_file = project_path / "levelup" / "tickets.md"
-        tickets_file.write_text("## [merged] Merged 1\n## [merged] Merged 2\n")
+        add_ticket(project_path, "Merged 1")
+        set_ticket_status(project_path, 1, TicketStatus.MERGED)
+        add_ticket(project_path, "Merged 2")
+        set_ticket_status(project_path, 2, TicketStatus.MERGED)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -500,9 +499,9 @@ class TestFilteringEdgeCases:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        tickets_file = project_path / "levelup" / "tickets.md"
-        tickets_file.write_text("## Pending\n## [merged] Merged\n")
+        add_ticket(project_path, "Pending")
+        add_ticket(project_path, "Merged")
+        set_ticket_status(project_path, 2, TicketStatus.MERGED)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):

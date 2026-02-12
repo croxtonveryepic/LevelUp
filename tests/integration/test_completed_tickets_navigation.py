@@ -19,6 +19,8 @@ from unittest.mock import Mock, patch
 import tempfile
 import pytest
 
+from levelup.core.tickets import add_ticket, set_ticket_status, TicketStatus
+
 
 def _can_import_pyqt6() -> bool:
     """Check if PyQt6 is available."""
@@ -46,10 +48,10 @@ class TestCompletedTicketsPageIntegration:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text(
-            "## [done] Done ticket\n## [merged] Merged ticket\n"
-        )
+        add_ticket(project_path, "Done ticket")
+        set_ticket_status(project_path, 1, TicketStatus.DONE)
+        add_ticket(project_path, "Merged ticket")
+        set_ticket_status(project_path, 2, TicketStatus.MERGED)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -73,8 +75,7 @@ class TestCompletedTicketsPageIntegration:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text("## Test ticket\n")
+        add_ticket(project_path, "Test ticket")
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -99,8 +100,8 @@ class TestCompletedTicketsPageIntegration:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text("## [done] Done ticket\n")
+        add_ticket(project_path, "Done ticket")
+        set_ticket_status(project_path, 1, TicketStatus.DONE)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -131,8 +132,8 @@ class TestCompletedTicketsPageIntegration:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text("## [done] Done ticket\n")
+        add_ticket(project_path, "Done ticket")
+        set_ticket_status(project_path, 1, TicketStatus.DONE)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -166,10 +167,9 @@ class TestCompletedTicketsPageIntegration:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text(
-            "## Pending ticket\n## [done] Done ticket\n"
-        )
+        add_ticket(project_path, "Pending ticket")
+        add_ticket(project_path, "Done ticket")
+        set_ticket_status(project_path, 2, TicketStatus.DONE)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -207,13 +207,13 @@ class TestCompletedTicketsFiltering:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text(
-            "## Pending ticket\n"
-            "## [in progress] In progress ticket\n"
-            "## [done] Done ticket\n"
-            "## [merged] Merged ticket\n"
-        )
+        add_ticket(project_path, "Pending ticket")
+        add_ticket(project_path, "In progress ticket")
+        set_ticket_status(project_path, 2, TicketStatus.IN_PROGRESS)
+        add_ticket(project_path, "Done ticket")
+        set_ticket_status(project_path, 3, TicketStatus.DONE)
+        add_ticket(project_path, "Merged ticket")
+        set_ticket_status(project_path, 4, TicketStatus.MERGED)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -246,9 +246,8 @@ class TestCompletedTicketsFiltering:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        tickets_file = project_path / "levelup" / "tickets.md"
-        tickets_file.write_text("## [done] Done ticket\n")
+        add_ticket(project_path, "Done ticket")
+        set_ticket_status(project_path, 1, TicketStatus.DONE)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -265,7 +264,8 @@ class TestCompletedTicketsFiltering:
         assert list_widget.count() == 1
 
         # Add another completed ticket
-        tickets_file.write_text("## [done] Done ticket\n## [merged] Merged ticket\n")
+        add_ticket(project_path, "Merged ticket")
+        set_ticket_status(project_path, 2, TicketStatus.MERGED)
 
         # Trigger refresh
         window._refresh_tickets()
@@ -294,8 +294,8 @@ class TestCompletedTicketsNavigation:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text("## [done] Done ticket\n")
+        add_ticket(project_path, "Done ticket")
+        set_ticket_status(project_path, 1, TicketStatus.DONE)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -329,8 +329,8 @@ class TestCompletedTicketsNavigation:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text("## [done] Done ticket\n")
+        add_ticket(project_path, "Done ticket")
+        set_ticket_status(project_path, 1, TicketStatus.DONE)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -376,8 +376,8 @@ class TestCompletedTicketsThemeIntegration:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text("## [done] Done ticket\n")
+        add_ticket(project_path, "Done ticket")
+        set_ticket_status(project_path, 1, TicketStatus.DONE)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -407,8 +407,8 @@ class TestCompletedTicketsThemeIntegration:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text("## [done] Done ticket\n")
+        add_ticket(project_path, "Done ticket")
+        set_ticket_status(project_path, 1, TicketStatus.DONE)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -475,8 +475,7 @@ class TestCompletedTicketsEdgeCases:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text("")
+        # No tickets added - empty state
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -506,8 +505,8 @@ class TestCompletedTicketsEdgeCases:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text("## [done] Done ticket\n")
+        add_ticket(project_path, "Done ticket")
+        set_ticket_status(project_path, 1, TicketStatus.DONE)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):

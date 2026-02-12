@@ -92,15 +92,12 @@ class Orchestrator:
         if ctx.task.source == "ticket" and ctx.task.source_id:
             try:
                 ticket_num = int(ctx.task.source_id.split(":")[1])
-                from levelup.core.tickets import read_tickets
+                from levelup.core.tickets import get_ticket
 
                 project_path = self._settings.project.path
-                tickets = read_tickets(project_path, self._settings.project.tickets_file)
-                for ticket in tickets:
-                    if ticket.number == ticket_num:
-                        if ticket.metadata and "auto_approve" in ticket.metadata:
-                            return bool(ticket.metadata["auto_approve"])
-                        break
+                ticket = get_ticket(project_path, ticket_num)
+                if ticket and ticket.metadata and "auto_approve" in ticket.metadata:
+                    return bool(ticket.metadata["auto_approve"])
             except (ValueError, IndexError, Exception):
                 # If we can't parse ticket info, fall back to project setting
                 pass

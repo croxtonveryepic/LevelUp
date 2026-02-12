@@ -43,11 +43,11 @@ class TestAutoTicketCreation:
         assert result.exit_code == 0
         assert "Created ticket #1" in result.output
 
-        # Verify ticket file was created
-        tickets_file = tmp_path / "levelup" / "tickets.md"
-        assert tickets_file.exists()
-        content = tickets_file.read_text()
-        assert "add login feature" in content
+        # Verify ticket was created in DB
+        from levelup.core.tickets import read_tickets
+        tickets = read_tickets(tmp_path)
+        assert len(tickets) == 1
+        assert "add login feature" in tickets[0].title
 
     @patch("levelup.core.orchestrator.Orchestrator")
     @patch("levelup.state.manager.StateManager")

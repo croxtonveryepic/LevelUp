@@ -138,30 +138,28 @@ def run(
     if ticket_next:
         from levelup.core.tickets import TicketStatus, get_next_ticket, set_ticket_status
 
-        t = get_next_ticket(path, settings.project.tickets_file)
+        t = get_next_ticket(path, db_path=db_path)
         if not t:
             print_error("No pending tickets.")
             raise typer.Exit(1)
-        set_ticket_status(path, t.number, TicketStatus.IN_PROGRESS, settings.project.tickets_file)
+        set_ticket_status(path, t.number, TicketStatus.IN_PROGRESS, db_path=db_path)
         task_input = t.to_task_input()
         console.print(f"[cyan]Ticket #{t.number}:[/cyan] {t.title}")
     elif ticket is not None:
-        from levelup.core.tickets import TicketStatus, read_tickets, set_ticket_status
+        from levelup.core.tickets import TicketStatus, get_ticket, set_ticket_status
 
-        tickets = read_tickets(path, settings.project.tickets_file)
-        matching = [tk for tk in tickets if tk.number == ticket]
-        if not matching:
+        t = get_ticket(path, ticket, db_path=db_path)
+        if not t:
             print_error(f"Ticket #{ticket} not found.")
             raise typer.Exit(1)
-        t = matching[0]
-        set_ticket_status(path, t.number, TicketStatus.IN_PROGRESS, settings.project.tickets_file)
+        set_ticket_status(path, t.number, TicketStatus.IN_PROGRESS, db_path=db_path)
         task_input = t.to_task_input()
         console.print(f"[cyan]Ticket #{t.number}:[/cyan] {t.title}")
     elif task:
         from levelup.core.tickets import TicketStatus, add_ticket, set_ticket_status
 
-        t = add_ticket(path, task, "", settings.project.tickets_file)
-        set_ticket_status(path, t.number, TicketStatus.IN_PROGRESS, settings.project.tickets_file)
+        t = add_ticket(path, task, "", db_path=db_path)
+        set_ticket_status(path, t.number, TicketStatus.IN_PROGRESS, db_path=db_path)
         task_input = t.to_task_input()
         console.print(f"[cyan]Created ticket #{t.number}:[/cyan] {t.title}")
     else:
@@ -171,8 +169,8 @@ def run(
             raise typer.Exit(1)
         from levelup.core.tickets import TicketStatus, add_ticket, set_ticket_status
 
-        t = add_ticket(path, title, description, settings.project.tickets_file)
-        set_ticket_status(path, t.number, TicketStatus.IN_PROGRESS, settings.project.tickets_file)
+        t = add_ticket(path, title, description, db_path=db_path)
+        set_ticket_status(path, t.number, TicketStatus.IN_PROGRESS, db_path=db_path)
         task_input = t.to_task_input()
         console.print(f"[cyan]Created ticket #{t.number}:[/cyan] {t.title}")
 
@@ -210,11 +208,11 @@ def run(
 
     # Auto-mark ticket as done on successful completion
     if ctx.status.value == "completed" and ctx.task.source == "ticket" and ctx.task.source_id:
-        from levelup.core.tickets import TicketStatus, read_tickets, set_ticket_status, update_ticket
+        from levelup.core.tickets import TicketStatus, get_ticket, set_ticket_status, update_ticket
 
         try:
             ticket_num = int(ctx.task.source_id.split(":")[1])
-            set_ticket_status(path, ticket_num, TicketStatus.DONE, settings.project.tickets_file)
+            set_ticket_status(path, ticket_num, TicketStatus.DONE, db_path=db_path)
             console.print(f"[green]Ticket #{ticket_num} marked as done.[/green]")
 
             # Record branch name in ticket metadata
@@ -224,13 +222,7 @@ def run(
                     convention = ctx.branch_naming or "levelup/{run_id}"
                     branch_name = orchestrator._build_branch_name(convention, ctx)
 
-                    # Read existing metadata and merge with branch_name
-                    tickets = read_tickets(path, settings.project.tickets_file)
-                    current_ticket = None
-                    for t in tickets:
-                        if t.number == ticket_num:
-                            current_ticket = t
-                            break
+                    current_ticket = get_ticket(path, ticket_num, db_path=db_path)
 
                     if current_ticket:
                         # Merge with existing metadata
@@ -242,7 +234,7 @@ def run(
                             path,
                             ticket_num,
                             metadata=metadata,
-                            filename=settings.project.tickets_file,
+                            db_path=db_path,
                         )
             except Exception:
                 # Don't fail the pipeline if metadata update fails
@@ -848,11 +840,13 @@ def tickets(
     ticket_num: Optional[int] = typer.Argument(None, help="Ticket number (for start/done/merged/delete/set-metadata)"),
     path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
     auto_approve_val: Optional[str] = typer.Option(None, "--auto-approve", help="Set auto_approve metadata (true/false/none)"),
+    db_path: Optional[Path] = typer.Option(
+        None, "--db-path", help="Override state DB path"
+    ),
 ) -> None:
-    """List and manage tickets from the tickets markdown file."""
+    """List and manage tickets."""
     from rich.table import Table
 
-    from levelup.config.loader import load_settings
     from levelup.core.tickets import (
         TicketStatus,
         delete_ticket,
@@ -862,10 +856,8 @@ def tickets(
         update_ticket,
     )
 
-    settings = load_settings(project_path=path)
-
     if action == "list":
-        all_tickets = read_tickets(path, settings.project.tickets_file)
+        all_tickets = read_tickets(path, db_path=db_path)
         if not all_tickets:
             console.print("[dim]No tickets found.[/dim]")
             return
@@ -890,7 +882,7 @@ def tickets(
         console.print(table)
 
     elif action == "next":
-        t = get_next_ticket(path, settings.project.tickets_file)
+        t = get_next_ticket(path, db_path=db_path)
         if t:
             console.print(f"[cyan]#{t.number}[/cyan] {t.title}")
             if t.description:
@@ -909,7 +901,7 @@ def tickets(
         }
         new_status = status_map[action]
         try:
-            set_ticket_status(path, ticket_num, new_status, settings.project.tickets_file)
+            set_ticket_status(path, ticket_num, new_status, db_path=db_path)
             console.print(f"[green]Ticket #{ticket_num} → {new_status.value}[/green]")
         except IndexError as e:
             print_error(str(e))
@@ -920,7 +912,7 @@ def tickets(
             print_error("Ticket number required: levelup tickets delete <N>")
             raise typer.Exit(1)
         try:
-            title = delete_ticket(path, ticket_num, settings.project.tickets_file)
+            title = delete_ticket(path, ticket_num, db_path=db_path)
             console.print(f"[green]Deleted ticket #{ticket_num}: {title}[/green]")
         except IndexError as e:
             print_error(str(e))
@@ -947,7 +939,7 @@ def tickets(
             raise typer.Exit(1)
 
         try:
-            update_ticket(path, ticket_num, metadata=metadata, filename=settings.project.tickets_file)
+            update_ticket(path, ticket_num, metadata=metadata, db_path=db_path)
             if metadata is None:
                 console.print(f"[green]Removed metadata from ticket #{ticket_num}[/green]")
             else:
@@ -1116,14 +1108,12 @@ def merge(
     branch_name: str
 
     if ticket is not None:
-        from levelup.core.tickets import read_tickets
+        from levelup.core.tickets import get_ticket
 
-        tickets_list = read_tickets(path, settings.project.tickets_file)
-        matching = [tk for tk in tickets_list if tk.number == ticket]
-        if not matching:
+        t = get_ticket(path, ticket)
+        if not t:
             print_error(f"Ticket #{ticket} not found.")
             raise typer.Exit(1)
-        t = matching[0]
         if not t.metadata or not t.metadata.get("branch_name", "").strip():
             print_error(f"Ticket #{ticket} has no branch_name metadata.")
             raise typer.Exit(1)
@@ -1208,7 +1198,7 @@ def merge(
             from levelup.core.tickets import TicketStatus, set_ticket_status
 
             try:
-                set_ticket_status(path, ticket_number, TicketStatus.MERGED, settings.project.tickets_file)
+                set_ticket_status(path, ticket_number, TicketStatus.MERGED)
                 console.print(f"[green]Ticket #{ticket_number} marked as merged.[/green]")
             except Exception as e:
                 console.print(f"[yellow]Warning: failed to update ticket status: {e}[/yellow]")

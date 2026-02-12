@@ -13,6 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 import pytest
 
+from levelup.core.tickets import add_ticket
+
 
 def _can_import_pyqt6() -> bool:
     """Check if PyQt6 is available."""
@@ -447,10 +449,8 @@ class TestMainWindowIntegrationWithNewPendingColor:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text(
-            "## Pending ticket 1\n\n## Pending ticket 2\n"
-        )
+        add_ticket(project_path, "Pending ticket 1")
+        add_ticket(project_path, "Pending ticket 2")
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -476,10 +476,7 @@ class TestMainWindowIntegrationWithNewPendingColor:
 
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text(
-            "## Pending ticket\n"
-        )
+        add_ticket(project_path, "Pending ticket")
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):

@@ -578,8 +578,7 @@ class TestBranchNameBackwardCompatibility:
     ):
         """Old tickets without any metadata should get branch_name added."""
         # Create ticket without metadata (old style)
-        path = project_with_tickets / "levelup" / "tickets.md"
-        path.write_text("## Old ticket\nNo metadata\n", encoding="utf-8")
+        add_ticket(project_with_tickets, "Old ticket", "No metadata")
 
         mock_ctx = MagicMock()
         mock_ctx.status.value = "completed"

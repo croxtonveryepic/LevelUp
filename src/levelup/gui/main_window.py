@@ -52,21 +52,10 @@ class MainWindow(QMainWindow):
         self._state_manager = state_manager
         self._runs: list[RunRecord] = []
         self._project_path = project_path
-        self._tickets_file: str | None = None
         self._db_path = str(state_manager._db_path)
         self._active_run_pids: set[int] = set()
         self._checkpoint_dialog_open = False
         self._cached_tickets: list = []
-
-        # Load tickets_file setting if we have a project path
-        if project_path is not None:
-            try:
-                from levelup.config.loader import load_settings
-
-                settings = load_settings(project_path=project_path)
-                self._tickets_file = settings.project.tickets_file
-            except Exception:
-                pass
 
         self._current_theme = get_current_theme()
 
@@ -78,7 +67,7 @@ class MainWindow(QMainWindow):
         if self._project_path is not None:
             from levelup.core.tickets import read_tickets
             try:
-                self._cached_tickets = read_tickets(self._project_path, self._tickets_file)
+                self._cached_tickets = read_tickets(self._project_path, db_path=Path(self._db_path))
                 self._sidebar.set_tickets(self._cached_tickets)
             except Exception:
                 pass
@@ -208,7 +197,7 @@ class MainWindow(QMainWindow):
         self._check_gui_run_checkpoints()
 
     def _refresh_tickets(self) -> None:
-        """Reload ticket list from disk. Skip if detail widget has unsaved edits."""
+        """Reload ticket list from DB. Skip if detail widget has unsaved edits."""
         if self._detail.is_dirty:
             return
         if self._project_path is None:
@@ -216,7 +205,7 @@ class MainWindow(QMainWindow):
 
         from levelup.core.tickets import read_tickets
 
-        tickets = read_tickets(self._project_path, self._tickets_file)
+        tickets = read_tickets(self._project_path, db_path=Path(self._db_path))
 
         # Create run status mapping for active runs
         run_status_map: dict[int, str] = {}
@@ -366,7 +355,7 @@ class MainWindow(QMainWindow):
         # Ensure tickets are loaded before showing completed page
         if self._project_path is not None and not hasattr(self, "_cached_tickets"):
             from levelup.core.tickets import read_tickets
-            self._cached_tickets = read_tickets(self._project_path, self._tickets_file)
+            self._cached_tickets = read_tickets(self._project_path, db_path=Path(self._db_path))
 
         # Refresh completed tickets with current ticket list
         tickets = getattr(self, "_cached_tickets", [])
@@ -416,7 +405,7 @@ class MainWindow(QMainWindow):
                 self._project_path,
                 title,
                 description=description,
-                filename=self._tickets_file,
+                db_path=Path(self._db_path),
             )
         except Exception as e:
             QMessageBox.critical(self, "Create Error", f"Failed to create ticket: {e}")
@@ -432,7 +421,7 @@ class MainWindow(QMainWindow):
             )
 
     def _on_ticket_saved(self, number: int, title: str, description: str, metadata_json: str = "") -> None:
-        """Persist ticket edits to the markdown file."""
+        """Persist ticket edits to the database."""
         if self._project_path is None:
             return
 
@@ -448,7 +437,7 @@ class MainWindow(QMainWindow):
                 title=title,
                 description=description,
                 metadata=metadata,
-                filename=self._tickets_file,
+                db_path=Path(self._db_path),
             )
         except Exception as e:
             QMessageBox.critical(self, "Save Error", f"Failed to save ticket: {e}")
@@ -491,11 +480,11 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
-        # Delete the ticket from the markdown file
+        # Delete the ticket from the database
         from levelup.core.tickets import delete_ticket
 
         try:
-            delete_ticket(self._project_path, number, filename=self._tickets_file)
+            delete_ticket(self._project_path, number, db_path=Path(self._db_path))
         except Exception as e:
             QMessageBox.critical(self, "Delete Error", f"Failed to delete ticket: {e}")
             return

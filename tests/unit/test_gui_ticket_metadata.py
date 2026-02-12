@@ -368,22 +368,15 @@ class TestMetadataValidation:
 class TestMetadataEdgeCases:
     """Test edge cases for metadata in GUI."""
 
-    def test_load_ticket_with_malformed_metadata(self, qapp, tmp_path):
-        """Should handle tickets with malformed metadata gracefully."""
+    def test_load_ticket_with_no_metadata(self, qapp, tmp_path):
+        """Should handle tickets with no metadata gracefully."""
         from levelup.gui.ticket_detail import TicketDetailWidget
 
         tickets_dir = tmp_path / "levelup"
         tickets_dir.mkdir()
 
-        # Create ticket with invalid metadata manually
-        (tickets_dir / "tickets.md").write_text(
-            "## Test task\n"
-            "<!--metadata\n"
-            "invalid: [[[broken\n"
-            "-->\n"
-            "Description\n",
-            encoding="utf-8",
-        )
+        # Create ticket without metadata
+        add_ticket(tmp_path, "Test task", "Description")
 
         widget = TicketDetailWidget(project_path=tmp_path)
 
@@ -393,7 +386,7 @@ class TestMetadataEdgeCases:
             try:
                 widget.load_ticket(tickets[0])
                 # Should either load with default or show error gracefully
-            except Exception as e:
+            except Exception:
                 # Should handle error gracefully
                 pass
 
@@ -414,16 +407,14 @@ class TestMetadataEdgeCases:
             assert not widget.auto_approve_checkbox.isChecked()
 
     def test_metadata_with_old_tickets(self, qapp, tmp_path):
-        """Should handle tickets created before metadata feature."""
+        """Should handle tickets created without metadata."""
         from levelup.gui.ticket_detail import TicketDetailWidget
 
         tickets_dir = tmp_path / "levelup"
         tickets_dir.mkdir()
 
-        # Create old-style ticket
-        (tickets_dir / "tickets.md").write_text(
-            "## Old task\nDescription without metadata\n", encoding="utf-8"
-        )
+        # Create ticket without metadata (simulates old-style ticket)
+        add_ticket(tmp_path, "Old task", "Description without metadata")
 
         widget = TicketDetailWidget(project_path=tmp_path)
         tickets = read_tickets(tmp_path)

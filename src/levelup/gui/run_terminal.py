@@ -659,16 +659,16 @@ class RunTerminalWidget(QWidget):
             return
 
         try:
-            from levelup.core.tickets import read_tickets
+            from levelup.core.tickets import get_ticket
 
             ticket_num = self._current_ticket.number
-            tickets_list = read_tickets(Path(self._project_path))
-            for tk in tickets_list:
-                if tk.number == ticket_num and tk.status == TicketStatus.MERGED:
-                    self._merge_poll_timer.stop()
-                    self._set_running_state(False)
-                    self._status_label.setText("Merge completed")
-                    self.merge_finished.emit()
-                    return
+            db_path = Path(self._db_path) if self._db_path else None
+            tk = get_ticket(Path(self._project_path), ticket_num, db_path=db_path)
+            if tk and tk.status == TicketStatus.MERGED:
+                self._merge_poll_timer.stop()
+                self._set_running_state(False)
+                self._status_label.setText("Merge completed")
+                self.merge_finished.emit()
+                return
         except Exception:
             pass

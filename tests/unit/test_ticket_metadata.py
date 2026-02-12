@@ -230,14 +230,7 @@ class TestParseTicketMetadata:
 
 
 class TestWriteTicketMetadata:
-    """Test serializing metadata to markdown."""
-
-    def _write(self, tmp_path: Path, content: str) -> Path:
-        d = tmp_path / "levelup"
-        d.mkdir(exist_ok=True)
-        p = d / "tickets.md"
-        p.write_text(content, encoding="utf-8")
-        return p
+    """Test serializing metadata to DB."""
 
     def test_add_ticket_with_metadata(self, tmp_path: Path):
         """add_ticket should accept and serialize metadata."""
@@ -264,7 +257,7 @@ class TestWriteTicketMetadata:
 
     def test_update_ticket_set_metadata(self, tmp_path: Path):
         """update_ticket should be able to set metadata."""
-        self._write(tmp_path, "## Original title\nDescription\n")
+        add_ticket(tmp_path, "Original title", "Description")
 
         update_ticket(
             tmp_path,
@@ -277,13 +270,11 @@ class TestWriteTicketMetadata:
 
     def test_update_ticket_change_metadata(self, tmp_path: Path):
         """update_ticket should be able to change existing metadata."""
-        self._write(
+        add_ticket(
             tmp_path,
-            "## Task\n"
-            "<!--metadata\n"
-            "auto_approve: false\n"
-            "-->\n"
-            "Description\n",
+            "Task",
+            "Description",
+            metadata={"auto_approve": False},
         )
 
         update_ticket(
@@ -297,13 +288,11 @@ class TestWriteTicketMetadata:
 
     def test_update_ticket_remove_metadata(self, tmp_path: Path):
         """update_ticket with metadata=None should remove metadata."""
-        self._write(
+        add_ticket(
             tmp_path,
-            "## Task\n"
-            "<!--metadata\n"
-            "auto_approve: true\n"
-            "-->\n"
-            "Description\n",
+            "Task",
+            "Description",
+            metadata={"auto_approve": True},
         )
 
         update_ticket(tmp_path, 1, metadata=None)
@@ -313,13 +302,11 @@ class TestWriteTicketMetadata:
 
     def test_update_ticket_preserves_metadata_when_not_specified(self, tmp_path: Path):
         """update_ticket should preserve metadata if not specified in update."""
-        self._write(
+        add_ticket(
             tmp_path,
-            "## Original title\n"
-            "<!--metadata\n"
-            "auto_approve: true\n"
-            "-->\n"
-            "Description\n",
+            "Original title",
+            "Description",
+            metadata={"auto_approve": True},
         )
 
         update_ticket(tmp_path, 1, title="New title")
@@ -330,13 +317,11 @@ class TestWriteTicketMetadata:
 
     def test_set_ticket_status_preserves_metadata(self, tmp_path: Path):
         """set_ticket_status should preserve metadata."""
-        self._write(
+        add_ticket(
             tmp_path,
-            "## Task\n"
-            "<!--metadata\n"
-            "auto_approve: true\n"
-            "-->\n"
-            "Description\n",
+            "Task",
+            "Description",
+            metadata={"auto_approve": True},
         )
 
         set_ticket_status(tmp_path, 1, TicketStatus.IN_PROGRESS)
@@ -367,8 +352,8 @@ class TestWriteTicketMetadata:
         assert tickets[0].metadata["auto_approve"] is True
         assert tickets[0].metadata["priority"] == "high"
 
-    def test_metadata_format_in_file(self, tmp_path: Path):
-        """Written metadata should use HTML comment format."""
+    def test_metadata_stored_in_db(self, tmp_path: Path):
+        """Metadata should be stored in the DB."""
         add_ticket(
             tmp_path,
             "Task",
@@ -376,24 +361,19 @@ class TestWriteTicketMetadata:
             metadata={"auto_approve": True},
         )
 
-        path = tmp_path / "levelup" / "tickets.md"
-        content = path.read_text()
-        assert "<!--metadata" in content
-        assert "auto_approve: true" in content
-        assert "-->" in content
+        tickets = read_tickets(tmp_path)
+        assert tickets[0].metadata is not None
+        assert tickets[0].metadata["auto_approve"] is True
 
     def test_delete_ticket_with_metadata(self, tmp_path: Path):
         """delete_ticket should work with tickets that have metadata."""
-        self._write(
+        add_ticket(
             tmp_path,
-            "## Task 1\n"
-            "<!--metadata\n"
-            "auto_approve: true\n"
-            "-->\n"
-            "Desc 1\n\n"
-            "## Task 2\n"
-            "Desc 2\n",
+            "Task 1",
+            "Desc 1",
+            metadata={"auto_approve": True},
         )
+        add_ticket(tmp_path, "Task 2", "Desc 2")
 
         delete_ticket(tmp_path, 1)
 
@@ -410,15 +390,11 @@ class TestWriteTicketMetadata:
 class TestTicketMetadataBackwardCompatibility:
     """Test that tickets without metadata continue to work."""
 
-    def test_old_tickets_parse_correctly(self, tmp_path: Path):
-        """Tickets created before metadata feature should parse."""
-        path = tmp_path / "levelup"
-        path.mkdir()
-        (path / "tickets.md").write_text(
-            "## Old task 1\nDescription\n\n"
-            "## [done] Old task 2\nAnother desc\n",
-            encoding="utf-8",
-        )
+    def test_tickets_without_metadata_work(self, tmp_path: Path):
+        """Tickets created without metadata should work correctly."""
+        add_ticket(tmp_path, "Old task 1", "Description")
+        add_ticket(tmp_path, "Old task 2", "Another desc")
+        set_ticket_status(tmp_path, 2, TicketStatus.DONE)
 
         tickets = read_tickets(tmp_path)
         assert len(tickets) == 2
@@ -428,22 +404,16 @@ class TestTicketMetadataBackwardCompatibility:
         assert tickets[1].status == TicketStatus.DONE
         assert tickets[1].metadata is None
 
-    def test_mixed_old_and_new_tickets(self, tmp_path: Path):
-        """File with both old and new style tickets should work."""
-        path = tmp_path / "levelup"
-        path.mkdir()
-        (path / "tickets.md").write_text(
-            "## Old style\n"
-            "No metadata\n\n"
-            "## New style\n"
-            "<!--metadata\n"
-            "auto_approve: true\n"
-            "-->\n"
-            "Has metadata\n\n"
-            "## Another old\n"
-            "Also no metadata\n",
-            encoding="utf-8",
+    def test_mixed_metadata_and_no_metadata_tickets(self, tmp_path: Path):
+        """Mix of tickets with and without metadata should work."""
+        add_ticket(tmp_path, "Old style", "No metadata")
+        add_ticket(
+            tmp_path,
+            "New style",
+            "Has metadata",
+            metadata={"auto_approve": True},
         )
+        add_ticket(tmp_path, "Another old", "Also no metadata")
 
         tickets = read_tickets(tmp_path)
         assert len(tickets) == 3
@@ -451,14 +421,9 @@ class TestTicketMetadataBackwardCompatibility:
         assert tickets[1].metadata["auto_approve"] is True
         assert tickets[2].metadata is None
 
-    def test_operations_on_old_tickets_work(self, tmp_path: Path):
+    def test_operations_on_tickets_without_metadata_work(self, tmp_path: Path):
         """All ticket operations should work on tickets without metadata."""
-        path = tmp_path / "levelup"
-        path.mkdir()
-        (path / "tickets.md").write_text(
-            "## Old task\nDescription\n",
-            encoding="utf-8",
-        )
+        add_ticket(tmp_path, "Old task", "Description")
 
         # Status change
         set_ticket_status(tmp_path, 1, TicketStatus.IN_PROGRESS)

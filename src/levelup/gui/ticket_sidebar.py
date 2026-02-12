@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QListWidget, QListWi
 
 from pathlib import Path
 
-from levelup.core.tickets import Ticket, TicketStatus, read_tickets
+from levelup.core.tickets import Ticket, TicketStatus
 from levelup.gui.resources import TICKET_STATUS_COLORS, TICKET_STATUS_ICONS, get_ticket_status_color
 
 
@@ -165,8 +165,9 @@ class TicketSidebar(TicketSidebarWidget):
             self.refresh()
 
     def refresh(self) -> None:
-        """Refresh tickets from file."""
+        """Refresh tickets from DB."""
         if self._project_path:
+            from levelup.core.tickets import read_tickets
             tickets = read_tickets(self._project_path)
             self.set_tickets(tickets)
         else:

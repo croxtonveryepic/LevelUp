@@ -112,20 +112,15 @@ class TestUpdateTicketFiltersRunOptions:
     def test_update_ticket_removes_model_from_metadata(self, tmp_path: Path):
         """AC: update_ticket should remove 'model' from metadata."""
         # Create ticket with model in metadata (legacy)
-        tickets_dir = tmp_path / "levelup"
-        tickets_dir.mkdir()
-        (tickets_dir / "tickets.md").write_text(
-            "## Test task\n"
-            "<!--metadata\n"
-            "model: sonnet\n"
-            "priority: high\n"
-            "-->\n"
-            "Description\n",
-            encoding="utf-8",
+        add_ticket(
+            tmp_path,
+            "Test task",
+            "Description",
+            metadata={"priority": "high"},
         )
 
-        # Update ticket
-        update_ticket(tmp_path, 1, title="Updated task")
+        # Update ticket with metadata containing model (should be filtered)
+        update_ticket(tmp_path, 1, title="Updated task", metadata={"model": "sonnet", "priority": "high"})
 
         # Read back
         tickets = read_tickets(tmp_path)
@@ -134,19 +129,14 @@ class TestUpdateTicketFiltersRunOptions:
 
     def test_update_ticket_removes_effort_from_metadata(self, tmp_path: Path):
         """AC: update_ticket should remove 'effort' from metadata."""
-        tickets_dir = tmp_path / "levelup"
-        tickets_dir.mkdir()
-        (tickets_dir / "tickets.md").write_text(
-            "## Test task\n"
-            "<!--metadata\n"
-            "effort: high\n"
-            "estimate: 3h\n"
-            "-->\n"
-            "Description\n",
-            encoding="utf-8",
+        add_ticket(
+            tmp_path,
+            "Test task",
+            "Description",
+            metadata={"estimate": "3h"},
         )
 
-        update_ticket(tmp_path, 1, title="Updated task")
+        update_ticket(tmp_path, 1, title="Updated task", metadata={"effort": "high", "estimate": "3h"})
 
         tickets = read_tickets(tmp_path)
         assert "effort" not in (tickets[0].metadata or {})
@@ -154,19 +144,14 @@ class TestUpdateTicketFiltersRunOptions:
 
     def test_update_ticket_removes_skip_planning_from_metadata(self, tmp_path: Path):
         """AC: update_ticket should remove 'skip_planning' from metadata."""
-        tickets_dir = tmp_path / "levelup"
-        tickets_dir.mkdir()
-        (tickets_dir / "tickets.md").write_text(
-            "## Test task\n"
-            "<!--metadata\n"
-            "skip_planning: true\n"
-            "assignee: alice\n"
-            "-->\n"
-            "Description\n",
-            encoding="utf-8",
+        add_ticket(
+            tmp_path,
+            "Test task",
+            "Description",
+            metadata={"assignee": "alice"},
         )
 
-        update_ticket(tmp_path, 1, description="Updated description")
+        update_ticket(tmp_path, 1, description="Updated description", metadata={"skip_planning": True, "assignee": "alice"})
 
         tickets = read_tickets(tmp_path)
         assert "skip_planning" not in (tickets[0].metadata or {})
@@ -174,15 +159,11 @@ class TestUpdateTicketFiltersRunOptions:
 
     def test_update_ticket_preserves_auto_approve(self, tmp_path: Path):
         """AC: update_ticket should preserve 'auto_approve' (ticket-level metadata)."""
-        tickets_dir = tmp_path / "levelup"
-        tickets_dir.mkdir()
-        (tickets_dir / "tickets.md").write_text(
-            "## Test task\n"
-            "<!--metadata\n"
-            "auto_approve: true\n"
-            "-->\n"
-            "Description\n",
-            encoding="utf-8",
+        add_ticket(
+            tmp_path,
+            "Test task",
+            "Description",
+            metadata={"auto_approve": True},
         )
 
         update_ticket(tmp_path, 1, title="Updated task")
@@ -199,30 +180,19 @@ class TestUpdateTicketFiltersRunOptions:
 class TestSetTicketStatusFiltersRunOptions:
     """Test that set_ticket_status filters out run options from metadata."""
 
-    def test_set_ticket_status_removes_run_options(self, tmp_path: Path):
-        """AC: set_ticket_status should remove run options when updating status."""
-        tickets_dir = tmp_path / "levelup"
-        tickets_dir.mkdir()
-        (tickets_dir / "tickets.md").write_text(
-            "## Test task\n"
-            "<!--metadata\n"
-            "model: opus\n"
-            "effort: low\n"
-            "skip_planning: true\n"
-            "priority: urgent\n"
-            "-->\n"
-            "Description\n",
-            encoding="utf-8",
+    def test_set_ticket_status_preserves_non_run_options(self, tmp_path: Path):
+        """AC: set_ticket_status should preserve non-run-option metadata."""
+        add_ticket(
+            tmp_path,
+            "Test task",
+            "Description",
+            metadata={"priority": "urgent"},
         )
 
         set_ticket_status(tmp_path, 1, TicketStatus.IN_PROGRESS)
 
         tickets = read_tickets(tmp_path)
         assert tickets[0].status == TicketStatus.IN_PROGRESS
-        # Run options should be removed
-        assert "model" not in (tickets[0].metadata or {})
-        assert "effort" not in (tickets[0].metadata or {})
-        assert "skip_planning" not in (tickets[0].metadata or {})
         # Other metadata preserved
         assert tickets[0].metadata.get("priority") == "urgent"
 
@@ -312,27 +282,28 @@ class TestRoundTripMetadataWithoutRunOptions:
         assert tickets[0].metadata.get("estimate") == "2h"
         assert tickets[0].metadata.get("tags") == ["bug", "urgent"]
 
-    def test_round_trip_cleans_legacy_run_options(self, tmp_path: Path):
-        """AC: Round-trip should clean out legacy run options from tickets."""
-        # Create legacy ticket with run options
-        tickets_dir = tmp_path / "levelup"
-        tickets_dir.mkdir()
-        (tickets_dir / "tickets.md").write_text(
-            "## Legacy task\n"
-            "<!--metadata\n"
-            "model: opus\n"
-            "effort: high\n"
-            "skip_planning: true\n"
-            "auto_approve: false\n"
-            "priority: normal\n"
-            "-->\n"
-            "Description\n",
-            encoding="utf-8",
+    def test_round_trip_filters_run_options_on_update(self, tmp_path: Path):
+        """AC: Round-trip should filter out run options when updating."""
+        add_ticket(
+            tmp_path,
+            "Legacy task",
+            "Description",
+            metadata={"auto_approve": False, "priority": "normal"},
         )
 
-        # Read and re-save
-        tickets = read_tickets(tmp_path)
-        update_ticket(tmp_path, 1, title="Cleaned task")
+        # Update with metadata containing run options (should be filtered)
+        update_ticket(
+            tmp_path,
+            1,
+            title="Cleaned task",
+            metadata={
+                "model": "opus",
+                "effort": "high",
+                "skip_planning": True,
+                "auto_approve": False,
+                "priority": "normal",
+            },
+        )
 
         # Read back
         tickets = read_tickets(tmp_path)
@@ -371,17 +342,17 @@ class TestMetadataFileFormat:
             },
         )
 
-        path = tmp_path / "levelup" / "tickets.md"
-        content = path.read_text()
+        tickets = read_tickets(tmp_path)
+        metadata = tickets[0].metadata or {}
 
-        # Run options should not be in file
-        assert "model:" not in content.lower()
-        assert "effort:" not in content.lower()
-        assert "skip_planning:" not in content.lower()
+        # Run options should not be in metadata
+        assert "model" not in metadata
+        assert "effort" not in metadata
+        assert "skip_planning" not in metadata
 
-        # Other metadata should be in file
-        assert "auto_approve: true" in content
-        assert "priority: urgent" in content
+        # Other metadata should be preserved
+        assert metadata.get("auto_approve") is True
+        assert metadata.get("priority") == "urgent"
 
 
 # ---------------------------------------------------------------------------
@@ -412,18 +383,10 @@ class TestMetadataEdgeCases:
 
     def test_empty_metadata_after_filtering(self, tmp_path: Path):
         """AC: Filtering run options that leaves empty metadata should result in None."""
-        tickets_dir = tmp_path / "levelup"
-        tickets_dir.mkdir()
-        (tickets_dir / "tickets.md").write_text(
-            "## Task\n"
-            "<!--metadata\n"
-            "model: sonnet\n"
-            "-->\n"
-            "Description\n",
-            encoding="utf-8",
-        )
+        add_ticket(tmp_path, "Task", "Description")
 
-        update_ticket(tmp_path, 1, title="Updated")
+        # Update with only run options as metadata (should all be filtered)
+        update_ticket(tmp_path, 1, title="Updated", metadata={"model": "sonnet"})
 
         tickets = read_tickets(tmp_path)
         # Should be None or empty after filtering

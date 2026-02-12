@@ -16,6 +16,8 @@ from unittest.mock import patch
 
 import pytest
 
+from levelup.core.tickets import add_ticket, set_ticket_status, TicketStatus
+
 
 def _can_import_pyqt6() -> bool:
     """Check if PyQt6 is available."""
@@ -487,10 +489,9 @@ class TestMainWindowRefreshTicketsWithRunStatus:
         # Create window with project path
         project_path = tmp_path / "project"
         project_path.mkdir()
-        (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text(
-            "## [in progress] Test ticket 1\n\n## Test ticket 2\n"
-        )
+        add_ticket(project_path, "Test ticket 1")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
+        add_ticket(project_path, "Test ticket 2")
 
         # Create window with patched refresh to avoid auto-refresh
         with patch.object(MainWindow, "_start_refresh_timer"), \
@@ -547,9 +548,12 @@ class TestMainWindowRefreshTicketsWithRunStatus:
         project_path = tmp_path / "project"
         project_path.mkdir()
         (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text(
-            "## [in progress] Ticket 1\n## [in progress] Ticket 2\n## [in progress] Ticket 3\n"
-        )
+        add_ticket(project_path, "Ticket 1")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
+        add_ticket(project_path, "Ticket 2")
+        set_ticket_status(project_path, 2, TicketStatus.IN_PROGRESS)
+        add_ticket(project_path, "Ticket 3")
+        set_ticket_status(project_path, 3, TicketStatus.IN_PROGRESS)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -607,9 +611,8 @@ class TestMainWindowRefreshTicketsWithRunStatus:
         project_path = tmp_path / "project"
         project_path.mkdir()
         (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text(
-            "## [in progress] Test ticket\n"
-        )
+        add_ticket(project_path, "Test ticket")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -637,9 +640,8 @@ class TestMainWindowRefreshTicketsWithRunStatus:
         project_path = tmp_path / "project"
         project_path.mkdir()
         (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text(
-            "## [in progress] Test ticket\n"
-        )
+        add_ticket(project_path, "Test ticket")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):
@@ -678,9 +680,8 @@ class TestMainWindowRefreshTicketsWithRunStatus:
         project_path = tmp_path / "project"
         project_path.mkdir()
         (project_path / "levelup").mkdir()
-        (project_path / "levelup" / "tickets.md").write_text(
-            "## [in progress] Test ticket\n"
-        )
+        add_ticket(project_path, "Test ticket")
+        set_ticket_status(project_path, 1, TicketStatus.IN_PROGRESS)
 
         with patch.object(MainWindow, "_start_refresh_timer"), \
              patch.object(MainWindow, "_refresh"):

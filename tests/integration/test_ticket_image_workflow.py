@@ -438,8 +438,9 @@ class TestConcurrentModification:
     """Test handling of concurrent modifications (edge case for future multi-user)."""
 
     def test_save_ticket_after_external_modification(self, qapp, tmp_path):
-        """Saving after external file modification should handle gracefully."""
+        """Saving after external DB modification should handle gracefully."""
         from levelup.gui.ticket_detail import TicketDetailWidget
+        from levelup.core.tickets import update_ticket
 
         tickets_dir = tmp_path / "levelup"
         tickets_dir.mkdir()
@@ -448,11 +449,8 @@ class TestConcurrentModification:
         ticket = add_ticket(tmp_path, "Test", "Original")
         widget.set_ticket(ticket)
 
-        # Simulate external modification
-        tickets_file = tickets_dir / "tickets.md"
-        content = tickets_file.read_text()
-        modified = content.replace("Original", "Modified externally")
-        tickets_file.write_text(modified)
+        # Simulate external modification via DB
+        update_ticket(tmp_path, 1, description="Modified externally")
 
         # Now save from widget
         widget._desc_edit.insertPlainText("\nWidget change")

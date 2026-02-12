@@ -116,6 +116,7 @@ class TestMergeWorkflowEndToEnd:
     def test_merge_workflow_with_clean_merge(self, git_repo: Path, feature_branch: str, tmp_path: Path):
         """Test complete merge workflow with no conflicts."""
         from levelup.core.tickets import Ticket, TicketStatus, add_ticket, read_tickets
+        from levelup.core.tickets import set_ticket_status, update_ticket
 
         # Create tickets file with done ticket
         levelup_dir = git_repo / "levelup"
@@ -127,25 +128,9 @@ class TestMergeWorkflowEndToEnd:
             "Add test feature to project",
         )
 
-        # Update ticket to done status with branch_name
-        from levelup.core.tickets import set_ticket_status, update_ticket
-
+        # Update ticket to done status with branch_name metadata
         set_ticket_status(git_repo, 1, TicketStatus.DONE)
-
-        # Read ticket to update metadata
-        tickets = read_tickets(git_repo)
-        ticket = tickets[0]
-        ticket.metadata = {"branch_name": feature_branch}
-
-        # Write ticket with metadata
-        tickets_path = git_repo / "levelup" / "tickets.md"
-        content = tickets_path.read_text()
-        # Add metadata block
-        new_content = content.replace(
-            "## [done] Test feature\n",
-            f"## [done] Test feature\n<!--metadata\nbranch_name: {feature_branch}\n-->\n",
-        )
-        tickets_path.write_text(new_content)
+        update_ticket(git_repo, 1, metadata={"branch_name": feature_branch})
 
         # Create RunTerminalWidget
         with patch("levelup.gui.terminal_emulator.PtyBackend"):
@@ -232,14 +217,8 @@ class TestMergeWorkflowEndToEnd:
         # Create ticket with branch_name
         add_ticket(git_repo, "Conflicting feature", "Test conflict resolution")
         set_ticket_status(git_repo, 1, TicketStatus.DONE)
-
-        tickets_path = git_repo / "levelup" / "tickets.md"
-        content = tickets_path.read_text()
-        new_content = content.replace(
-            "## [done] Conflicting feature\n",
-            f"## [done] Conflicting feature\n<!--metadata\nbranch_name: {branch_name}\n-->\n",
-        )
-        tickets_path.write_text(new_content)
+        from levelup.core.tickets import update_ticket
+        update_ticket(git_repo, 1, metadata={"branch_name": branch_name})
 
         # Test merge workflow
         with patch("levelup.gui.terminal_emulator.PtyBackend"):
@@ -277,14 +256,8 @@ class TestMergeWorkflowEndToEnd:
         # Create ticket
         add_ticket(git_repo, "Failed merge", "This will fail")
         set_ticket_status(git_repo, 1, TicketStatus.DONE)
-
-        tickets_path = git_repo / "levelup" / "tickets.md"
-        content = tickets_path.read_text()
-        new_content = content.replace(
-            "## [done] Failed merge\n",
-            "## [done] Failed merge\n<!--metadata\nbranch_name: nonexistent/branch\n-->\n",
-        )
-        tickets_path.write_text(new_content)
+        from levelup.core.tickets import update_ticket
+        update_ticket(git_repo, 1, metadata={"branch_name": "nonexistent/branch"})
 
         with patch("levelup.gui.terminal_emulator.PtyBackend"):
             from levelup.gui.run_terminal import RunTerminalWidget

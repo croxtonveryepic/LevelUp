@@ -269,7 +269,7 @@ class TestMainWindowCreateTicket:
 
         assert win._sidebar._list.currentRow() == -1
 
-    def test_ticket_created_persists_file(self, tmp_path):
+    def test_ticket_created_persists_to_db(self, tmp_path):
         app = _ensure_qapp()
         sm = _make_state_manager(tmp_path)
         win = _make_main_window(sm, project_path=tmp_path)
@@ -277,11 +277,12 @@ class TestMainWindowCreateTicket:
 
         win._on_ticket_created("My New Ticket", "Some description")
 
-        tickets_path = tmp_path / "levelup" / "tickets.md"
-        assert tickets_path.exists()
-        content = tickets_path.read_text(encoding="utf-8")
-        assert "## My New Ticket" in content
-        assert "Some description" in content
+        # Verify ticket was created in DB
+        from levelup.core.tickets import read_tickets
+        tickets = read_tickets(tmp_path)
+        assert len(tickets) == 1
+        assert tickets[0].title == "My New Ticket"
+        assert "Some description" in tickets[0].description
 
     def test_ticket_created_no_project_path(self, tmp_path):
         app = _ensure_qapp()
@@ -291,11 +292,13 @@ class TestMainWindowCreateTicket:
         # Should silently return without error
         win._on_ticket_created("Orphan", "No project")
 
-        tickets_path = tmp_path / "levelup" / "tickets.md"
-        assert not tickets_path.exists()
+        # No ticket should be created (no project_path)
+        from levelup.core.tickets import read_tickets
+        tickets = read_tickets(tmp_path)
+        assert len(tickets) == 0
 
     def test_full_create_flow(self, tmp_path):
-        """Plus -> type -> save -> file on disk, detail in view mode."""
+        """Plus -> type -> save -> ticket in DB, detail in view mode."""
         app = _ensure_qapp()
         sm = _make_state_manager(tmp_path)
         win = _make_main_window(sm, project_path=tmp_path)
@@ -313,11 +316,11 @@ class TestMainWindowCreateTicket:
         # 3. Save
         win._detail._on_save()
 
-        # 4. Verify file on disk
-        tickets_path = tmp_path / "levelup" / "tickets.md"
-        assert tickets_path.exists()
-        content = tickets_path.read_text(encoding="utf-8")
-        assert "## E2E Ticket" in content
+        # 4. Verify ticket in DB
+        from levelup.core.tickets import read_tickets
+        tickets = read_tickets(tmp_path)
+        assert len(tickets) == 1
+        assert tickets[0].title == "E2E Ticket"
 
         # 5. Detail should now be in view mode (set_ticket was called)
         assert win._detail._create_mode is False

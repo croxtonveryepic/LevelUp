@@ -491,15 +491,11 @@ class TestAutoApproveErrorHandling:
         mock_agent.side_effect = lambda name, ctx: ctx
 
         # Create ticket with invalid metadata
-        tickets_dir = tmp_path / "levelup"
-        tickets_dir.mkdir()
-        (tickets_dir / "tickets.md").write_text(
-            "## Test task\n"
-            "<!--metadata\n"
-            "auto_approve: not_a_boolean\n"
-            "-->\n"
-            "Description\n",
-            encoding="utf-8",
+        add_ticket(
+            tmp_path,
+            "Test task",
+            "Description",
+            metadata={"auto_approve": "not_a_boolean"},
         )
 
         ticket = read_tickets(tmp_path)[0]

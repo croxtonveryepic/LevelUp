@@ -448,11 +448,10 @@ class TestOrchestrator:
         orch = Orchestrator(settings=settings)
 
         # Create a ticket with adaptive metadata
-        ticket = add_ticket(tmp_path, "Test ticket", "desc", filename=settings.project.tickets_file)
+        ticket = add_ticket(tmp_path, "Test ticket", "desc")
         update_ticket(
             tmp_path, ticket.number,
             metadata={"model": "opus", "effort": "high", "skip_planning": True},
-            filename=settings.project.tickets_file,
         )
 
         ctx = PipelineContext(

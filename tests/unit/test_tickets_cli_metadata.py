@@ -283,11 +283,11 @@ class TestAlternativeMetadataCommand:
 class TestMetadataEdgeCases:
     """Test edge cases for ticket metadata CLI."""
 
-    def test_set_metadata_on_empty_tickets_file(self, tmp_path: Path):
-        """Should handle gracefully when tickets file is empty."""
+    def test_set_metadata_on_nonexistent_ticket(self, tmp_path: Path):
+        """Should handle gracefully when no tickets exist."""
         tickets_dir = tmp_path / "levelup"
         tickets_dir.mkdir()
-        (tickets_dir / "tickets.md").write_text("", encoding="utf-8")
+        # No tickets created in DB
 
         result = runner.invoke(app, [
             "tickets",
@@ -368,10 +368,9 @@ class TestMetadataEdgeCases:
             # Metadata should be removed or auto_approve key should be absent
             assert tickets[0].metadata is None or "auto_approve" not in tickets[0].metadata
 
-    def test_set_metadata_with_custom_tickets_file(self, tmp_path: Path):
-        """Should work with custom tickets file location."""
-        custom_file = "backlog.md"
-        add_ticket(tmp_path, "Task", filename=custom_file)
+    def test_set_metadata_with_default_db(self, tmp_path: Path):
+        """Should work with default DB-backed ticket storage."""
+        add_ticket(tmp_path, "Task")
 
         result = runner.invoke(app, [
             "tickets",
@@ -379,9 +378,8 @@ class TestMetadataEdgeCases:
             "1",
             "--auto-approve", "true",
             "--path", str(tmp_path),
-            "--tickets-file", custom_file,
         ])
 
         if result.exit_code == 0:
-            tickets = read_tickets(tmp_path, custom_file)
+            tickets = read_tickets(tmp_path)
             assert tickets[0].metadata["auto_approve"] is True

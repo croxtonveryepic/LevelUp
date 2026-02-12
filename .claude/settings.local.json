@@ -45,7 +45,8 @@
       "Bash(python.exe:*)",
       "Bash(while read f)",
       "Bash(do echo \"$f\")",
-      "Bash(done)"
+      "Bash(done)",
+      "WebFetch(domain:developer.atlassian.com)"
     ]
   }
 }

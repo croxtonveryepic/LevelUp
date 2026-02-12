@@ -235,6 +235,56 @@ levelup make-tickets --db-path /tmp/s.db   # custom state DB
 
 Ticket statuses (`[in progress]`, `[done]`, `[merged]`) and `<!--metadata … -->` blocks are preserved during import.
 
+### `levelup jira import` — Import Jira issues as tickets
+
+Import Jira Cloud issues (including comments) as LevelUp tickets. Supports single issue keys and JQL queries. Duplicate detection prevents re-importing the same issue.
+
+```bash
+# Single issue
+levelup jira import PROJ-123
+
+# JQL query
+levelup jira import "project=PROJ AND status='To Do'" --max-results 20
+
+# Preview without creating tickets
+levelup jira import PROJ-123 --dry-run
+
+# Override credentials
+levelup jira import PROJ-123 --url https://myco.atlassian.net --email dev@co.com --token ATATT3x...
+```
+
+**Options:**
+
+| Flag              | Description                                          |
+| ----------------- | ---------------------------------------------------- |
+| `--path PATH`     | Project directory (default: current dir)             |
+| `--db-path PATH`  | Override state DB path                               |
+| `--url URL`       | Jira base URL override                               |
+| `--email EMAIL`   | Jira email override                                  |
+| `--token TOKEN`   | Jira API token override                              |
+| `--max-results N` | Max issues for JQL queries (default: 50)             |
+| `--dry-run`       | Preview imported tickets without writing to DB       |
+
+**Credential precedence:** CLI flags > environment variables > config file
+
+**Configuration:**
+
+```yaml
+# levelup.yaml
+jira:
+  url: "https://mycompany.atlassian.net"
+  email: "dev@company.com"
+  token: "ATATT3xFfGF0..."
+```
+
+Or via environment variables:
+
+```bash
+export LEVELUP_JIRA__URL="https://mycompany.atlassian.net"
+export LEVELUP_JIRA__EMAIL="dev@company.com"
+export LEVELUP_JIRA__TOKEN="ATATT3xFfGF0..."
+```
+
 ### `levelup detect` — Detect project info
 
 Analyzes a project directory and reports what it found. Useful for verifying detection before running the full pipeline.
@@ -450,6 +500,7 @@ src/levelup/
   tools/        Sandboxed file read/write/search, shell execution, test runner
   detection/    Language, framework, and test runner auto-detection
   config/       Pydantic Settings models, config file loader
+  integrations/ External service integrations (Jira Cloud)
   state/        SQLite state store for multi-instance coordination
   gui/          PyQt6 dashboard — main window, checkpoint dialog, run terminal, styles
 ```

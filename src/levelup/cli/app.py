@@ -24,6 +24,9 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+jira_app = typer.Typer(name="jira", help="Jira integration commands.", no_args_is_help=True)
+app.add_typer(jira_app)
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -1593,6 +1596,98 @@ def self_update(
     _save_install_meta(meta)
 
     console.print(f"[bold green]Updated:[/bold green] {get_version_string()}")
+
+
+@jira_app.command("import")
+def jira_import(
+    query: str = typer.Argument(..., help="Jira issue key (PROJ-123) or JQL query string"),
+    path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
+    db_path: Optional[Path] = typer.Option(
+        None, "--db-path", help="Override state DB path"
+    ),
+    url: Optional[str] = typer.Option(None, "--url", help="Jira base URL override"),
+    email: Optional[str] = typer.Option(None, "--email", help="Jira email override"),
+    token: Optional[str] = typer.Option(None, "--token", help="Jira API token override"),
+    max_results: int = typer.Option(50, "--max-results", help="Max issues for JQL queries"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without creating tickets"),
+) -> None:
+    """Import Jira issues as LevelUp tickets."""
+    import re
+
+    from levelup.config.loader import load_settings
+    from levelup.integrations.jira import (
+        JiraAuthError,
+        JiraClient,
+        JiraConnectionError,
+        JiraNotFoundError,
+        _ISSUE_KEY_RE,
+        import_jira_issue,
+        import_jira_issues_by_jql,
+    )
+
+    settings = load_settings(project_path=path)
+
+    # Resolve credentials: CLI flags > config/env
+    jira_url = url or settings.jira.url
+    jira_email = email or settings.jira.email
+    jira_token = token or settings.jira.token
+
+    # Validate all three are present
+    missing = []
+    if not jira_url:
+        missing.append("url (--url or LEVELUP_JIRA__URL)")
+    if not jira_email:
+        missing.append("email (--email or LEVELUP_JIRA__EMAIL)")
+    if not jira_token:
+        missing.append("token (--token or LEVELUP_JIRA__TOKEN)")
+    if missing:
+        print_error(f"Missing Jira credentials: {', '.join(missing)}")
+        raise typer.Exit(1)
+
+    client = JiraClient(jira_url, jira_email, jira_token)
+
+    try:
+        if _ISSUE_KEY_RE.match(query):
+            # Single issue key
+            ticket, warning = import_jira_issue(
+                client, query, path, db_path=db_path, dry_run=dry_run
+            )
+            if warning:
+                console.print(f"[yellow]{warning}[/yellow]")
+            elif ticket:
+                if dry_run:
+                    console.print(f"[dim]Would create:[/dim] {ticket.title}")
+                else:
+                    console.print(
+                        f"[green]Imported ticket #{ticket.number}:[/green] {ticket.title}"
+                    )
+        else:
+            # JQL query
+            imported, warnings = import_jira_issues_by_jql(
+                client, query, path, db_path=db_path, max_results=max_results, dry_run=dry_run
+            )
+            for w in warnings:
+                console.print(f"[yellow]{w}[/yellow]")
+            for ticket in imported:
+                if dry_run:
+                    console.print(f"[dim]Would create:[/dim] {ticket.title}")
+                else:
+                    console.print(
+                        f"[green]Imported ticket #{ticket.number}:[/green] {ticket.title}"
+                    )
+            if not imported and not warnings:
+                console.print("[dim]No issues found matching the query.[/dim]")
+            elif not dry_run:
+                console.print(f"\n[bold]{len(imported)} ticket(s) imported.[/bold]")
+    except JiraAuthError as exc:
+        print_error(str(exc))
+        raise typer.Exit(1)
+    except JiraNotFoundError as exc:
+        print_error(str(exc))
+        raise typer.Exit(1)
+    except JiraConnectionError as exc:
+        print_error(str(exc))
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

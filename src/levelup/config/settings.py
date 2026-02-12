@@ -130,6 +130,14 @@ class GUISettings(BaseModel):
         return v
 
 
+class JiraSettings(BaseModel):
+    """Jira Cloud integration configuration."""
+
+    url: str = ""  # e.g. "https://mycompany.atlassian.net"
+    email: str = ""  # Jira account email
+    token: str = ""  # Jira API token
+
+
 MODEL_SHORT_NAMES: dict[str, str] = {
     "sonnet": "claude-sonnet-4-5-20250929",
     "opus": "claude-opus-4-6",
@@ -154,3 +162,4 @@ class LevelUpSettings(BaseSettings):
     project: ProjectSettings = Field(default_factory=ProjectSettings)
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
     gui: GUISettings = Field(default_factory=GUISettings)
+    jira: JiraSettings = Field(default_factory=JiraSettings)

@@ -13,6 +13,7 @@ from levelup.config.settings import (
     PipelineSettings,
     ProjectSettings,
     GUISettings,
+    JiraSettings,
 )
 
 CONFIG_FILENAMES = ["levelup.yaml", "levelup.yml", ".levelup.yaml", ".levelup.yml"]
@@ -74,6 +75,7 @@ def load_settings(
     project_data = file_data.get("project", {})
     pipeline_data = file_data.get("pipeline", {})
     gui_data = file_data.get("gui", {})
+    jira_data = file_data.get("jira", {})
 
     if project_path and "path" not in project_data:
         project_data["path"] = str(project_path)
@@ -85,12 +87,14 @@ def load_settings(
     _merge_env_vars(pipeline_data, "LEVELUP_PIPELINE__")
     _merge_env_vars(project_data, "LEVELUP_PROJECT__")
     _merge_env_vars(gui_data, "LEVELUP_GUI__")
+    _merge_env_vars(jira_data, "LEVELUP_JIRA__")
 
     settings = LevelUpSettings(
         llm=LLMSettings(**llm_data),
         project=ProjectSettings(**project_data),
         pipeline=PipelineSettings(**pipeline_data),
         gui=GUISettings(**gui_data),
+        jira=JiraSettings(**jira_data),
     )
 
     return settings

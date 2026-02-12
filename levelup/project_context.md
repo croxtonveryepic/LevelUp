@@ -55,6 +55,31 @@
 - **Tool Names** (Claude Code conventions): Read, Write, Edit, Glob, Grep, Bash
 - **Sandboxing**: All file tools restricted to project directory
 
+### Cost and Token Tracking
+
+- **AgentResult dataclass** (`agents/backend.py`):
+    - Fields: `text`, `cost_usd`, `input_tokens`, `output_tokens`, `duration_ms`, `num_turns`
+    - Default values: all numeric fields default to 0
+- **ClaudeCodeBackend**: Returns `AgentResult` with all fields populated from `ClaudeCodeClient`
+- **AnthropicSDKBackend**: Returns `AgentResult` with token counts from `LLMClient.run_tool_loop()`
+    - **KNOWN ISSUE**: Does NOT set `cost_usd` field (defaults to 0.0)
+    - Token counts come from `ToolLoopResult` which accumulates across API calls
+- **StepUsage model** (`core/context.py`):
+    - Fields: `cost_usd`, `input_tokens`, `output_tokens`, `duration_ms`, `num_turns`
+    - Stored in `PipelineContext.step_usage` dict (keyed by step name)
+- **PipelineContext** (`core/context.py`):
+    - `step_usage: dict[str, StepUsage]` - usage per pipeline step
+    - `total_cost_usd: float` - cumulative cost across all steps
+- **Orchestrator** (`core/orchestrator.py`):
+    - `_capture_usage()` method converts `AgentResult` to `StepUsage` and stores in context
+    - Updates `ctx.total_cost_usd` by adding `usage.cost_usd`
+    - Called after each successful agent execution
+- **Cost Breakdown Display** (`cli/display.py`):
+    - `print_pipeline_summary()` function displays cost table at end of run
+    - Shows per-step breakdown with cost, tokens, duration, turns
+    - **KNOWN BUG**: Line 279 has syntax error - uses backslash `\` instead of forward slash `/` for division
+    - Bug causes cost breakdown table to fail when displaying duration
+
 ### Git & Branch Management
 
 - **Worktrees**: Pipeline runs create git worktrees at `~/.levelup/worktrees/<run_id>/`

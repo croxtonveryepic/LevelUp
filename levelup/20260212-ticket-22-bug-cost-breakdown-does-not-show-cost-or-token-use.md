@@ -7,3 +7,10 @@
 ## Step: detect  (16:52:36)
 
 See `levelup/project_context.md` for project details.
+## Step: requirements  (16:58:05)
+
+**Summary:** Fix cost breakdown display to show cost and token usage for pipeline runs
+- 3 requirement(s)
+- 5 assumption(s)
+- 5 out-of-scope item(s)
+- **Usage:** 326.2s

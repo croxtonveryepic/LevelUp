@@ -101,6 +101,61 @@ class _JiraImportThread(QThread):
             self.error.emit(f"Jira import error: {exc}")
 
 
+class _JiraConfigureDialog(QDialog):
+    """Dialog that runs ``levelup jira configure`` in an embedded terminal."""
+
+    from PyQt6.QtCore import pyqtSignal as _signal
+
+    configure_finished = _signal(bool)
+
+    def __init__(
+        self,
+        parent: QWidget | None,
+        project_path: Path,
+        db_path: str,
+    ) -> None:
+        super().__init__(parent)
+        self._project_path = project_path
+        self._db_path = db_path
+        self._started = False
+
+        self.setWindowTitle("Configure Jira Connection")
+        self.resize(700, 500)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+
+        from levelup.gui.terminal_emulator import TerminalEmulatorWidget
+
+        self._terminal = TerminalEmulatorWidget(self)
+        self._terminal.shell_exited.connect(self._on_shell_exited)
+        layout.addWidget(self._terminal)
+
+    def showEvent(self, event: object) -> None:
+        super().showEvent(event)  # type: ignore[arg-type]
+        if not self._started:
+            self._started = True
+            self._terminal.start_shell()
+            cmd = f'levelup jira configure --path "{self._project_path}"'
+            self._terminal.send_command(cmd)
+
+    def _on_shell_exited(self, exit_code: int) -> None:
+        """Check if Jira is now configured and close."""
+        configured = False
+        try:
+            settings = load_settings(project_path=self._project_path)
+            jira = settings.jira
+            configured = bool(jira.url and jira.email and jira.token)
+        except Exception:
+            pass
+        self.configure_finished.emit(configured)
+        self.accept()
+
+    def closeEvent(self, event: object) -> None:
+        self._terminal.close_shell()
+        super().closeEvent(event)  # type: ignore[arg-type]
+
+
 class MainWindow(QMainWindow):
     """Dashboard window showing all LevelUp runs and tickets."""
 
@@ -900,8 +955,8 @@ class MainWindow(QMainWindow):
             return False
 
     def _update_jira_button_visibility(self) -> None:
-        """Show or hide the Jira import button based on config."""
-        self._sidebar.set_jira_enabled(self._is_jira_configured())
+        """Show Jira button whenever a project is selected."""
+        self._sidebar.set_jira_enabled(self._project_path is not None)
 
     def _on_jira_import(self) -> None:
         """Start a Jira import in a background thread."""
@@ -914,11 +969,9 @@ class MainWindow(QMainWindow):
             settings = load_settings(project_path=self._project_path)
             jira = settings.jira
             if not (jira.url and jira.email and jira.token):
-                QMessageBox.warning(
-                    self, "Jira Not Configured",
-                    "Jira credentials are not fully configured.\n"
-                    "Set url, email, and token in levelup.yaml or environment variables.",
-                )
+                dlg = _JiraConfigureDialog(self, self._project_path, self._db_path)
+                dlg.configure_finished.connect(self._on_jira_configure_finished)
+                dlg.exec()
                 return
         except Exception as e:
             QMessageBox.critical(self, "Settings Error", f"Failed to load settings: {e}")
@@ -956,6 +1009,12 @@ class MainWindow(QMainWindow):
         """Handle Jira import failure."""
         self._sidebar.set_jira_importing(False)
         QMessageBox.critical(self, "Jira Import Error", msg)
+
+    def _on_jira_configure_finished(self, success: bool) -> None:
+        """Handle Jira configure dialog completion."""
+        self._update_jira_button_visibility()
+        if success and self._is_jira_configured():
+            self._on_jira_import()
 
     # -- Hotkey methods -----------------------------------------------------
 

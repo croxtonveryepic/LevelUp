@@ -285,6 +285,17 @@ export LEVELUP_JIRA__EMAIL="dev@company.com"
 export LEVELUP_JIRA__TOKEN="ATATT3xFfGF0..."
 ```
 
+### `levelup jira configure` — Interactive Jira setup
+
+Walks you through entering Jira credentials, tests the connection, and saves to `levelup.yaml`.
+
+```bash
+levelup jira configure
+levelup jira configure --path /path/to/project
+```
+
+In the GUI, clicking the Jira button when credentials are not configured will open an embedded terminal running this command.
+
 ### `levelup detect` — Detect project info
 
 Analyzes a project directory and reports what it found. Useful for verifying detection before running the full pipeline.

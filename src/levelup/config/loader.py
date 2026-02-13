@@ -118,6 +118,25 @@ def _merge_env_vars(data: dict[str, Any], prefix: str) -> None:
                 data[field_name] = value
 
 
+def save_jira_settings(jira: JiraSettings, project_path: Path | None = None) -> None:
+    """Save only the Jira section to the config file, preserving other settings."""
+    config_file = find_config_file(project_path)
+    if config_file is None:
+        target_dir = project_path.resolve() if project_path else Path.cwd()
+        config_file = target_dir / "levelup.yaml"
+
+    # Load existing data or start fresh
+    data: dict[str, Any] = {}
+    if config_file.exists():
+        data = load_config_file(config_file)
+
+    # Update only the jira section
+    data["jira"] = {"url": jira.url, "email": jira.email, "token": jira.token}
+
+    with open(config_file, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+
 def save_settings(settings: LevelUpSettings, project_path: Path | None = None) -> None:
     """Save settings to a YAML config file."""
     # Determine the config file to write to

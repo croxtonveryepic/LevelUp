@@ -1690,5 +1690,65 @@ def jira_import(
         raise typer.Exit(1)
 
 
+@jira_app.command("configure")
+def jira_configure(
+    path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
+) -> None:
+    """Interactively configure Jira Cloud connection."""
+    from prompt_toolkit import prompt as pt_prompt
+    from prompt_toolkit.formatted_text import HTML
+
+    from levelup.config.loader import load_settings, save_jira_settings
+    from levelup.config.settings import JiraSettings
+
+    console.print("\n[bold]Configure Jira Cloud Connection[/bold]\n")
+
+    # Load current values for defaults
+    current_url = ""
+    current_email = ""
+    current_token = ""
+    try:
+        settings = load_settings(project_path=path)
+        current_url = settings.jira.url
+        current_email = settings.jira.email
+        current_token = settings.jira.token
+    except Exception:
+        pass
+
+    while True:
+        # Prompt for credentials
+        url = pt_prompt(HTML("<b>Jira URL: </b>"), default=current_url).strip().rstrip("/")
+        email = pt_prompt(HTML("<b>Email: </b>"), default=current_email).strip()
+        token = pt_prompt(HTML("<b>API Token: </b>"), default=current_token).strip()
+
+        if not url or not email or not token:
+            console.print("[red]All three fields are required.[/red]")
+            continue
+
+        # Test connection
+        console.print("\n[dim]Testing connection...[/dim]")
+        try:
+            from levelup.integrations.jira import JiraClient
+
+            client = JiraClient(url, email, token)
+            results = client.search_issues("assignee = currentUser()", max_results=1)
+            console.print("[green]Connection successful![/green]")
+        except Exception as exc:
+            console.print(f"[red]Connection failed: {exc}[/red]\n")
+            save_anyway = pt_prompt(HTML("<b>Save anyway? [y/N] </b>")).strip().lower()
+            if save_anyway not in ("y", "yes"):
+                console.print("[dim]Let's try again.[/dim]\n")
+                current_url = url
+                current_email = email
+                current_token = token
+                continue
+
+        # Save
+        jira = JiraSettings(url=url, email=email, token=token)
+        save_jira_settings(jira, project_path=path)
+        console.print("[bold green]Jira configuration saved to levelup.yaml.[/bold green]")
+        break
+
+
 if __name__ == "__main__":
     app()

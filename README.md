@@ -412,7 +412,7 @@ Displays the installed version, git commit hash, and working tree status.
 
 ```bash
 levelup version
-# levelup 0.1.0 (commit abc1234, clean)
+# levelup 1.2.4 (commit abc1234, clean)
 ```
 
 ### `levelup self-update` — Update LevelUp

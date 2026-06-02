@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-02-12
+
 ### Added
 - **Cost/token tracking** — each pipeline step records cost, token usage, duration, and turn count; pipeline summary and journal include cost breakdowns; `levelup status` shows cost per run
 - **Step-level git commits** — auto-commits after each pipeline step (when `create_git_branch: true`), enabling atomic rollback to any step
@@ -25,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LLMClient.run_tool_loop()` now returns `ToolLoopResult` with accumulated token counts
 - DB schema upgraded to v2 (adds `total_cost_usd` column to runs table)
 
-## [0.1.0] - 2025-05-01
+## [0.1.0] - 2026-02-06
 
 ### Added
 - TDD pipeline: detect → requirements → plan → test → code → review

@@ -27,7 +27,7 @@ console = Console()
 
 
 def get_version_string() -> str:
-    """Return a version string like 'levelup 0.1.0 (commit abc1234, clean)'."""
+    """Return a version string like 'levelup 1.2.4 (commit abc1234, clean)'."""
     base = f"levelup {__version__}"
     try:
         import git
